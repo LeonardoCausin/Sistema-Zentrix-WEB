@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zentrix Web | Dashboard</title>
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('zentrix-theme');
+        if (theme === 'dark' || theme === 'light') {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch (error) {}
+    })();
+  </script>
+  <style>
+    html[data-theme="dark"], html[data-theme="dark"] body { background: #0a0c10; color: #f0f3f8; }
+    html[data-theme="light"], html[data-theme="light"] body { background: #f8fafc; color: #0f172a; }
+  </style>
+  <link rel="stylesheet" href="../css/theme.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="../css/base.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="../css/layout.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="../css/components.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="../css/pages.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="../css/responsive.css?v=20260610-darkfix" />
+</head>
+<body class="is-authenticated">
+  <div class="app-shell">
+    <header class="window-bar app-window-bar">
+      <div class="window-title">
+        <img class="mini-logo logo-light" src="../assets/logo_light.png" alt="" />
+        <img class="mini-logo logo-dark" src="../assets/logo_dark.png" alt="" />
+        <span>Zentrix Web - Loja Centro</span>
+      </div>
+      <div class="window-toolbar">
+        <span class="status-pill success">Sincronizado</span>
+        <button class="icon-button" id="themeButton" type="button" aria-label="Alternar tema">Aa</button>
+        <a class="button btn-dark" href="../index.html">Sair</a>
+      </div>
+    </header>
+
+    <div class="workarea">
+      <aside class="sidebar" aria-label="Menu principal">
+        <button class="mobile-close" type="button" id="closeSidebarButton" aria-label="Fechar menu">x</button>
+        <div class="sidebar-brand">
+          <img class="brand-logo logo-light" src="../assets/logo_light.png" alt="Zentrix" />
+          <img class="brand-logo logo-dark" src="../assets/logo_dark.png" alt="Zentrix" />
+          <span>Extensao online do Zentrix PDV</span>
+        </div>
+        <nav class="nav-list">
+          <a class="nav-item active" href="dashboard.html">Dashboard</a>
+          <a class="nav-item" href="vendas.html">Vendas</a>
+          <a class="nav-item" href="financeiro.html">Financeiro</a>
+          <a class="nav-item" href="caixa.html">Caixa</a>
+          <a class="nav-item" href="produtos.html">Produtos</a>
+          <a class="nav-item" href="estoque.html">Estoque</a>
+          <a class="nav-item" href="clientes.html">Clientes</a>
+          <a class="nav-item" href="funcionarios.html">Funcionarios</a>
+          <a class="nav-item" href="auditoria.html">Auditoria</a>
+          <a class="nav-item" href="relatorios.html">Relatorios</a>
+          <a class="nav-item" href="backups.html">Backups</a>
+          <a class="nav-item" href="configuracoes.html">Configuracoes</a>
+        </nav>
+        <div class="sidebar-sync">
+          <div><strong>Fila de sincronizacao</strong><span>2 registros aguardando reenvio</span></div>
+          <div class="progress-track"><span style="width: 92%"></span></div>
+          <a class="button btn-primary full-width" href="auditoria.html">Ver fila</a>
+        </div>
+      </aside>
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="menuButton" type="button" aria-label="Abrir menu"><span class="hamburger"><span></span><span></span><span></span></span></button>
+          <div class="page-heading"><h2>Dashboard</h2><span>Indicadores da operacao em tempo real</span></div>
+          <div class="topbar-tools">
+            <select class="select-field" aria-label="Empresa ativa"><option>Zentrix Conveniencia Centro</option><option>Zentrix Mercado Norte</option></select>
+            <div class="segmented-control"><button class="active" type="button">Hoje</button><button type="button">7 dias</button><button type="button">Mes</button><button type="button">Ano</button></div>
+          </div>
+        </header>
+
+        <section class="view-host">
+          <div class="page-header">
+            <div><h1>Visao geral</h1><p>Resumo operacional da loja com faturamento, caixa, estoque e sincronizacao.</p></div>
+            <a class="button btn-primary" href="relatorios.html">Exportar resumo</a>
+          </div>
+
+          <div class="grid metrics-grid">
+            <article class="metric-card"><div class="metric-top"><span class="metric-label">Faturamento hoje</span><span class="tag success">+12,8%</span></div><strong class="metric-value">R$ 8.742,60</strong><span class="metric-note">132 vendas registradas pelo PDV Desktop.</span></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-label">Faturamento do mes</span><span class="tag success">+7,1%</span></div><strong class="metric-value">R$ 148.930,20</strong><span class="metric-note">Meta mensal atingida em 63%.</span></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-label">Ticket medio</span><span class="tag warning">estavel</span></div><strong class="metric-value">R$ 66,23</strong><span class="metric-note">Maior movimento entre 11h e 13h.</span></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-label">Estoque baixo</span><span class="tag danger">23 itens</span></div><strong class="metric-value">23</strong><span class="metric-note">4 produtos estao sem estoque.</span></article>
+          </div>
+
+          <div class="grid two-column" style="margin-top: 16px">
+            <section class="panel">
+              <div class="panel-title"><div><h3>Vendas por dia</h3><span>Ultimos 7 dias</span></div></div>
+              <div class="bar-chart">
+                <div class="bar-column"><span style="height: 42%">R$ 4,2k</span><small>Qui</small></div>
+                <div class="bar-column"><span style="height: 66%">R$ 6,7k</span><small>Sex</small></div>
+                <div class="bar-column"><span style="height: 91%">R$ 9,1k</span><small>Sab</small></div>
+                <div class="bar-column"><span style="height: 58%">R$ 5,8k</span><small>Dom</small></div>
+                <div class="bar-column"><span style="height: 62%">R$ 6,2k</span><small>Seg</small></div>
+                <div class="bar-column"><span style="height: 73%">R$ 7,3k</span><small>Ter</small></div>
+                <div class="bar-column"><span style="height: 87%">R$ 8,7k</span><small>Hoje</small></div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title"><div><h3>Formas de pagamento</h3><span>Participacao no faturamento</span></div></div>
+              <div class="stack-list">
+                <div class="payment-row"><strong>Pix</strong><div class="progress-track"><span style="width: 39%"></span></div><span>R$ 3.409,61</span></div>
+                <div class="payment-row"><strong>Debito</strong><div class="progress-track"><span style="width: 28%"></span></div><span>R$ 2.447,93</span></div>
+                <div class="payment-row"><strong>Credito</strong><div class="progress-track"><span style="width: 21%"></span></div><span>R$ 1.835,95</span></div>
+                <div class="payment-row"><strong>Dinheiro</strong><div class="progress-track"><span style="width: 12%"></span></div><span>R$ 1.049,11</span></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="grid three-column" style="margin-top: 16px">
+            <section class="panel"><div class="panel-title"><div><h3>Produtos mais vendidos</h3><span>Hoje</span></div></div><div class="stack-list"><div class="list-item"><span class="list-icon">1</span><div><span class="list-title">Coca-Cola 2L</span><span class="list-subtitle">38 unidades</span></div><strong>R$ 570,00</strong></div><div class="list-item"><span class="list-icon">2</span><div><span class="list-title">Marmita executiva</span><span class="list-subtitle">31 unidades</span></div><strong>R$ 775,00</strong></div></div></section>
+            <section class="panel"><div class="panel-title"><div><h3>Movimento de caixa</h3><span>Sessao atual</span></div></div><div class="stack-list"><div class="list-item"><span class="list-icon">+</span><div><span class="list-title">Suprimento</span><span class="list-subtitle">Entrada manual</span></div><strong>R$ 300,00</strong></div><div class="list-item"><span class="list-icon warning">-</span><div><span class="list-title">Sangria</span><span class="list-subtitle">Retirada autorizada</span></div><strong>R$ 450,00</strong></div></div></section>
+            <section class="panel"><div class="panel-title"><div><h3>Saude da integracao</h3><span>Desktop + nuvem</span></div></div><div class="stack-list"><div class="list-item"><span class="list-icon">OK</span><div><span class="list-title">API online</span><span class="list-subtitle">Latencia media 82ms</span></div><strong>Ativa</strong></div><div class="list-item"><span class="list-icon warning">2</span><div><span class="list-title">Registros pendentes</span><span class="list-subtitle">Aguardando reenvio</span></div><strong>Fila</strong></div></div></section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script src="../js/page.js?v=20260610-secure"></script>
+</body>
+</html>

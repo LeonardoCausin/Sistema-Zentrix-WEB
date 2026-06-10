@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zentrix Web | Login</title>
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('zentrix-theme');
+        if (theme === 'dark' || theme === 'light') {
+          document.documentElement.dataset.theme = theme;
+        }
+      } catch (error) {}
+    })();
+  </script>
+  <style>
+    html[data-theme="dark"], html[data-theme="dark"] body { background: #0a0c10; color: #f0f3f8; }
+    html[data-theme="light"], html[data-theme="light"] body { background: #f8fafc; color: #0f172a; }
+  </style>
+  <link rel="stylesheet" href="css/theme.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="css/base.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="css/layout.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="css/components.css?v=20260610-syncapi" />
+  <link rel="stylesheet" href="css/pages.css?v=20260610-darkfix" />
+  <link rel="stylesheet" href="css/responsive.css?v=20260610-darkfix" />
+</head>
+<body class="is-login">
+  <section class="login-shell" aria-label="Login Zentrix Web">
+    <div class="login-window">
+      <header class="window-bar login-window-bar">
+        <div class="window-title">
+          <span class="window-dot"></span>
+          <span>Zentrix Web</span>
+        </div>
+        <div class="window-actions" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </header>
+
+      <div class="login-content">
+        <div class="login-brand">
+          <img class="brand-logo logo-light" src="assets/logo_light.png" alt="Zentrix" />
+          <img class="brand-logo logo-dark" src="assets/logo_dark.png" alt="Zentrix" />
+          <span class="app-version">Painel Administrativo Online</span>
+        </div>
+
+        <div class="login-copy">
+          <h1>Gestao online integrada ao seu PDV.</h1>
+          <p>Venda localmente com estabilidade e acompanhe os indicadores do negocio pela internet.</p>
+        </div>
+
+        <form class="login-form" id="loginForm" action="pages/dashboard.html">
+          <label class="field">
+            <span>Usuario</span>
+            <input class="text-field" id="loginUser" name="email" type="text" value="admin" autocomplete="username" required />
+          </label>
+
+          <label class="field">
+            <span>Senha</span>
+            <input class="text-field" id="loginPassword" name="password" type="password" value="zentrix123" autocomplete="current-password" required />
+          </label>
+
+          <div class="form-error" id="loginError" role="alert" hidden></div>
+
+          <div class="form-line">
+            <label class="check-control">
+              <input type="checkbox" checked />
+              <span>Manter conectado</span>
+            </label>
+            <a class="link-button" href="pages/configuracoes.html">Recuperar senha</a>
+          </div>
+
+          <button class="button btn-primary full-width" type="submit">Entrar no painel</button>
+        </form>
+      </div>
+    </div>
+
+    <aside class="login-preview" aria-hidden="true">
+      <div class="preview-card">
+        <div class="preview-header">
+          <span class="status-pill success">PDV sincronizado</span>
+          <strong>Loja Centro</strong>
+        </div>
+        <div class="preview-total">
+          <span>Faturamento hoje</span>
+          <strong>R$ 8.742,60</strong>
+        </div>
+        <div class="preview-chart">
+          <span style="height: 42%"></span>
+          <span style="height: 64%"></span>
+          <span style="height: 90%"></span>
+          <span style="height: 58%"></span>
+          <span style="height: 72%"></span>
+          <span style="height: 84%"></span>
+        </div>
+        <div class="sync-flow">
+          <span>PDV</span>
+          <span>API</span>
+          <span>Nuvem</span>
+          <span>Web</span>
+        </div>
+      </div>
+    </aside>
+  </section>
+  <script src="js/login.js?v=20260610-syncapi"></script>
+</body>
+</html>

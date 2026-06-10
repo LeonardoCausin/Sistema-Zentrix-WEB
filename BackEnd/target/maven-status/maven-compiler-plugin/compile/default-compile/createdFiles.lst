@@ -1,0 +1,7 @@
+br\com\zentrix\web\controller\HealthController.class
+br\com\zentrix\web\config\WebConfig.class
+br\com\zentrix\web\dto\LoginResponse.class
+br\com\zentrix\web\dto\LoginRequest.class
+br\com\zentrix\web\controller\AuthController.class
+br\com\zentrix\web\controller\PanelController.class
+br\com\zentrix\web\api\ZentrixWebApplication.class
