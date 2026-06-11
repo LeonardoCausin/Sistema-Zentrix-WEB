@@ -3,7 +3,6 @@ package br.com.zentrix.web.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.NumberFormat;
-import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -52,18 +51,18 @@ public class WebDataService {
         Long lowStock = number("SELECT COUNT(*) FROM products WHERE stock <= min_stock");
         Long criticalStock = number("SELECT COUNT(*) FROM products WHERE stock <= 0");
 
-        return Map.of(
-                "company", Map.of("id", "WEB-001", "name", "Zentrix Web"),
-                "lastSync", lastSync(),
-                "syncProgress", lastSyncProgress(),
-                "metrics", List.of(
-                        metric("Faturamento hoje", currency(todayTotal), "", "success"),
-                        metric("Faturamento do mes", currency(monthTotal), "", "success"),
-                        metric("Ticket medio", currency(averageTicket), "", "warning"),
-                        metric("Estoque baixo", String.valueOf(lowStock), criticalStock + " criticos", "danger")
-                ),
-                "payments", payments(todayTotal)
-        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("company", company());
+        response.put("lastSync", lastSync());
+        response.put("syncProgress", lastSyncProgress());
+        response.put("metrics", List.of(
+                metric("Faturamento hoje", currency(todayTotal), "", "success"),
+                metric("Faturamento do mes", currency(monthTotal), "", "success"),
+                metric("Ticket medio", currency(averageTicket), "", "warning"),
+                metric("Estoque baixo", String.valueOf(lowStock), criticalStock + " criticos", "danger")
+        ));
+        response.put("payments", payments(todayTotal));
+        return response;
     }
 
     public List<Map<String, Object>> sales() {
@@ -81,7 +80,6 @@ public class WebDataService {
             row.put("code", "ZV-" + rs.getInt("id"));
             row.put("time", rs.getTimestamp("date_time") == null ? "-" : rs.getTimestamp("date_time").toLocalDateTime().toLocalTime().toString());
             row.put("operator", rs.getString("operator"));
-            row.put("client", "Consumidor final");
             row.put("payment", paymentName(rs.getString("payment_method")));
             row.put("status", statusName(rs.getString("status")));
             row.put("total", currency(rs.getBigDecimal("total")));
@@ -180,6 +178,100 @@ public class WebDataService {
         });
     }
 
+    public List<Map<String, Object>> clients() {
+        initializer.ensureReady();
+        return jdbcTemplate.query("""
+                SELECT id, name, cpf_cnpj, phone, email, address, created_at
+                FROM clients
+                ORDER BY name
+                LIMIT 100
+                """, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", rs.getString("name"));
+            row.put("cpfCnpj", rs.getString("cpf_cnpj"));
+            row.put("phone", rs.getString("phone"));
+            row.put("email", rs.getString("email"));
+            row.put("address", rs.getString("address"));
+            row.put("createdAt", rs.getTimestamp("created_at") == null ? "-" : rs.getTimestamp("created_at").toString());
+            return row;
+        });
+    }
+
+    public List<Map<String, Object>> employees() {
+        initializer.ensureReady();
+        return jdbcTemplate.query("""
+                SELECT username, display_name, role, active
+                FROM users
+                ORDER BY display_name
+                LIMIT 100
+                """, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", rs.getString("display_name"));
+            row.put("username", rs.getString("username"));
+            row.put("role", rs.getString("role"));
+            row.put("active", rs.getBoolean("active") ? "Ativo" : "Inativo");
+            return row;
+        });
+    }
+
+    public Map<String, Object> finance() {
+        initializer.ensureReady();
+        BigDecimal todayTotal = money("""
+                SELECT COALESCE(SUM(total), 0)
+                FROM (
+                    SELECT s.id,
+                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
+                    FROM sales s
+                    LEFT JOIN sale_items si ON si.sale_id = s.id
+                    WHERE s.status = 'PAID' AND DATE(s.date_time) = CURDATE()
+                    GROUP BY s.id, s.discount, s.surcharge
+                ) totals
+                """);
+        BigDecimal monthTotal = money("""
+                SELECT COALESCE(SUM(total), 0)
+                FROM (
+                    SELECT s.id,
+                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
+                    FROM sales s
+                    LEFT JOIN sale_items si ON si.sale_id = s.id
+                    WHERE s.status = 'PAID' AND s.date_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+                    GROUP BY s.id, s.discount, s.surcharge
+                ) totals
+                """);
+        return Map.of(
+                "todayTotal", currency(todayTotal),
+                "monthTotal", currency(monthTotal),
+                "paidSales", number("SELECT COUNT(*) FROM sales WHERE status = 'PAID'"),
+                "cancelledSales", number("SELECT COUNT(*) FROM sales WHERE status = 'CANCELLED'"),
+                "payments", payments(todayTotal)
+        );
+    }
+
+    public Map<String, Object> reports() {
+        initializer.ensureReady();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("sales", number("SELECT COUNT(*) FROM sales"));
+        response.put("products", number("SELECT COUNT(*) FROM products"));
+        response.put("clients", number("SELECT COUNT(*) FROM clients"));
+        response.put("cashSessions", number("SELECT COUNT(*) FROM cash_sessions"));
+        response.put("stockAlerts", number("SELECT COUNT(*) FROM products WHERE stock <= min_stock"));
+        response.put("auditEvents", number("SELECT COUNT(*) FROM audit_log"));
+        response.put("lastSync", lastSync());
+        return response;
+    }
+
+    public Map<String, Object> settings() {
+        initializer.ensureReady();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("database", "zentrix_web");
+        response.put("api", "Zentrix Web API");
+        response.put("sourceId", lastSourceId());
+        response.put("lastSync", lastSync());
+        response.put("users", number("SELECT COUNT(*) FROM users"));
+        response.put("products", number("SELECT COUNT(*) FROM products"));
+        return response;
+    }
+
     private List<Map<String, Object>> payments(BigDecimal todayTotal) {
         return jdbcTemplate.query("""
                 SELECT s.payment_method,
@@ -225,6 +317,14 @@ public class WebDataService {
         return Map.of("label", label, "value", value, "trend", trend, "tone", tone);
     }
 
+    private Map<String, Object> company() {
+        String sourceId = lastSourceId();
+        Map<String, Object> company = new LinkedHashMap<>();
+        company.put("id", sourceId == null ? "WEB" : sourceId);
+        company.put("name", sourceId == null ? "Zentrix Web" : sourceId);
+        return company;
+    }
+
     private BigDecimal money(String sql) {
         BigDecimal value = jdbcTemplate.queryForObject(sql, BigDecimal.class);
         return value == null ? BigDecimal.ZERO : value;
@@ -246,13 +346,26 @@ public class WebDataService {
         return result.isEmpty() ? null : result.get(0);
     }
 
+    private String lastSourceId() {
+        List<String> result = jdbcTemplate.query("""
+                SELECT source_id
+                FROM sync_runs
+                WHERE status = 'SUCCESS'
+                ORDER BY received_at DESC, id DESC
+                LIMIT 1
+                """, (rs, rowNum) -> rs.getString(1));
+        return result.isEmpty() ? null : result.get(0);
+    }
+
     private int lastSyncProgress() {
         Long success = number("SELECT COUNT(*) FROM sync_runs WHERE status = 'SUCCESS'");
         return success > 0 ? 100 : 0;
     }
 
     private String currency(BigDecimal value) {
-        return NumberFormat.getCurrencyInstance(PT_BR).format(value == null ? BigDecimal.ZERO : value);
+        return NumberFormat.getCurrencyInstance(PT_BR)
+                .format(value == null ? BigDecimal.ZERO : value)
+                .replace('\u00A0', ' ');
     }
 
     private String paymentName(String value) {

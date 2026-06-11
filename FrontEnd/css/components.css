@@ -73,7 +73,7 @@
 }
 
 .preview-card {
-  width: min(760px, 100%);
+  width: min(960px, 100%);
   padding: 22px;
   box-shadow: var(--shadow-strong);
 }

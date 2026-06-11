@@ -1,3 +1,19 @@
+body.is-authenticated .view-host,
+body.is-authenticated .status-pill,
+body.is-authenticated .sidebar-sync,
+body.is-authenticated .topbar-tools .select-field,
+body.is-authenticated .window-title span:last-child {
+  visibility: hidden;
+}
+
+body.is-authenticated.app-data-ready .view-host,
+body.is-authenticated.app-data-ready .status-pill,
+body.is-authenticated.app-data-ready .sidebar-sync,
+body.is-authenticated.app-data-ready .topbar-tools .select-field,
+body.is-authenticated.app-data-ready .window-title span:last-child {
+  visibility: visible;
+}
+
 .page-header {
   display: flex;
   align-items: flex-end;

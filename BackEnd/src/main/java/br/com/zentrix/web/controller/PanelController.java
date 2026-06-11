@@ -51,4 +51,29 @@ public class PanelController {
     public List<Map<String, Object>> backups() {
         return dataService.backups();
     }
+
+    @GetMapping("/clients")
+    public List<Map<String, Object>> clients() {
+        return dataService.clients();
+    }
+
+    @GetMapping("/employees")
+    public List<Map<String, Object>> employees() {
+        return dataService.employees();
+    }
+
+    @GetMapping("/finance")
+    public Map<String, Object> finance() {
+        return dataService.finance();
+    }
+
+    @GetMapping("/reports")
+    public Map<String, Object> reports() {
+        return dataService.reports();
+    }
+
+    @GetMapping("/settings")
+    public Map<String, Object> settings() {
+        return dataService.settings();
+    }
 }

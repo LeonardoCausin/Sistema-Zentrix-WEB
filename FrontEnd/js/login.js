@@ -7,6 +7,11 @@
   const errorBox = document.getElementById('loginError');
   const submitButton = form.querySelector('button[type="submit"]');
   const apiBase = localStorage.getItem('zentrix-api-base') || 'http://localhost:8080/api';
+  const previewStatus = document.getElementById('previewStatus');
+  const previewService = document.getElementById('previewService');
+  const previewLastSync = document.getElementById('previewLastSync');
+
+  refreshPreview();
 
   function showError(message) {
     if (!errorBox) return;
@@ -54,4 +59,21 @@
       }
     }
   });
+
+  async function refreshPreview() {
+    if (!previewStatus || !previewLastSync) return;
+    try {
+      const response = await fetch(apiBase + '/health');
+      if (!response.ok) throw new Error('API indisponivel');
+      const health = await response.json();
+      previewStatus.className = 'status-pill ' + (health.status === 'UP' ? 'success' : 'warning');
+      previewStatus.textContent = health.status === 'UP' ? 'API online' : 'API degradada';
+      if (previewService) previewService.textContent = health.service || 'Zentrix Web';
+      previewLastSync.textContent = health.lastSync || 'Aguardando primeira sincronizacao';
+    } catch (error) {
+      previewStatus.className = 'status-pill warning';
+      previewStatus.textContent = 'API offline';
+      previewLastSync.textContent = 'Verifique o backend';
+    }
+  }
 })();
