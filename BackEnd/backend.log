@@ -1,0 +1,24 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.6)
+
+2026-06-12T09:55:20.552-03:00  INFO 9104 --- [zentrix-web-api] [           main] b.c.z.web.api.ZentrixWebApplication      : Starting ZentrixWebApplication v0.1.0-SNAPSHOT using Java 25 with PID 9104 (C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\target\zentrix-web-api-0.1.0-SNAPSHOT.jar started by Leonardo in C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd)
+2026-06-12T09:55:20.555-03:00  INFO 9104 --- [zentrix-web-api] [           main] b.c.z.web.api.ZentrixWebApplication      : No active profile set, falling back to 1 default profile: "default"
+2026-06-12T09:55:23.141-03:00  INFO 9104 --- [zentrix-web-api] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2026-06-12T09:55:23.166-03:00  INFO 9104 --- [zentrix-web-api] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-06-12T09:55:23.167-03:00  INFO 9104 --- [zentrix-web-api] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-12T09:55:23.226-03:00  INFO 9104 --- [zentrix-web-api] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-06-12T09:55:23.228-03:00  INFO 9104 --- [zentrix-web-api] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 2588 ms
+2026-06-12T09:55:23.376-03:00  INFO 9104 --- [zentrix-web-api] [           main] com.zaxxer.hikari.HikariDataSource       : ZentrixWebPool - Starting...
+2026-06-12T09:55:23.428-03:00  INFO 9104 --- [zentrix-web-api] [           main] com.zaxxer.hikari.HikariDataSource       : ZentrixWebPool - Start completed.
+2026-06-12T09:55:24.849-03:00  INFO 9104 --- [zentrix-web-api] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2026-06-12T09:55:24.894-03:00  INFO 9104 --- [zentrix-web-api] [           main] b.c.z.web.api.ZentrixWebApplication      : Started ZentrixWebApplication in 5.135 seconds (process running for 6.15)
+2026-06-12T09:55:34.235-03:00  INFO 9104 --- [zentrix-web-api] [nio-8080-exec-2] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-12T09:55:34.235-03:00  INFO 9104 --- [zentrix-web-api] [nio-8080-exec-2] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-06-12T09:55:34.236-03:00  INFO 9104 --- [zentrix-web-api] [nio-8080-exec-2] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms

@@ -22,32 +22,12 @@ public class WebDataService {
         this.initializer = initializer;
     }
 
-    public Map<String, Object> dashboard() {
+    public Map<String, Object> dashboard(String period) {
         initializer.ensureReady();
-        BigDecimal todayTotal = money("""
-                SELECT COALESCE(SUM(total), 0)
-                FROM (
-                    SELECT s.id,
-                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
-                    FROM sales s
-                    LEFT JOIN sale_items si ON si.sale_id = s.id
-                    WHERE s.status = 'PAID' AND DATE(s.date_time) = CURDATE()
-                    GROUP BY s.id, s.discount, s.surcharge
-                ) totals
-                """);
-        BigDecimal monthTotal = money("""
-                SELECT COALESCE(SUM(total), 0)
-                FROM (
-                    SELECT s.id,
-                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
-                    FROM sales s
-                    LEFT JOIN sale_items si ON si.sale_id = s.id
-                    WHERE s.status = 'PAID' AND s.date_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-                    GROUP BY s.id, s.discount, s.surcharge
-                ) totals
-                """);
-        Long paidSales = number("SELECT COUNT(*) FROM sales WHERE status = 'PAID' AND DATE(date_time) = CURDATE()");
-        BigDecimal averageTicket = paidSales == 0 ? BigDecimal.ZERO : todayTotal.divide(BigDecimal.valueOf(paidSales), 2, RoundingMode.HALF_UP);
+        String salesPeriod = salesPeriodCondition(period);
+        BigDecimal periodTotal = salesTotal(salesPeriod);
+        Long paidSales = number("SELECT COUNT(*) FROM sales s WHERE s.status = 'PAID' AND " + salesPeriod);
+        BigDecimal averageTicket = paidSales == 0 ? BigDecimal.ZERO : periodTotal.divide(BigDecimal.valueOf(paidSales), 2, RoundingMode.HALF_UP);
         Long lowStock = number("SELECT COUNT(*) FROM products WHERE stock <= min_stock");
         Long criticalStock = number("SELECT COUNT(*) FROM products WHERE stock <= 0");
 
@@ -55,30 +35,46 @@ public class WebDataService {
         response.put("company", company());
         response.put("lastSync", lastSync());
         response.put("syncProgress", lastSyncProgress());
+        response.put("period", normalizePeriod(period));
         response.put("metrics", List.of(
-                metric("Faturamento hoje", currency(todayTotal), "", "success"),
-                metric("Faturamento do mes", currency(monthTotal), "", "success"),
-                metric("Ticket medio", currency(averageTicket), "", "warning"),
+                metric("Faturamento", currency(periodTotal), periodLabel(period), "success"),
+                metric("Vendas pagas", String.valueOf(paidSales), periodLabel(period), "success"),
+                metric("Ticket medio", currency(averageTicket), periodLabel(period), "warning"),
                 metric("Estoque baixo", String.valueOf(lowStock), criticalStock + " criticos", "danger")
         ));
-        response.put("payments", payments(todayTotal));
+        response.put("payments", payments(periodTotal, salesPeriod));
         return response;
     }
 
-    public List<Map<String, Object>> sales() {
+    private BigDecimal salesTotal(String condition) {
+        return money("""
+                SELECT COALESCE(SUM(total), 0)
+                FROM (
+                    SELECT s.id,
+                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
+                    FROM sales s
+                    LEFT JOIN sale_items si ON si.sale_id = s.id
+                    WHERE s.status = 'PAID' AND %s
+                    GROUP BY s.id, s.discount, s.surcharge
+                ) totals
+                """.formatted(condition));
+    }
+
+    public List<Map<String, Object>> sales(String period) {
         initializer.ensureReady();
         return jdbcTemplate.query("""
                 SELECT s.id, s.operator, s.payment_method, s.status, s.date_time,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
                 FROM sales s
                 LEFT JOIN sale_items si ON si.sale_id = s.id
+                WHERE %s
                 GROUP BY s.id, s.operator, s.payment_method, s.status, s.date_time, s.discount, s.surcharge
                 ORDER BY s.date_time DESC, s.id DESC
                 LIMIT 50
-                """, (rs, rowNum) -> {
+                """.formatted(salesPeriodCondition(period)), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("code", "ZV-" + rs.getInt("id"));
-            row.put("time", rs.getTimestamp("date_time") == null ? "-" : rs.getTimestamp("date_time").toLocalDateTime().toLocalTime().toString());
+            row.put("time", rs.getTimestamp("date_time") == null ? "-" : rs.getTimestamp("date_time").toLocalDateTime().toString().replace('T', ' '));
             row.put("operator", rs.getString("operator"));
             row.put("payment", paymentName(rs.getString("payment_method")));
             row.put("status", statusName(rs.getString("status")));
@@ -104,19 +100,20 @@ public class WebDataService {
         ));
     }
 
-    public List<Map<String, Object>> cashSessions() {
+    public List<Map<String, Object>> cashSessions(String period) {
         initializer.ensureReady();
         return jdbcTemplate.query("""
                 SELECT id, cash_id, operator, opening_balance, opened_at, closed_at, is_open
                 FROM cash_sessions
+                WHERE %s
                 ORDER BY opened_at DESC, id DESC
                 LIMIT 50
-                """, (rs, rowNum) -> {
+                """.formatted(periodCondition("opened_at", period)), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("code", rs.getString("cash_id") == null ? "CX-" + rs.getInt("id") : rs.getString("cash_id"));
             row.put("operator", rs.getString("operator"));
-            row.put("openedAt", rs.getTimestamp("opened_at") == null ? "-" : rs.getTimestamp("opened_at").toLocalDateTime().toLocalTime().toString());
-            row.put("closedAt", rs.getTimestamp("closed_at") == null ? "Aberto" : rs.getTimestamp("closed_at").toLocalDateTime().toLocalTime().toString());
+            row.put("openedAt", rs.getTimestamp("opened_at") == null ? "-" : rs.getTimestamp("opened_at").toLocalDateTime().toString().replace('T', ' '));
+            row.put("closedAt", rs.getTimestamp("closed_at") == null ? "Aberto" : rs.getTimestamp("closed_at").toLocalDateTime().toString().replace('T', ' '));
             row.put("status", rs.getBoolean("is_open") ? "Aberto" : "Fechado");
             row.put("expected", currency(rs.getBigDecimal("opening_balance")));
             row.put("informed", "-");
@@ -214,36 +211,19 @@ public class WebDataService {
         });
     }
 
-    public Map<String, Object> finance() {
+    public Map<String, Object> finance(String period) {
         initializer.ensureReady();
-        BigDecimal todayTotal = money("""
-                SELECT COALESCE(SUM(total), 0)
-                FROM (
-                    SELECT s.id,
-                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
-                    FROM sales s
-                    LEFT JOIN sale_items si ON si.sale_id = s.id
-                    WHERE s.status = 'PAID' AND DATE(s.date_time) = CURDATE()
-                    GROUP BY s.id, s.discount, s.surcharge
-                ) totals
-                """);
-        BigDecimal monthTotal = money("""
-                SELECT COALESCE(SUM(total), 0)
-                FROM (
-                    SELECT s.id,
-                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
-                    FROM sales s
-                    LEFT JOIN sale_items si ON si.sale_id = s.id
-                    WHERE s.status = 'PAID' AND s.date_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-                    GROUP BY s.id, s.discount, s.surcharge
-                ) totals
-                """);
+        String salesPeriod = salesPeriodCondition(period);
+        BigDecimal periodTotal = salesTotal(salesPeriod);
+        BigDecimal monthTotal = salesTotal("s.date_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
         return Map.of(
-                "todayTotal", currency(todayTotal),
+                "todayTotal", currency(periodTotal),
+                "periodTotal", currency(periodTotal),
+                "periodLabel", periodLabel(period),
                 "monthTotal", currency(monthTotal),
-                "paidSales", number("SELECT COUNT(*) FROM sales WHERE status = 'PAID'"),
-                "cancelledSales", number("SELECT COUNT(*) FROM sales WHERE status = 'CANCELLED'"),
-                "payments", payments(todayTotal)
+                "paidSales", number("SELECT COUNT(*) FROM sales s WHERE s.status = 'PAID' AND " + salesPeriod),
+                "cancelledSales", number("SELECT COUNT(*) FROM sales s WHERE s.status = 'CANCELLED' AND " + salesPeriod),
+                "payments", payments(periodTotal, salesPeriod)
         );
     }
 
@@ -264,7 +244,7 @@ public class WebDataService {
         initializer.ensureReady();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("database", "zentrix_web");
-        response.put("api", "Zentrix Web API");
+        response.put("api", "Painel online Zentrix");
         response.put("sourceId", lastSourceId());
         response.put("lastSync", lastSync());
         response.put("users", number("SELECT COUNT(*) FROM users"));
@@ -272,7 +252,7 @@ public class WebDataService {
         return response;
     }
 
-    private List<Map<String, Object>> payments(BigDecimal todayTotal) {
+    private List<Map<String, Object>> payments(BigDecimal periodTotal, String condition) {
         return jdbcTemplate.query("""
                 SELECT s.payment_method,
                        COALESCE(SUM(total), 0) AS total
@@ -281,16 +261,16 @@ public class WebDataService {
                            COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
                     FROM sales s
                     LEFT JOIN sale_items si ON si.sale_id = s.id
-                    WHERE s.status = 'PAID' AND DATE(s.date_time) = CURDATE()
+                    WHERE s.status = 'PAID' AND %s
                     GROUP BY s.id, s.payment_method, s.discount, s.surcharge
                 ) s
                 GROUP BY s.payment_method
                 ORDER BY total DESC
-                """, (rs, rowNum) -> {
+                """.formatted(condition), (rs, rowNum) -> {
             BigDecimal total = rs.getBigDecimal("total") == null ? BigDecimal.ZERO : rs.getBigDecimal("total");
-            int percent = todayTotal.compareTo(BigDecimal.ZERO) == 0
+            int percent = periodTotal.compareTo(BigDecimal.ZERO) == 0
                     ? 0
-                    : total.multiply(BigDecimal.valueOf(100)).divide(todayTotal, 0, RoundingMode.HALF_UP).intValue();
+                    : total.multiply(BigDecimal.valueOf(100)).divide(periodTotal, 0, RoundingMode.HALF_UP).intValue();
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("name", paymentName(rs.getString("payment_method")));
             row.put("percent", percent);
@@ -315,6 +295,40 @@ public class WebDataService {
 
     private Map<String, Object> metric(String label, String value, String trend, String tone) {
         return Map.of("label", label, "value", value, "trend", trend, "tone", tone);
+    }
+
+    private String salesPeriodCondition(String period) {
+        return periodCondition("s.date_time", period);
+    }
+
+    private String periodCondition(String column, String period) {
+        return switch (normalizePeriod(period)) {
+            case "7d" -> column + " >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
+            case "month" -> column + " >= DATE_FORMAT(CURDATE(), '%Y-%m-01')";
+            case "year" -> column + " >= MAKEDATE(YEAR(CURDATE()), 1)";
+            default -> "DATE(" + column + ") = CURDATE()";
+        };
+    }
+
+    private String normalizePeriod(String period) {
+        if (period == null) {
+            return "today";
+        }
+        return switch (period.trim().toLowerCase(Locale.ROOT)) {
+            case "7d", "7", "week" -> "7d";
+            case "month", "mes", "mês" -> "month";
+            case "year", "ano" -> "year";
+            default -> "today";
+        };
+    }
+
+    private String periodLabel(String period) {
+        return switch (normalizePeriod(period)) {
+            case "7d" -> "7 dias";
+            case "month" -> "Mes";
+            case "year" -> "Ano";
+            default -> "Hoje";
+        };
     }
 
     private Map<String, Object> company() {

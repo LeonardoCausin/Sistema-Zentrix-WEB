@@ -6,7 +6,8 @@
   const passwordField = document.getElementById('loginPassword');
   const errorBox = document.getElementById('loginError');
   const submitButton = form.querySelector('button[type="submit"]');
-  const apiBase = localStorage.getItem('zentrix-api-base') || 'http://localhost:8080/api';
+  const defaultApiBase = 'http://localhost:8080/api';
+  const storedApiBase = localStorage.getItem('zentrix-api-base');
   const previewStatus = document.getElementById('previewStatus');
   const previewService = document.getElementById('previewService');
   const previewLastSync = document.getElementById('previewLastSync');
@@ -35,20 +36,11 @@
     }
 
     try {
-      const response = await fetch(apiBase + '/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: userField.value.trim(),
-          password: passwordField.value
-        })
+      const session = await loginWithFallback({
+        email: userField.value.trim(),
+        password: passwordField.value
       });
 
-      if (!response.ok) {
-        throw new Error('Usuario ou senha invalidos.');
-      }
-
-      const session = await response.json();
       localStorage.setItem('zentrix-session', JSON.stringify(session));
       window.location.href = form.getAttribute('action') || 'pages/dashboard.html';
     } catch (error) {
@@ -60,20 +52,68 @@
     }
   });
 
+  async function loginWithFallback(credentials) {
+    const bases = apiBases();
+    let lastError = null;
+
+    for (const base of bases) {
+      try {
+        const response = await fetch(base + '/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(credentials)
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Usuario ou senha invalidos.');
+          }
+          throw new Error('Nao foi possivel entrar agora. Verifique se o sistema esta aberto.');
+        }
+
+        localStorage.setItem('zentrix-api-base', base);
+        return response.json();
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Nao foi possivel conectar ao sistema.');
+  }
+
   async function refreshPreview() {
     if (!previewStatus || !previewLastSync) return;
     try {
-      const response = await fetch(apiBase + '/health');
-      if (!response.ok) throw new Error('API indisponivel');
+      const response = await fetchFirstHealth();
       const health = await response.json();
       previewStatus.className = 'status-pill ' + (health.status === 'UP' ? 'success' : 'warning');
-      previewStatus.textContent = health.status === 'UP' ? 'API online' : 'API degradada';
+      previewStatus.textContent = health.status === 'UP' ? 'Sistema online' : 'Sistema iniciando';
       if (previewService) previewService.textContent = health.service || 'Zentrix Web';
       previewLastSync.textContent = health.lastSync || 'Aguardando primeira sincronizacao';
     } catch (error) {
       previewStatus.className = 'status-pill warning';
-      previewStatus.textContent = 'API offline';
-      previewLastSync.textContent = 'Verifique o backend';
+      previewStatus.textContent = 'Sistema offline';
+      previewLastSync.textContent = 'Abra o Zentrix Web';
     }
+  }
+
+  async function fetchFirstHealth() {
+    let lastError = null;
+    for (const base of apiBases()) {
+      try {
+        const response = await fetch(base + '/health');
+        if (response.ok) {
+          localStorage.setItem('zentrix-api-base', base);
+          return response;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error('Sistema indisponivel');
+  }
+
+  function apiBases() {
+    return Array.from(new Set([storedApiBase, defaultApiBase].filter(Boolean)));
   }
 })();

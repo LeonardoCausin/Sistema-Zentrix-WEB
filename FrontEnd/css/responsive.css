@@ -17,6 +17,15 @@
   .filters {
     grid-template-columns: repeat(3, minmax(145px, 1fr));
   }
+
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .topbar-tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 980px) {
@@ -29,7 +38,8 @@
   }
 
   .login-content {
-    padding: 32px 22px;
+    width: min(100%, 520px);
+    padding: 34px 22px;
   }
 
   .login-copy h1 {
@@ -38,7 +48,15 @@
   }
 
   .login-preview {
-    padding: 22px;
+    min-height: 430px;
+  }
+
+  .login-hero-copy {
+    padding: 28px 22px;
+  }
+
+  .login-hero-copy h2 {
+    max-width: 13ch;
   }
 
   .workarea {
@@ -167,6 +185,14 @@
 
   .login-content {
     padding: 28px 16px;
+  }
+
+  .login-preview {
+    min-height: 360px;
+  }
+
+  .login-hero-copy h2 {
+    font-size: 32px;
   }
 
   .preview-total strong,

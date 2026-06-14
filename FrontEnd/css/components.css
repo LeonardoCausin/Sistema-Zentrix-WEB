@@ -31,7 +31,9 @@
 
 .segmented-control {
   display: inline-grid;
-  grid-template-columns: repeat(4, minmax(58px, 1fr));
+  grid-template-columns: repeat(4, minmax(52px, 1fr));
+  flex: 0 1 auto;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
@@ -44,9 +46,10 @@
   border-right: 1px solid var(--border-color);
   color: var(--text-secondary);
   background: transparent;
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .segmented-control button:last-child {

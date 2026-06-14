@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -18,13 +19,13 @@ public class PanelController {
     }
 
     @GetMapping("/dashboard")
-    public Map<String, Object> dashboard() {
-        return dataService.dashboard();
+    public Map<String, Object> dashboard(@RequestParam(defaultValue = "today") String period) {
+        return dataService.dashboard(period);
     }
 
     @GetMapping("/sales")
-    public List<Map<String, Object>> sales() {
-        return dataService.sales();
+    public List<Map<String, Object>> sales(@RequestParam(defaultValue = "today") String period) {
+        return dataService.sales(period);
     }
 
     @GetMapping("/products")
@@ -33,8 +34,8 @@ public class PanelController {
     }
 
     @GetMapping("/cash-sessions")
-    public List<Map<String, Object>> cashSessions() {
-        return dataService.cashSessions();
+    public List<Map<String, Object>> cashSessions(@RequestParam(defaultValue = "today") String period) {
+        return dataService.cashSessions(period);
     }
 
     @GetMapping("/stock/alerts")
@@ -63,8 +64,8 @@ public class PanelController {
     }
 
     @GetMapping("/finance")
-    public Map<String, Object> finance() {
-        return dataService.finance();
+    public Map<String, Object> finance(@RequestParam(defaultValue = "today") String period) {
+        return dataService.finance(period);
     }
 
     @GetMapping("/reports")
