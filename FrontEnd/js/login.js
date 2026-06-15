@@ -4,6 +4,7 @@
 
   const userField = document.getElementById('loginUser');
   const passwordField = document.getElementById('loginPassword');
+  const togglePasswordButton = document.getElementById('togglePasswordButton');
   const errorBox = document.getElementById('loginError');
   const submitButton = form.querySelector('button[type="submit"]');
   const defaultApiBase = 'http://localhost:8080/api';
@@ -13,6 +14,14 @@
   const previewLastSync = document.getElementById('previewLastSync');
 
   refreshPreview();
+
+  if (togglePasswordButton && passwordField) {
+    togglePasswordButton.addEventListener('click', function () {
+      const showing = passwordField.type === 'text';
+      passwordField.type = showing ? 'password' : 'text';
+      togglePasswordButton.textContent = showing ? 'Mostrar' : 'Ocultar';
+    });
+  }
 
   function showError(message) {
     if (!errorBox) return;
@@ -68,6 +77,9 @@
           if (response.status === 401) {
             throw new Error('Usuario ou senha invalidos.');
           }
+          if (response.status === 429) {
+            throw new Error('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
+          }
           throw new Error('Nao foi possivel entrar agora. Verifique se o sistema esta aberto.');
         }
 
@@ -88,7 +100,7 @@
       const health = await response.json();
       previewStatus.className = 'status-pill ' + (health.status === 'UP' ? 'success' : 'warning');
       previewStatus.textContent = health.status === 'UP' ? 'Sistema online' : 'Sistema iniciando';
-      if (previewService) previewService.textContent = health.service || 'Zentrix Web';
+      if (previewService) previewService.textContent = 'Zentrix Web';
       previewLastSync.textContent = health.lastSync || 'Aguardando primeira sincronizacao';
     } catch (error) {
       previewStatus.className = 'status-pill warning';

@@ -44,8 +44,8 @@ public class PanelController {
     }
 
     @GetMapping("/audit")
-    public List<Map<String, Object>> audit() {
-        return dataService.auditEvents();
+    public List<Map<String, Object>> audit(@RequestParam(defaultValue = "today") String period) {
+        return dataService.auditEvents(period);
     }
 
     @GetMapping("/backups")
@@ -69,8 +69,8 @@ public class PanelController {
     }
 
     @GetMapping("/reports")
-    public Map<String, Object> reports() {
-        return dataService.reports();
+    public Map<String, Object> reports(@RequestParam(defaultValue = "today") String period) {
+        return dataService.reports(period);
     }
 
     @GetMapping("/settings")

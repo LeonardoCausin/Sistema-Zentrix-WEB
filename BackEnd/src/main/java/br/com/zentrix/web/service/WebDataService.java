@@ -140,14 +140,15 @@ public class WebDataService {
         ));
     }
 
-    public List<Map<String, Object>> auditEvents() {
+    public List<Map<String, Object>> auditEvents(String period) {
         initializer.ensureReady();
         return jdbcTemplate.query("""
                 SELECT acao, usuario, entity_type, entity_id, details, created_at
                 FROM audit_log
+                WHERE %s
                 ORDER BY created_at DESC, id DESC
                 LIMIT 50
-                """, (rs, rowNum) -> {
+                """.formatted(periodCondition("created_at", period)), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("action", rs.getString("acao"));
             row.put("time", rs.getTimestamp("created_at") == null ? "-" : rs.getTimestamp("created_at").toLocalDateTime().toLocalTime().toString());
@@ -227,15 +228,17 @@ public class WebDataService {
         );
     }
 
-    public Map<String, Object> reports() {
+    public Map<String, Object> reports(String period) {
         initializer.ensureReady();
+        String salesPeriod = salesPeriodCondition(period);
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("sales", number("SELECT COUNT(*) FROM sales"));
+        response.put("period", normalizePeriod(period));
+        response.put("sales", number("SELECT COUNT(*) FROM sales s WHERE " + salesPeriod));
         response.put("products", number("SELECT COUNT(*) FROM products"));
         response.put("clients", number("SELECT COUNT(*) FROM clients"));
-        response.put("cashSessions", number("SELECT COUNT(*) FROM cash_sessions"));
+        response.put("cashSessions", number("SELECT COUNT(*) FROM cash_sessions WHERE " + periodCondition("opened_at", period)));
         response.put("stockAlerts", number("SELECT COUNT(*) FROM products WHERE stock <= min_stock"));
-        response.put("auditEvents", number("SELECT COUNT(*) FROM audit_log"));
+        response.put("auditEvents", number("SELECT COUNT(*) FROM audit_log WHERE " + periodCondition("created_at", period)));
         response.put("lastSync", lastSync());
         return response;
     }
@@ -316,7 +319,7 @@ public class WebDataService {
         }
         return switch (period.trim().toLowerCase(Locale.ROOT)) {
             case "7d", "7", "week" -> "7d";
-            case "month", "mes", "mês" -> "month";
+            case "month", "mes" -> "month";
             case "year", "ano" -> "year";
             default -> "today";
         };

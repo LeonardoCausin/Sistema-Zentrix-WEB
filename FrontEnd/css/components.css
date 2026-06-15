@@ -93,6 +93,20 @@
   min-width: 0;
 }
 
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .preview-total {
   display: grid;
   gap: 8px;
@@ -204,6 +218,34 @@
   font-weight: 800;
   line-height: 1.35;
   padding: 10px 12px;
+}
+
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field .text-field {
+  padding-right: 82px;
+}
+
+.ghost-field-button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--accent-blue);
+  background: transparent;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 900;
+  transform: translateY(-50%);
+}
+
+.ghost-field-button:hover {
+  background: var(--bg-header);
 }
 
 .progress-track {

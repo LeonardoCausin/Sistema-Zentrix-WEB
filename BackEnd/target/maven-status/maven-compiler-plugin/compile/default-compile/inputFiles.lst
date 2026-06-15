@@ -1,5 +1,6 @@
 C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\api\ZentrixWebApplication.java
 C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\config\ApiAuthInterceptor.java
+C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\config\ApiExceptionHandler.java
 C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\config\DatabaseConfig.java
 C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\config\WebConfig.java
 C:\Users\Leonardo\Desktop\Sistema Zentrix WEB\BackEnd\src\main\java\br\com\zentrix\web\controller\AuthController.java

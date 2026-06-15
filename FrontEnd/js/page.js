@@ -200,14 +200,14 @@
   }
 
   async function renderAudit() {
-    const rows = await window.zentrixApi("/audit");
+    const rows = await window.zentrixApi("/audit" + periodQuery());
     renderTablePage("Auditoria", "Eventos sincronizados do PDV.", ["Acao", "Horario", "Usuario", "Descricao", "Detalhes"], rows, (row) => [
       row.action, row.time, row.user || "-", row.description, row.value || "-"
     ]);
   }
 
   async function renderReports() {
-    const data = await window.zentrixApi("/reports");
+    const data = await window.zentrixApi("/reports" + periodQuery());
     renderShell("Relatorios", "Resumo das entidades sincronizadas.", `
       <div class="grid metrics-grid">
         ${metricCard("Vendas", data.sales)}
@@ -217,7 +217,7 @@
         ${metricCard("Alertas de estoque", data.stockAlerts)}
         ${metricCard("Auditoria", data.auditEvents)}
       </div>
-      <section class="panel" style="margin-top: 16px"><strong>Ultima sincronizacao</strong><p>${esc(data.lastSync || "Aguardando envio")}</p></section>
+      <section class="panel" style="margin-top: 16px"><strong>Ultima atualizacao</strong><p>${esc(data.lastSync || "Aguardando envio")}</p></section>
     `);
   }
 
@@ -259,14 +259,17 @@
   }
 
   function renderTablePage(title, subtitle, headers, rows, mapper) {
+    const exportId = "export-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const exportRows = rows.map((row) => mapper(row).map(cleanCellValue));
     renderShell(title, subtitle, `
       <section class="table-panel">
-        <div class="table-title"><h3>${esc(title)}</h3><span>${rows.length} registros</span></div>
+        <div class="table-title"><h3>${esc(title)}</h3><div class="table-actions"><span>${rows.length} registros</span><button class="button btn-light compact-button" id="${esc(exportId)}" type="button">Exportar CSV</button></div></div>
         <div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>
           ${rows.map((row) => `<tr>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Nenhum registro sincronizado.")}</td></tr>`}
         </tbody></table></div>
       </section>
     `);
+    setupCsvExport(exportId, title, headers, exportRows);
   }
 
   function renderShell(title, subtitle, content) {
@@ -364,7 +367,6 @@
       "hoje": "today",
       "7 dias": "7d",
       "mes": "month",
-      "mês": "month",
       "ano": "year"
     };
     control.querySelectorAll("button").forEach((button) => {
@@ -399,6 +401,31 @@
     const percent = Number(value);
     if (!Number.isFinite(percent)) return 0;
     return Math.max(0, Math.min(100, percent));
+  }
+
+  function setupCsvExport(buttonId, title, headers, rows) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.disabled = rows.length === 0;
+    button.addEventListener("click", () => {
+      const csv = [headers, ...rows].map((row) => row.map(csvCell).join(";")).join("\n");
+      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = title.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    });
+  }
+
+  function cleanCellValue(value) {
+    return String(value ?? "").replace(/<[^>]+>/g, "");
+  }
+
+  function csvCell(value) {
+    return '"' + String(value ?? "").replace(/"/g, '""') + '"';
   }
 
   function isTrustedTag(value) {
