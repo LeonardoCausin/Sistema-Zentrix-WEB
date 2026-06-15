@@ -10,7 +10,7 @@
   let currentPeriod = localStorage.getItem("zentrix-period") || "today";
 
   if (body.classList.contains("is-authenticated") && !session) {
-    const loginPath = location.pathname.includes("/pages/") ? "../index.html" : "index.html";
+    const loginPath = location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html";
     window.location.replace(loginPath);
     return;
   }
@@ -56,7 +56,7 @@
     });
     if (response.status === 401) {
       localStorage.removeItem("zentrix-session");
-      window.location.replace(location.pathname.includes("/pages/") ? "../index.html" : "index.html");
+      window.location.replace(location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html");
       throw new Error("Sessao expirada");
     }
     if (!response.ok) {
