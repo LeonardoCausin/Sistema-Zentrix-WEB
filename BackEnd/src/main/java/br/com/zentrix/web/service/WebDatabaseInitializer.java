@@ -28,7 +28,8 @@ public class WebDatabaseInitializer {
         try {
             ensureReady();
         } catch (Exception e) {
-            log.warn("Banco web ainda nao esta pronto. A API sobe e tentara novamente na sincronizacao: {}", e.getMessage());
+            log.error("Zentrix Web nao iniciou porque o banco web nao esta pronto: {}", e.getMessage(), e);
+            throw new IllegalStateException("Banco web indisponivel. Verifique MySQL, .env e permissoes do usuario.", e);
         }
     }
 
@@ -39,6 +40,17 @@ public class WebDatabaseInitializer {
     }
 
     private void ensureDatabaseExists() {
+        SQLException databaseConnectionError = null;
+        try (var ignored = DriverManager.getConnection(
+                settings.jdbcUrl(),
+                settings.getUsername(),
+                settings.getPassword()
+        )) {
+            return;
+        } catch (SQLException e) {
+            databaseConnectionError = e;
+        }
+
         try (var connection = DriverManager.getConnection(
                 settings.serverJdbcUrl(),
                 settings.getUsername(),
@@ -47,7 +59,10 @@ public class WebDatabaseInitializer {
             statement.executeUpdate("CREATE DATABASE IF NOT EXISTS `" + settings.getName()
                     + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         } catch (SQLException e) {
-            throw new IllegalStateException("Nao foi possivel criar/acessar o banco web " + settings.getName(), e);
+            e.addSuppressed(databaseConnectionError);
+            throw new IllegalStateException("Nao foi possivel criar/acessar o banco web " + settings.getName()
+                    + " em " + settings.getHost() + ":" + settings.getPort()
+                    + " com o usuario " + settings.getUsername(), e);
         }
     }
 
