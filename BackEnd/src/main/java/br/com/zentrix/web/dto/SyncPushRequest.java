@@ -7,6 +7,12 @@ import java.util.List;
 import java.util.Map;
 
 public record SyncPushRequest(
+        String tenantId,
+        String tenantName,
+        String storeId,
+        String storeName,
+        String deviceId,
+        String deviceName,
         @NotBlank String sourceId,
         String mode,
         OffsetDateTime generatedAt,

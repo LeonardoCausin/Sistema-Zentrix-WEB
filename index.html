@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zentrix Web | Login</title>
+  <title>Zentrix AppGestão | Login</title>
   <script>
     (function () {
       try {
@@ -15,34 +15,34 @@
     })();
   </script>
   <style>
-    html[data-theme="dark"], html[data-theme="dark"] body { background: #0a0c10; color: #f0f3f8; }
-    html[data-theme="light"], html[data-theme="light"] body { background: #f8fafc; color: #0f172a; }
+    html[data-theme="dark"], html[data-theme="dark"] body { background: #081323; color: #eef6ff; }
+    html[data-theme="light"], html[data-theme="light"] body { background: #f4f7fb; color: #0f172a; }
   </style>
-  <link rel="stylesheet" href="FrontEnd/css/theme.css?v=20260615-root" />
-  <link rel="stylesheet" href="FrontEnd/css/base.css?v=20260615-root" />
-  <link rel="stylesheet" href="FrontEnd/css/layout.css?v=20260615-root" />
-  <link rel="stylesheet" href="FrontEnd/css/components.css?v=20260615-root" />
-  <link rel="stylesheet" href="FrontEnd/css/pages.css?v=20260615-root" />
-  <link rel="stylesheet" href="FrontEnd/css/responsive.css?v=20260615-root" />
+  <link rel="stylesheet" href="FrontEnd/css/theme.css?v=20260617-appgestao" />
+  <link rel="stylesheet" href="FrontEnd/css/base.css?v=20260617-appgestao" />
+  <link rel="stylesheet" href="FrontEnd/css/layout.css?v=20260617-appgestao" />
+  <link rel="stylesheet" href="FrontEnd/css/components.css?v=20260617-appgestao" />
+  <link rel="stylesheet" href="FrontEnd/css/pages.css?v=20260617-appgestao" />
+  <link rel="stylesheet" href="FrontEnd/css/responsive.css?v=20260617-appgestao" />
 </head>
 <body class="is-login">
-  <section class="login-shell" aria-label="Login Zentrix Web">
+  <section class="login-shell" aria-label="Login Zentrix AppGestão">
     <div class="login-window">
       <div class="login-content">
         <div class="login-brand">
           <img class="brand-logo logo-light" src="FrontEnd/assets/logo_light.png" alt="Zentrix" />
           <img class="brand-logo logo-dark" src="FrontEnd/assets/logo_dark.png" alt="Zentrix" />
-          <span class="app-version">Painel administrativo online</span>
+          <span class="app-version">Gestão online conectada ao Zentrix PDV</span>
         </div>
 
         <div class="login-copy">
-          <h1>Entre no Zentrix Web</h1>
-          <p>Acompanhe vendas, financeiro, produtos e movimentacoes do seu PDV em um painel simples e seguro.</p>
+          <h1>Acesse o Zentrix AppGestão</h1>
+          <p>Gerencie vendas, estoque, caixa e financeiro do seu PDV em tempo real.</p>
         </div>
 
         <form class="login-form" id="loginForm" action="FrontEnd/pages/dashboard.html">
           <label class="field">
-            <span>Usuario</span>
+            <span>Usuário</span>
             <input class="text-field" id="loginUser" name="email" type="text" autocomplete="username" required />
           </label>
 
@@ -50,7 +50,7 @@
             <span>Senha</span>
             <span class="password-field">
               <input class="text-field" id="loginPassword" name="password" type="password" autocomplete="current-password" required />
-              <button class="ghost-field-button" id="togglePasswordButton" type="button">Mostrar</button>
+              <button class="ghost-field-button" id="togglePasswordButton" type="button" aria-label="Mostrar ou ocultar senha">Mostrar</button>
             </span>
           </label>
 
@@ -64,20 +64,40 @@
             <a class="link-button" href="FrontEnd/pages/configuracoes.html">Recuperar senha</a>
           </div>
 
-          <button class="button btn-primary full-width" type="submit">Acessar painel</button>
+          <button class="button btn-primary full-width" type="submit">Acessar AppGestão</button>
+          <div class="trust-strip">Acesso seguro para clientes Zentrix.</div>
         </form>
       </div>
     </div>
 
-    <aside class="login-preview" aria-hidden="true">
+    <aside class="login-preview" aria-label="Zentrix PDV conectado ao AppGestão">
       <img class="preview-image" src="FrontEnd/assets/ChatGPT Image 11 de jun. de 2026, 17_03_44.png" alt="" />
       <div class="login-hero-copy">
-        <span>Zentrix PDV + Web</span>
-        <h2>Transforme seus dados em decisoes inteligentes.</h2>
-        <p>Seu caixa continua vendendo, e o painel acompanha os resultados com clareza.</p>
+        <span>Zentrix PDV + AppGestão</span>
+        <h2>Controle seu negócio de qualquer lugar.</h2>
+        <p>Seu caixa continua vendendo, enquanto o painel acompanha tudo em tempo real.</p>
+      </div>
+      <div class="login-stats" aria-hidden="true">
+        <div class="floating-card">
+          <span>Vendas hoje</span>
+          <strong>R$ 24.680</strong>
+        </div>
+        <div class="floating-card">
+          <span>Pedidos</span>
+          <strong>1.248</strong>
+        </div>
+        <div class="floating-card">
+          <span>Lucro estimado</span>
+          <strong>R$ 8.420</strong>
+        </div>
+        <div class="floating-card">
+          <span id="previewService">PDV conectado</span>
+          <strong id="previewStatus" class="status-pill success">Online</strong>
+          <span id="previewLastSync">Última sincronização: agora</span>
+        </div>
       </div>
     </aside>
   </section>
-  <script src="FrontEnd/js/login.js?v=20260615-root"></script>
+  <script src="FrontEnd/js/login.js?v=20260617-appgestao"></script>
 </body>
 </html>

@@ -38,16 +38,26 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns(
                         "/api/dashboard",
                         "/api/sales",
+                        "/api/sales/**",
                         "/api/products",
+                        "/api/cash/current",
                         "/api/cash-sessions",
+                        "/api/cash-sessions/**",
                         "/api/stock/**",
                         "/api/audit",
                         "/api/backups",
+                        "/api/backups/**",
                         "/api/clients",
                         "/api/employees",
+                        "/api/employees/**",
                         "/api/finance",
                         "/api/reports",
-                        "/api/settings"
+                        "/api/reports/**",
+                        "/api/settings",
+                        "/api/stores",
+                        "/api/alerts",
+                        "/api/license",
+                        "/api/devices"
                 );
     }
 }

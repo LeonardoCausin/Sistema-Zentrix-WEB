@@ -10,12 +10,9 @@
   }
 
   .three-column,
-  .entity-grid {
+  .entity-grid,
+  .module-grid {
     grid-template-columns: repeat(2, minmax(220px, 1fr));
-  }
-
-  .filters {
-    grid-template-columns: repeat(3, minmax(145px, 1fr));
   }
 
   .topbar {
@@ -37,6 +34,10 @@
     min-height: auto;
   }
 
+  .login-window::before {
+    inset: 16px;
+  }
+
   .login-content {
     width: min(100%, 520px);
     padding: 34px 22px;
@@ -44,19 +45,24 @@
 
   .login-copy h1 {
     max-width: none;
-    font-size: 28px;
   }
 
   .login-preview {
-    min-height: 430px;
+    min-height: 520px;
   }
 
   .login-hero-copy {
-    padding: 28px 22px;
+    align-self: start;
+    padding: 34px 22px;
   }
 
   .login-hero-copy h2 {
     max-width: 13ch;
+  }
+
+  .login-stats {
+    right: 22px;
+    bottom: 22px;
   }
 
   .workarea {
@@ -67,7 +73,7 @@
     position: fixed;
     top: var(--window-bar-height);
     left: 0;
-    width: var(--sidebar-width);
+    width: min(var(--sidebar-width), calc(100vw - 44px));
     height: calc(100dvh - var(--window-bar-height));
     max-height: calc(100dvh - var(--window-bar-height));
     transform: translateX(-100%);
@@ -88,7 +94,7 @@
     inset: var(--window-bar-height) 0 0;
     z-index: 22;
     display: none;
-    background: rgba(0, 0, 0, 0.42);
+    background: rgba(2, 8, 23, 0.54);
   }
 
   body.sidebar-open .sidebar-backdrop {
@@ -100,11 +106,11 @@
     top: 8px;
     right: 8px;
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     place-items: center;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     background: var(--bg-card);
     font-weight: 900;
@@ -115,18 +121,27 @@
   }
 
   .topbar {
-    padding: 0 14px;
+    padding: 12px 14px;
   }
 
   .topbar-tools {
     display: none;
   }
+
+  .dashboard-hero,
+  .cash-hero {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
   .window-title span:last-child,
-  .status-pill#syncBadge {
+  .window-toolbar .status-pill {
     display: none;
+  }
+
+  .window-bar {
+    padding: 0 10px;
   }
 
   .view-host {
@@ -142,9 +157,13 @@
   .stat-grid,
   .three-column,
   .entity-grid,
-  .filters,
+  .module-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-hero h1 {
+    max-width: 12ch;
   }
 
   .bar-chart {
@@ -158,29 +177,62 @@
   }
 
   .list-item,
-  .alert-item {
+  .alert-item,
+  .rank-row,
+  .timeline-item {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
   .list-item > :last-child,
-  .alert-item > :last-child {
+  .alert-item > :last-child,
+  .rank-row > :last-child,
+  .timeline-item > :last-child {
     grid-column: 2;
     justify-self: start;
   }
 
   .payment-row {
-    grid-template-columns: 80px minmax(0, 1fr);
+    grid-template-columns: 86px minmax(0, 1fr);
   }
 
   .payment-row > strong:last-child,
   .payment-row > span:last-child {
     grid-column: 2;
   }
+
+  .entity-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .login-stats {
+    position: relative;
+    inset: auto;
+    grid-template-columns: 1fr;
+    width: auto;
+    margin: 0 16px 18px;
+    align-self: end;
+  }
 }
 
 @media (max-width: 460px) {
+  :root {
+    --window-bar-height: 50px;
+  }
+
   .window-toolbar .button {
     display: none;
+  }
+
+  .theme-toggle {
+    min-width: 58px;
+  }
+
+  .login-window {
+    padding: 12px;
+  }
+
+  .login-window::before {
+    inset: 10px;
   }
 
   .login-content {
@@ -188,15 +240,27 @@
   }
 
   .login-preview {
-    min-height: 360px;
+    min-height: 430px;
   }
 
   .login-hero-copy h2 {
-    font-size: 32px;
+    font-size: 31px;
   }
 
   .preview-total strong,
   .metric-value {
     font-size: 24px;
+  }
+
+  .page-heading h2 {
+    font-size: 18px;
+  }
+
+  .store-tabs button {
+    min-width: 128px;
+  }
+
+  .metric-card {
+    min-height: 132px;
   }
 }

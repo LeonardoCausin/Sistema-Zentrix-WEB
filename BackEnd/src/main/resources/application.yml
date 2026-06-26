@@ -3,7 +3,9 @@ server:
 
 spring:
   config:
-    import: "optional:file:.env[.properties]"
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:BackEnd/.env[.properties]"
   application:
     name: zentrix-web-api
 

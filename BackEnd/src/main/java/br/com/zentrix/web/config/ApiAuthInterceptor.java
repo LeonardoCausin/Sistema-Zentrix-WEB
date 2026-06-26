@@ -1,6 +1,7 @@
 package br.com.zentrix.web.config;
 
 import br.com.zentrix.web.service.AuthTokenService;
+import br.com.zentrix.web.service.AuthContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -30,10 +31,17 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
         }
 
         String token = authorization.substring("Bearer ".length()).trim();
-        if (authTokenService.validate(token).isEmpty()) {
-            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso invalido ou expirado");
+        var session = authTokenService.validate(token);
+        if (session.isEmpty()) {
+            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso inválido ou expirado");
             return false;
         }
+        AuthContext.set(session.get());
         return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+        AuthContext.clear();
     }
 }

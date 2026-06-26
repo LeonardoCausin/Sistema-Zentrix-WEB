@@ -53,10 +53,10 @@
       localStorage.setItem('zentrix-session', JSON.stringify(session));
       window.location.href = form.getAttribute('action') || 'pages/dashboard.html';
     } catch (error) {
-      showError(error.message || 'Nao foi possivel entrar no painel.');
+      showError(error.message || 'Não foi possível entrar no painel.');
       if (submitButton) {
         submitButton.disabled = false;
-        submitButton.textContent = 'Entrar no painel';
+        submitButton.textContent = 'Acessar AppGestão';
       }
     }
   });
@@ -75,12 +75,15 @@
 
         if (!response.ok) {
           if (response.status === 401) {
-            throw new Error('Usuario ou senha invalidos.');
+            throw new Error('Usuário ou senha inválidos.');
           }
           if (response.status === 429) {
             throw new Error('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
           }
-          throw new Error('Nao foi possivel entrar agora. Verifique se o sistema esta aberto.');
+          if (response.status === 403) {
+            throw new Error('Acesso restrito a usuários administradores.');
+          }
+          throw new Error('Não foi possível entrar agora. Verifique se o sistema está aberto.');
         }
 
         localStorage.setItem('zentrix-api-base', base);
@@ -90,7 +93,7 @@
       }
     }
 
-    throw lastError || new Error('Nao foi possivel conectar ao sistema.');
+    throw lastError || new Error('Não foi possível conectar ao sistema.');
   }
 
   async function refreshPreview() {
@@ -100,12 +103,12 @@
       const health = await response.json();
       previewStatus.className = 'status-pill ' + (health.status === 'UP' ? 'success' : 'warning');
       previewStatus.textContent = health.status === 'UP' ? 'Sistema online' : 'Sistema iniciando';
-      if (previewService) previewService.textContent = 'Zentrix Web';
-      previewLastSync.textContent = health.lastSync || 'Aguardando primeira sincronizacao';
+      if (previewService) previewService.textContent = 'Zentrix AppGestão';
+      previewLastSync.textContent = health.lastSync || 'Aguardando primeira sincronização';
     } catch (error) {
       previewStatus.className = 'status-pill warning';
       previewStatus.textContent = 'Sistema offline';
-      previewLastSync.textContent = 'Abra o Zentrix Web';
+      previewLastSync.textContent = 'Abra o Zentrix AppGestão';
     }
   }
 
@@ -122,7 +125,7 @@
         lastError = error;
       }
     }
-    throw lastError || new Error('Sistema indisponivel');
+    throw lastError || new Error('Sistema indisponível');
   }
 
   function apiBases() {

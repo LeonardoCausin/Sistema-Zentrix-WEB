@@ -5,7 +5,9 @@ import jakarta.annotation.PostConstruct;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,6 +16,23 @@ import org.springframework.stereotype.Service;
 @Service
 public class WebDatabaseInitializer {
     private static final Logger log = LoggerFactory.getLogger(WebDatabaseInitializer.class);
+    private static final String LEGACY_TENANT_ID = "legacy";
+    private static final String LEGACY_DEVICE_ID = "legacy-device";
+    private static final Map<String, List<String>> SCOPED_PRIMARY_KEYS = Map.ofEntries(
+            Map.entry("users", List.of("tenant_id", "store_id", "username")),
+            Map.entry("suppliers", List.of("tenant_id", "store_id", "id")),
+            Map.entry("clients", List.of("tenant_id", "store_id", "id")),
+            Map.entry("products", List.of("tenant_id", "store_id", "code")),
+            Map.entry("stock_movements", List.of("tenant_id", "store_id", "id")),
+            Map.entry("cash_sessions", List.of("tenant_id", "store_id", "id")),
+            Map.entry("cash_movements", List.of("tenant_id", "store_id", "id")),
+            Map.entry("sales", List.of("tenant_id", "store_id", "id")),
+            Map.entry("sale_items", List.of("tenant_id", "store_id", "id")),
+            Map.entry("sale_cancellations", List.of("tenant_id", "store_id", "id")),
+            Map.entry("comandas", List.of("tenant_id", "store_id", "id")),
+            Map.entry("comanda_itens", List.of("tenant_id", "store_id", "id")),
+            Map.entry("audit_log", List.of("tenant_id", "store_id", "id"))
+    );
 
     private final DatabaseSettings settings;
     private final JdbcTemplate jdbcTemplate;
@@ -28,8 +47,8 @@ public class WebDatabaseInitializer {
         try {
             ensureReady();
         } catch (Exception e) {
-            log.error("Zentrix Web nao iniciou porque o banco web nao esta pronto: {}", e.getMessage(), e);
-            throw new IllegalStateException("Banco web indisponivel. Verifique MySQL, .env e permissoes do usuario.", e);
+            log.error("Zentrix AppGestão não iniciou porque o banco web não está pronto: {}", e.getMessage(), e);
+            throw new IllegalStateException("Banco web indisponível. Verifique MySQL, .env e permissões do usuário.", e);
         }
     }
 
@@ -60,9 +79,9 @@ public class WebDatabaseInitializer {
                     + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         } catch (SQLException e) {
             e.addSuppressed(databaseConnectionError);
-            throw new IllegalStateException("Nao foi possivel criar/acessar o banco web " + settings.getName()
+            throw new IllegalStateException("Não foi possível criar/acessar o banco web " + settings.getName()
                     + " em " + settings.getHost() + ":" + settings.getPort()
-                    + " com o usuario " + settings.getUsername(), e);
+                    + " com o usuário " + settings.getUsername(), e);
         }
     }
 
@@ -70,6 +89,9 @@ public class WebDatabaseInitializer {
         for (String ddl : schemaStatements()) {
             jdbcTemplate.execute(ddl);
         }
+        migrateTenantScopedTables();
+        migrateDomainColumns();
+        seedTenantMetadataFromExistingData();
     }
 
     private void ensureValidIdentifier(String value) {
@@ -81,8 +103,71 @@ public class WebDatabaseInitializer {
     private List<String> schemaStatements() {
         return List.of(
                 """
+                CREATE TABLE IF NOT EXISTS tenants (
+                    id VARCHAR(80) NOT NULL,
+                    name VARCHAR(180) NOT NULL,
+                    document VARCHAR(40),
+                    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    INDEX idx_tenants_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS tenant_stores (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    id VARCHAR(80) NOT NULL,
+                    name VARCHAR(180) NOT NULL,
+                    source_id VARCHAR(120),
+                    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, id),
+                    INDEX idx_tenant_stores_source (tenant_id, source_id),
+                    INDEX idx_tenant_stores_status (tenant_id, status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS tenant_devices (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    id VARCHAR(120) NOT NULL,
+                    name VARCHAR(180),
+                    source_id VARCHAR(120),
+                    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    last_seen_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_tenant_devices_source (tenant_id, store_id, source_id),
+                    INDEX idx_tenant_devices_seen (tenant_id, store_id, last_seen_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS activation_codes (
+                    code VARCHAR(20) NOT NULL,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    store_name VARCHAR(180) NOT NULL,
+                    source_id VARCHAR(120),
+                    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    expires_at DATETIME NOT NULL,
+                    used_at DATETIME NULL,
+                    used_device_id VARCHAR(120) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (code),
+                    INDEX idx_activation_codes_scope (tenant_id, store_id, status),
+                    INDEX idx_activation_codes_expires (status, expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS sync_runs (
                     id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy',
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
+                    device_id VARCHAR(120) NULL,
                     source_id VARCHAR(120) NOT NULL,
                     mode VARCHAR(20) NOT NULL,
                     status VARCHAR(20) NOT NULL,
@@ -94,22 +179,21 @@ public class WebDatabaseInitializer {
                     message TEXT,
                     PRIMARY KEY (id),
                     INDEX idx_sync_runs_received_at (received_at),
-                    INDEX idx_sync_runs_source (source_id)
+                    INDEX idx_sync_runs_scope (tenant_id, store_id, received_at),
+                    INDEX idx_sync_runs_source (tenant_id, store_id, source_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
-                """
-                CREATE TABLE IF NOT EXISTS users (
+                scopedTable("users", """
                     username VARCHAR(80) NOT NULL,
                     password VARCHAR(120) NOT NULL,
                     display_name VARCHAR(140) NOT NULL,
                     role VARCHAR(30) NOT NULL DEFAULT 'OPERATOR',
                     active BOOLEAN NOT NULL DEFAULT TRUE,
-                    PRIMARY KEY (username),
-                    INDEX idx_users_active (active)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS suppliers (
+                    PRIMARY KEY (tenant_id, store_id, username),
+                    INDEX idx_users_login (tenant_id, username, active),
+                    INDEX idx_users_active (tenant_id, store_id, active)
+                """),
+                scopedTable("suppliers", """
                     id INT NOT NULL,
                     name VARCHAR(180) NOT NULL,
                     cnpj VARCHAR(30),
@@ -117,12 +201,10 @@ public class WebDatabaseInitializer {
                     email VARCHAR(180),
                     address VARCHAR(255),
                     created_at DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_suppliers_name (name)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS clients (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_suppliers_name (tenant_id, store_id, name)
+                """),
+                scopedTable("clients", """
                     id INT NOT NULL,
                     name VARCHAR(180) NOT NULL,
                     cpf_cnpj VARCHAR(30),
@@ -130,12 +212,10 @@ public class WebDatabaseInitializer {
                     email VARCHAR(180),
                     address VARCHAR(255),
                     created_at DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_clients_name (name)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS products (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_clients_name (tenant_id, store_id, name)
+                """),
+                scopedTable("products", """
                     code VARCHAR(80) NOT NULL,
                     description VARCHAR(255) NOT NULL,
                     unit VARCHAR(20) NOT NULL DEFAULT 'UN',
@@ -143,13 +223,11 @@ public class WebDatabaseInitializer {
                     stock DECIMAL(15,3) NOT NULL DEFAULT 0.000,
                     supplier_id INT NULL,
                     min_stock DECIMAL(15,3) NOT NULL DEFAULT 0.000,
-                    PRIMARY KEY (code),
-                    INDEX idx_products_description (description),
-                    INDEX idx_products_supplier (supplier_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS stock_movements (
+                    PRIMARY KEY (tenant_id, store_id, code),
+                    INDEX idx_products_description (tenant_id, store_id, description),
+                    INDEX idx_products_supplier (tenant_id, store_id, supplier_id)
+                """),
+                scopedTable("stock_movements", """
                     id INT NOT NULL,
                     product_code VARCHAR(80) NOT NULL,
                     type VARCHAR(30) NOT NULL,
@@ -157,13 +235,11 @@ public class WebDatabaseInitializer {
                     reason VARCHAR(255),
                     user VARCHAR(80),
                     created_at DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_stock_movements_product (product_code),
-                    INDEX idx_stock_movements_created_at (created_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS cash_sessions (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_stock_movements_product (tenant_id, store_id, product_code),
+                    INDEX idx_stock_movements_created_at (tenant_id, store_id, created_at)
+                """),
+                scopedTable("cash_sessions", """
                     id INT NOT NULL,
                     cash_id VARCHAR(40) NOT NULL,
                     operator VARCHAR(140) NOT NULL,
@@ -172,25 +248,21 @@ public class WebDatabaseInitializer {
                     opened_at DATETIME NULL,
                     closed_at DATETIME NULL,
                     is_open BOOLEAN NOT NULL DEFAULT TRUE,
-                    PRIMARY KEY (id),
-                    INDEX idx_cash_sessions_cash_open (cash_id, is_open),
-                    INDEX idx_cash_sessions_opened_at (opened_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS cash_movements (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_cash_sessions_cash_open (tenant_id, store_id, cash_id, is_open),
+                    INDEX idx_cash_sessions_opened_at (tenant_id, store_id, opened_at)
+                """),
+                scopedTable("cash_movements", """
                     id INT NOT NULL,
                     session_id INT NOT NULL,
                     type VARCHAR(30) NOT NULL,
                     value DECIMAL(15,2) NOT NULL,
                     observation VARCHAR(255),
                     date_time DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_cash_movements_session (session_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS sales (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_cash_movements_session (tenant_id, store_id, session_id)
+                """),
+                scopedTable("sales", """
                     id INT NOT NULL,
                     session_id INT NOT NULL,
                     operator VARCHAR(140) NOT NULL,
@@ -200,50 +272,42 @@ public class WebDatabaseInitializer {
                     amount_paid DECIMAL(15,2),
                     status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
                     date_time DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_sales_session (session_id),
-                    INDEX idx_sales_date_time (date_time),
-                    INDEX idx_sales_status (status)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS sale_items (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_sales_session (tenant_id, store_id, session_id),
+                    INDEX idx_sales_date_time (tenant_id, store_id, date_time),
+                    INDEX idx_sales_status (tenant_id, store_id, status)
+                """),
+                scopedTable("sale_items", """
                     id INT NOT NULL,
                     sale_id INT NOT NULL,
                     product_code VARCHAR(80) NOT NULL,
                     quantity DECIMAL(15,3) NOT NULL,
                     unit_price DECIMAL(15,2) NOT NULL,
                     discount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-                    PRIMARY KEY (id),
-                    INDEX idx_sale_items_sale (sale_id),
-                    INDEX idx_sale_items_product (product_code)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS sale_cancellations (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_sale_items_sale (tenant_id, store_id, sale_id),
+                    INDEX idx_sale_items_product (tenant_id, store_id, product_code)
+                """),
+                scopedTable("sale_cancellations", """
                     id INT NOT NULL,
                     sale_id INT NOT NULL,
                     reason VARCHAR(255) NOT NULL,
                     cancelled_by VARCHAR(80) NOT NULL,
                     cancelled_at DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_sale_cancellations_sale (sale_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS comandas (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_sale_cancellations_sale (tenant_id, store_id, sale_id)
+                """),
+                scopedTable("comandas", """
                     id INT NOT NULL,
                     nome_cliente VARCHAR(180) NOT NULL,
                     client_id INT NULL,
                     aberta BOOLEAN NOT NULL DEFAULT TRUE,
                     data_abertura DATETIME NULL,
                     data_fechamento DATETIME NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_comandas_aberta (aberta)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS comanda_itens (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_comandas_aberta (tenant_id, store_id, aberta)
+                """),
+                scopedTable("comanda_itens", """
                     id INT NOT NULL,
                     comanda_id INT NOT NULL,
                     descricao VARCHAR(255) NOT NULL,
@@ -251,12 +315,10 @@ public class WebDatabaseInitializer {
                     is_produto BOOLEAN NOT NULL DEFAULT FALSE,
                     product_code VARCHAR(80) NULL,
                     quantidade DECIMAL(15,3) NULL,
-                    PRIMARY KEY (id),
-                    INDEX idx_comanda_itens_comanda (comanda_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                """,
-                """
-                CREATE TABLE IF NOT EXISTS audit_log (
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_comanda_itens_comanda (tenant_id, store_id, comanda_id)
+                """),
+                scopedTable("audit_log", """
                     id INT NOT NULL,
                     usuario VARCHAR(80),
                     acao VARCHAR(80) NOT NULL,
@@ -264,10 +326,242 @@ public class WebDatabaseInitializer {
                     entity_id VARCHAR(80),
                     details TEXT,
                     created_at DATETIME NULL,
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_audit_log_created_at (tenant_id, store_id, created_at)
+                """)
+                ,
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'all',
+                    setting_key VARCHAR(120) NOT NULL,
+                    setting_value TEXT,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, store_id, setting_key),
+                    INDEX idx_app_settings_scope (tenant_id, store_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS licenses (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    plan_name VARCHAR(80) NOT NULL DEFAULT 'LEGACY',
+                    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    starts_at DATETIME NULL,
+                    expires_at DATETIME NULL,
+                    max_stores INT NOT NULL DEFAULT 0,
+                    max_devices INT NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
-                    INDEX idx_audit_log_created_at (created_at)
+                    INDEX idx_licenses_tenant (tenant_id, status),
+                    INDEX idx_licenses_expiration (status, expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS backup_runs (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
+                    device_id VARCHAR(120) NULL,
+                    source_id VARCHAR(120) NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'WAITING',
+                    total_rows INT NOT NULL DEFAULT 0,
+                    file_name VARCHAR(255) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    finished_at DATETIME NULL,
+                    message TEXT,
+                    PRIMARY KEY (id),
+                    INDEX idx_backup_runs_scope (tenant_id, store_id, created_at),
+                    INDEX idx_backup_runs_status (tenant_id, status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
         );
+    }
+
+    private String scopedTable(String tableName, String body) {
+        return """
+                CREATE TABLE IF NOT EXISTS %s (
+                    tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy',
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
+                    device_id VARCHAR(120) NULL,
+                    source_id VARCHAR(120) NOT NULL DEFAULT 'WEB',
+                %s
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """.formatted(tableName, body.indent(4).stripTrailing());
+    }
+
+    private void migrateTenantScopedTables() {
+        migrateSyncRuns();
+        for (Map.Entry<String, List<String>> entry : SCOPED_PRIMARY_KEYS.entrySet()) {
+            String tableName = entry.getKey();
+            ensureScopeColumns(tableName);
+            ensurePrimaryKey(tableName, entry.getValue());
+        }
+    }
+
+    private void migrateSyncRuns() {
+        ensureColumn("sync_runs", "tenant_id", "VARCHAR(80) NULL", "FIRST");
+        ensureColumn("sync_runs", "store_id", "VARCHAR(80) NULL", "AFTER tenant_id");
+        ensureColumn("sync_runs", "device_id", "VARCHAR(120) NULL", "AFTER store_id");
+        if (!columnExists("sync_runs", "source_id")) {
+            jdbcTemplate.execute("ALTER TABLE sync_runs ADD COLUMN source_id VARCHAR(120) NULL AFTER device_id");
+        }
+        jdbcTemplate.update("UPDATE sync_runs SET source_id = ? WHERE source_id IS NULL OR source_id = ''", "WEB");
+        jdbcTemplate.update("UPDATE sync_runs SET tenant_id = ? WHERE tenant_id IS NULL OR tenant_id = ''", LEGACY_TENANT_ID);
+        jdbcTemplate.update("UPDATE sync_runs SET store_id = source_id WHERE store_id IS NULL OR store_id = ''");
+        jdbcTemplate.update("UPDATE sync_runs SET device_id = ? WHERE device_id IS NULL OR device_id = ''", LEGACY_DEVICE_ID);
+        jdbcTemplate.execute("ALTER TABLE sync_runs MODIFY COLUMN tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy'");
+        jdbcTemplate.execute("ALTER TABLE sync_runs MODIFY COLUMN store_id VARCHAR(80) NOT NULL DEFAULT 'WEB'");
+        jdbcTemplate.execute("ALTER TABLE sync_runs MODIFY COLUMN device_id VARCHAR(120) NULL");
+        jdbcTemplate.execute("ALTER TABLE sync_runs MODIFY COLUMN source_id VARCHAR(120) NOT NULL");
+        jdbcTemplate.execute("ALTER TABLE sync_runs MODIFY COLUMN status VARCHAR(30) NOT NULL");
+    }
+
+    private void migrateDomainColumns() {
+        ensureColumn("audit_log", "risk_level", "VARCHAR(30) NULL", "AFTER created_at");
+        ensureColumn("audit_log", "previous_value", "TEXT NULL", "AFTER risk_level");
+        ensureColumn("audit_log", "new_value", "TEXT NULL", "AFTER previous_value");
+        ensureColumn("audit_log", "reason", "VARCHAR(255) NULL", "AFTER new_value");
+        ensureColumn("audit_log", "origin", "VARCHAR(80) NULL", "AFTER reason");
+        ensureColumn("audit_log", "ip_address", "VARCHAR(80) NULL", "AFTER origin");
+        ensureColumn("audit_log", "user_role", "VARCHAR(40) NULL", "AFTER ip_address");
+
+        ensureColumn("products", "cost_price", "DECIMAL(15,2) NOT NULL DEFAULT 0.00", "AFTER price");
+        ensureColumn("products", "category", "VARCHAR(120) NULL", "AFTER supplier_id");
+        ensureColumn("products", "barcode", "VARCHAR(80) NULL", "AFTER category");
+        ensureColumn("products", "ideal_stock", "DECIMAL(15,3) NOT NULL DEFAULT 0.000", "AFTER min_stock");
+        ensureColumn("products", "active", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER ideal_stock");
+        ensureColumn("products", "updated_at", "DATETIME NULL", "AFTER active");
+        ensureColumn("products", "deleted_at", "DATETIME NULL", "AFTER updated_at");
+
+        ensureColumn("clients", "birth_date", "DATE NULL", "AFTER created_at");
+        ensureColumn("clients", "active", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER birth_date");
+        ensureColumn("clients", "notes", "TEXT NULL", "AFTER active");
+        ensureColumn("clients", "loyalty_points", "INT NOT NULL DEFAULT 0", "AFTER notes");
+        ensureColumn("clients", "updated_at", "DATETIME NULL", "AFTER loyalty_points");
+        ensureColumn("clients", "deleted_at", "DATETIME NULL", "AFTER updated_at");
+
+        ensureColumn("users", "created_at", "DATETIME NULL", "AFTER active");
+        ensureColumn("users", "updated_at", "DATETIME NULL", "AFTER created_at");
+        ensureColumn("users", "last_login_at", "DATETIME NULL", "AFTER updated_at");
+        ensureColumn("users", "permissions_json", "TEXT NULL", "AFTER last_login_at");
+
+        ensureColumn("cash_sessions", "closing_balance", "DECIMAL(15,2) NULL", "AFTER opening_balance");
+        ensureColumn("cash_sessions", "expected_balance", "DECIMAL(15,2) NULL", "AFTER closing_balance");
+        ensureColumn("cash_sessions", "difference", "DECIMAL(15,2) NULL", "AFTER expected_balance");
+        ensureColumn("cash_sessions", "closed_by", "VARCHAR(80) NULL", "AFTER closed_at");
+        ensureColumn("cash_sessions", "close_reason", "VARCHAR(255) NULL", "AFTER closed_by");
+        ensureColumn("cash_sessions", "status", "VARCHAR(30) NOT NULL DEFAULT 'OPEN'", "AFTER is_open");
+
+        ensureColumn("stock_movements", "previous_stock", "DECIMAL(15,3) NULL", "AFTER quantity");
+        ensureColumn("stock_movements", "new_stock", "DECIMAL(15,3) NULL", "AFTER previous_stock");
+        ensureColumn("stock_movements", "origin", "VARCHAR(80) NULL", "AFTER new_stock");
+        ensureColumn("stock_movements", "reference_type", "VARCHAR(80) NULL", "AFTER origin");
+        ensureColumn("stock_movements", "reference_id", "VARCHAR(80) NULL", "AFTER reference_type");
+    }
+
+    private void ensureScopeColumns(String tableName) {
+        ensureColumn(tableName, "tenant_id", "VARCHAR(80) NULL", "FIRST");
+        ensureColumn(tableName, "store_id", "VARCHAR(80) NULL", "AFTER tenant_id");
+        ensureColumn(tableName, "device_id", "VARCHAR(120) NULL", "AFTER store_id");
+        if (!columnExists(tableName, "source_id")) {
+            jdbcTemplate.execute("ALTER TABLE `" + tableName + "` ADD COLUMN source_id VARCHAR(120) NULL AFTER device_id");
+        }
+        String fallbackSource = lastKnownSourceId();
+        jdbcTemplate.update("UPDATE `" + tableName + "` SET source_id = ? WHERE source_id IS NULL OR source_id = ''", fallbackSource);
+        jdbcTemplate.update("UPDATE `" + tableName + "` SET tenant_id = ? WHERE tenant_id IS NULL OR tenant_id = ''", LEGACY_TENANT_ID);
+        jdbcTemplate.update("UPDATE `" + tableName + "` SET store_id = source_id WHERE store_id IS NULL OR store_id = ''");
+        jdbcTemplate.update("UPDATE `" + tableName + "` SET device_id = ? WHERE device_id IS NULL OR device_id = ''", LEGACY_DEVICE_ID);
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy'");
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN store_id VARCHAR(80) NOT NULL DEFAULT 'WEB'");
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN device_id VARCHAR(120) NULL");
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN source_id VARCHAR(120) NOT NULL DEFAULT 'WEB'");
+    }
+
+    private void ensureColumn(String tableName, String columnName, String definition, String position) {
+        if (!columnExists(tableName, columnName)) {
+            jdbcTemplate.execute("ALTER TABLE `" + tableName + "` ADD COLUMN " + columnName + " " + definition + " " + position);
+        }
+    }
+
+    private void ensurePrimaryKey(String tableName, List<String> expectedColumns) {
+        List<String> currentColumns = primaryKeyColumns(tableName);
+        if (currentColumns.equals(expectedColumns)) {
+            return;
+        }
+        String expectedSql = expectedColumns.stream()
+                .map(column -> "`" + column + "`")
+                .reduce((left, right) -> left + ", " + right)
+                .orElseThrow();
+        String dropPrimary = currentColumns.isEmpty() ? "" : "DROP PRIMARY KEY, ";
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` " + dropPrimary + "ADD PRIMARY KEY (" + expectedSql + ")");
+    }
+
+    private void seedTenantMetadataFromExistingData() {
+        jdbcTemplate.update("""
+                INSERT INTO tenants (id, name, status)
+                SELECT DISTINCT tenant_id, IF(tenant_id = 'legacy', 'Cliente legado', tenant_id), 'ACTIVE'
+                FROM sync_runs
+                WHERE tenant_id IS NOT NULL AND tenant_id <> ''
+                ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO tenant_stores (tenant_id, id, name, source_id, status)
+                SELECT tenant_id, store_id, store_id, MAX(source_id), 'ACTIVE'
+                FROM sync_runs
+                WHERE tenant_id IS NOT NULL AND tenant_id <> ''
+                  AND store_id IS NOT NULL AND store_id <> ''
+                GROUP BY tenant_id, store_id
+                ON DUPLICATE KEY UPDATE
+                    source_id = VALUES(source_id),
+                    updated_at = CURRENT_TIMESTAMP
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
+                SELECT tenant_id, store_id, COALESCE(NULLIF(device_id, ''), 'legacy-device'),
+                       COALESCE(NULLIF(device_id, ''), 'legacy-device'), MAX(source_id), 'ACTIVE', MAX(received_at)
+                FROM sync_runs
+                WHERE tenant_id IS NOT NULL AND tenant_id <> ''
+                  AND store_id IS NOT NULL AND store_id <> ''
+                GROUP BY tenant_id, store_id, COALESCE(NULLIF(device_id, ''), 'legacy-device')
+                ON DUPLICATE KEY UPDATE
+                    source_id = VALUES(source_id),
+                    last_seen_at = VALUES(last_seen_at),
+                    updated_at = CURRENT_TIMESTAMP
+                """);
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = ?
+                  AND column_name = ?
+                """, Integer.class, tableName, columnName);
+        return count != null && count > 0;
+    }
+
+    private List<String> primaryKeyColumns(String tableName) {
+        return jdbcTemplate.query("""
+                SELECT column_name
+                FROM information_schema.key_column_usage
+                WHERE table_schema = DATABASE()
+                  AND table_name = ?
+                  AND constraint_name = 'PRIMARY'
+                ORDER BY ordinal_position
+                """, (rs, rowNum) -> rs.getString(1), tableName);
+    }
+
+    private String lastKnownSourceId() {
+        List<String> rows = new ArrayList<>(jdbcTemplate.query("""
+                SELECT source_id
+                FROM sync_runs
+                WHERE source_id IS NOT NULL AND source_id <> ''
+                ORDER BY received_at DESC, id DESC
+                LIMIT 1
+                """, (rs, rowNum) -> rs.getString(1)));
+        return rows.isEmpty() || rows.get(0) == null || rows.get(0).isBlank() ? "WEB" : rows.get(0);
     }
 }

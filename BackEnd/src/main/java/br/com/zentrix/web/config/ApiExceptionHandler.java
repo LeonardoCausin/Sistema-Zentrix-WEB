@@ -3,9 +3,12 @@ package br.com.zentrix.web.config;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -13,50 +16,65 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> responseStatus(ResponseStatusException exception) {
+    public ResponseEntity<Map<String, Object>> responseStatus(ResponseStatusException exception, HttpServletRequest request) {
         return ResponseEntity
                 .status(exception.getStatusCode())
-                .body(error(exception.getStatusCode().value(), publicMessage(exception)));
+                .body(error(exception.getStatusCode().value(), HttpStatus.valueOf(exception.getStatusCode().value()).getReasonPhrase(), publicMessage(exception), request));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> validation() {
+    public ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException exception, HttpServletRequest request) {
+        Map<String, Object> body = error(HttpStatus.BAD_REQUEST.value(), HttpStatus.BAD_REQUEST.getReasonPhrase(), "Confira os dados informados.", request);
+        body.put("fields", exception.getBindingResult().getFieldErrors().stream()
+                .map(field -> Map.of("field", field.getField(), "message", field.getDefaultMessage() == null ? "inválido" : field.getDefaultMessage()))
+                .toList());
         return ResponseEntity
                 .badRequest()
-                .body(error(HttpStatus.BAD_REQUEST.value(), "Confira os dados informados."));
+                .body(body);
     }
 
     @ExceptionHandler({DataAccessException.class, IllegalStateException.class})
-    public ResponseEntity<Map<String, Object>> unavailable() {
+    public ResponseEntity<Map<String, Object>> unavailable(HttpServletRequest request) {
         return ResponseEntity
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(error(HttpStatus.SERVICE_UNAVAILABLE.value(), "Sistema temporariamente indisponivel."));
+                .body(error(HttpStatus.SERVICE_UNAVAILABLE.value(), HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), "Sistema temporariamente indisponível.", request));
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> generic() {
+    public ResponseEntity<Map<String, Object>> generic(Exception exception, HttpServletRequest request) {
+        log.error("Erro inesperado na API Zentrix AppGestão", exception);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(error(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Nao foi possivel concluir a operacao."));
+                .body(error(HttpStatus.INTERNAL_SERVER_ERROR.value(), HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(), "Não foi possível concluir a operação.", request));
     }
 
     private String publicMessage(ResponseStatusException exception) {
         if (exception.getStatusCode().value() == HttpStatus.UNAUTHORIZED.value()) {
-            return "Usuario ou senha invalidos.";
+            return "Usuário ou senha inválidos.";
         }
         if (exception.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
             return "Muitas tentativas. Aguarde alguns minutos e tente novamente.";
         }
-        return "Nao foi possivel concluir a operacao.";
+        if (exception.getStatusCode().value() == HttpStatus.FORBIDDEN.value()) {
+            return exception.getReason() == null ? "Acesso não autorizado." : exception.getReason();
+        }
+        if (exception.getStatusCode().value() == HttpStatus.BAD_REQUEST.value()
+                || exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+            return exception.getReason() == null ? "Confira os dados informados." : exception.getReason();
+        }
+        return "Não foi possível concluir a operação.";
     }
 
-    private Map<String, Object> error(int status, String message) {
+    private Map<String, Object> error(int status, String error, String message, HttpServletRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", status);
-        body.put("message", message);
         body.put("timestamp", OffsetDateTime.now().toString());
+        body.put("status", status);
+        body.put("error", error);
+        body.put("message", message);
+        body.put("path", request == null ? null : request.getRequestURI());
         return body;
     }
 }

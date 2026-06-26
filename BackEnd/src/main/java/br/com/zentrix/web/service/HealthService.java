@@ -1,5 +1,6 @@
 package br.com.zentrix.web.service;
 
+import br.com.zentrix.web.config.DatabaseConfig.DatabaseSettings;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,10 +13,12 @@ public class HealthService {
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
+    private final DatabaseSettings databaseSettings;
 
-    public HealthService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer) {
+    public HealthService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, DatabaseSettings databaseSettings) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
+        this.databaseSettings = databaseSettings;
     }
 
     public Map<String, Object> health() {
@@ -26,11 +29,15 @@ public class HealthService {
             initializer.ensureReady();
             jdbcTemplate.queryForObject("SELECT 1", Integer.class);
             response.put("status", "UP");
-            response.put("database", "UP");
+            response.put("database", Map.of("status", "UP", "name", databaseSettings.getName()));
             response.put("lastSync", lastSync());
+            response.put("totalTenants", count("tenants"));
+            response.put("totalStores", count("tenant_stores"));
+            response.put("apiVersion", "0.1.0-SNAPSHOT");
+            response.put("serverTime", OffsetDateTime.now().toString());
         } catch (Exception e) {
             response.put("status", "DEGRADED");
-            response.put("database", "DOWN");
+            response.put("database", Map.of("status", "DOWN", "name", databaseSettings.getName()));
             response.put("message", e.getMessage());
         }
         return response;
@@ -45,5 +52,10 @@ public class HealthService {
                 LIMIT 1
                 """, (rs, rowNum) -> rs.getString(1));
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    private Long count(String table) {
+        Long value = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
+        return value == null ? 0L : value;
     }
 }

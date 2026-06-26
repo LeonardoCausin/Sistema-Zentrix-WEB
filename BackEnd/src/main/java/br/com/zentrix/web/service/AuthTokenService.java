@@ -16,12 +16,12 @@ public class AuthTokenService {
     private final SecureRandom secureRandom = new SecureRandom();
     private final Map<String, SessionToken> tokens = new ConcurrentHashMap<>();
 
-    public String issue(String username, String displayName, String role) {
+    public String issue(String username, String displayName, String role, String tenantId) {
         purgeExpired();
         byte[] bytes = new byte[32];
         secureRandom.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        tokens.put(token, new SessionToken(username, displayName, role, Instant.now().plus(TOKEN_TTL)));
+        tokens.put(token, new SessionToken(username, displayName, role, tenantId, Instant.now().plus(TOKEN_TTL)));
         return token;
     }
 
@@ -45,6 +45,6 @@ public class AuthTokenService {
         tokens.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(now));
     }
 
-    public record SessionToken(String username, String displayName, String role, Instant expiresAt) {
+    public record SessionToken(String username, String displayName, String role, String tenantId, Instant expiresAt) {
     }
 }

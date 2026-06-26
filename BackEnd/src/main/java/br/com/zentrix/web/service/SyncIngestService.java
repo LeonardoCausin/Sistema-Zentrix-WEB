@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -26,20 +27,22 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class SyncIngestService {
+    private static final String LEGACY_TENANT_ID = "legacy";
+    private static final String LEGACY_DEVICE_ID = "legacy-device";
     private static final List<TableSpec> TABLES = List.of(
-            table("users", List.of("username", "password", "display_name", "role", "active"), List.of("username")),
-            table("suppliers", List.of("id", "name", "cnpj", "phone", "email", "address", "created_at"), List.of("id"), List.of("created_at")),
-            table("clients", List.of("id", "name", "cpf_cnpj", "phone", "email", "address", "created_at"), List.of("id"), List.of("created_at")),
-            table("products", List.of("code", "description", "unit", "price", "stock", "supplier_id", "min_stock"), List.of("code")),
-            table("stock_movements", List.of("id", "product_code", "type", "quantity", "reason", "user", "created_at"), List.of("id"), List.of("created_at")),
-            table("cash_sessions", List.of("id", "cash_id", "operator", "opening_balance", "observation", "opened_at", "closed_at", "is_open"), List.of("id"), List.of("opened_at", "closed_at")),
-            table("cash_movements", List.of("id", "session_id", "type", "value", "observation", "date_time"), List.of("id"), List.of("date_time")),
-            table("sales", List.of("id", "session_id", "operator", "discount", "surcharge", "payment_method", "amount_paid", "status", "date_time"), List.of("id"), List.of("date_time")),
-            table("sale_items", List.of("id", "sale_id", "product_code", "quantity", "unit_price", "discount"), List.of("id")),
-            table("sale_cancellations", List.of("id", "sale_id", "reason", "cancelled_by", "cancelled_at"), List.of("id"), List.of("cancelled_at")),
-            table("comandas", List.of("id", "nome_cliente", "client_id", "aberta", "data_abertura", "data_fechamento"), List.of("id"), List.of("data_abertura", "data_fechamento")),
-            table("comanda_itens", List.of("id", "comanda_id", "descricao", "valor", "is_produto", "product_code", "quantidade"), List.of("id")),
-            table("audit_log", List.of("id", "usuario", "acao", "entity_type", "entity_id", "details", "created_at"), List.of("id"), List.of("created_at"))
+            table("users", List.of("tenant_id", "store_id", "device_id", "source_id", "username", "password", "display_name", "role", "active", "created_at", "updated_at", "last_login_at", "permissions_json"), List.of("tenant_id", "store_id", "username"), List.of("created_at", "updated_at", "last_login_at")),
+            table("suppliers", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cnpj", "phone", "email", "address", "created_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at")),
+            table("clients", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cpf_cnpj", "phone", "email", "address", "created_at", "birth_date", "active", "notes", "loyalty_points", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at", "updated_at", "deleted_at")),
+            table("products", List.of("tenant_id", "store_id", "device_id", "source_id", "code", "description", "unit", "price", "cost_price", "stock", "supplier_id", "category", "barcode", "min_stock", "ideal_stock", "active", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "code"), List.of("updated_at", "deleted_at")),
+            table("stock_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "product_code", "type", "quantity", "previous_stock", "new_stock", "origin", "reference_type", "reference_id", "reason", "user", "created_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at")),
+            table("cash_sessions", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "cash_id", "operator", "opening_balance", "closing_balance", "expected_balance", "difference", "observation", "opened_at", "closed_at", "closed_by", "close_reason", "is_open", "status"), List.of("tenant_id", "store_id", "id"), List.of("opened_at", "closed_at")),
+            table("cash_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "type", "value", "observation", "date_time"), List.of("tenant_id", "store_id", "id"), List.of("date_time")),
+            table("sales", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "operator", "discount", "surcharge", "payment_method", "amount_paid", "status", "date_time"), List.of("tenant_id", "store_id", "id"), List.of("date_time")),
+            table("sale_items", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "product_code", "quantity", "unit_price", "discount"), List.of("tenant_id", "store_id", "id")),
+            table("sale_cancellations", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "reason", "cancelled_by", "cancelled_at"), List.of("tenant_id", "store_id", "id"), List.of("cancelled_at")),
+            table("comandas", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "nome_cliente", "client_id", "aberta", "data_abertura", "data_fechamento"), List.of("tenant_id", "store_id", "id"), List.of("data_abertura", "data_fechamento")),
+            table("comanda_itens", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "comanda_id", "descricao", "valor", "is_produto", "product_code", "quantidade"), List.of("tenant_id", "store_id", "id")),
+            table("audit_log", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "usuario", "acao", "entity_type", "entity_id", "details", "created_at", "risk_level", "previous_value", "new_value", "reason", "origin", "ip_address", "user_role"), List.of("tenant_id", "store_id", "id"), List.of("created_at"))
     );
     private static final Map<String, TableSpec> TABLES_BY_NAME = TABLES.stream()
             .collect(Collectors.toUnmodifiableMap(TableSpec::name, spec -> spec));
@@ -48,74 +51,104 @@ public class SyncIngestService {
     private final TransactionTemplate transactionTemplate;
     private final WebDatabaseInitializer initializer;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     public SyncIngestService(
             JdbcTemplate jdbcTemplate,
             TransactionTemplate transactionTemplate,
             WebDatabaseInitializer initializer,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            AuditService auditService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.initializer = initializer;
         this.objectMapper = objectMapper;
+        this.auditService = auditService;
     }
 
     public Map<String, Object> ingest(SyncPushRequest request) {
-        validateRequest(request);
-        initializer.ensureReady();
-
+        SyncScope scope = null;
         OffsetDateTime receivedAt = OffsetDateTime.now();
-        String mode = request.normalizedMode();
-        Map<String, List<Map<String, Object>>> normalizedTables = normalizeTables(request.tables());
+        try {
+            validateRequest(request);
+            initializer.ensureReady();
 
-        return transactionTemplate.execute(status -> {
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            if ("FULL".equals(mode)) {
-                clearTables(normalizedTables.keySet());
+            scope = scope(request);
+            String mode = request.normalizedMode();
+            Map<String, List<Map<String, Object>>> normalizedTables = normalizeTables(scope, request.tables());
+            SyncScope syncScope = scope;
+
+            return transactionTemplate.execute(status -> {
+                upsertScopeMetadata(syncScope, receivedAt);
+                Map<String, Integer> counts = new LinkedHashMap<>();
+                if ("FULL".equals(mode)) {
+                    clearTables(syncScope, normalizedTables.keySet());
+                }
+
+                for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
+                    TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
+                    counts.put(spec.name(), upsertRows(spec, entry.getValue()));
+                }
+
+                int totalRows = counts.values().stream().mapToInt(Integer::intValue).sum();
+                Long runId = recordSyncRun(request, syncScope, mode, receivedAt, OffsetDateTime.now(), "SUCCESS", totalRows, counts, "Recebido via API");
+                auditService.record(syncScope.tenantId(), syncScope.storeId(), syncScope.deviceId(), syncScope.sourceId(), "PDV", "SYNC_SUCCESS", "sync_runs", String.valueOf(runId), "Sincronização recebida com " + totalRows + " registro(s).", "INFO", null, countsJson(counts), null, "PDV", null, null);
+                return syncResponse(runId, syncScope, mode, "SUCCESS", totalRows, counts, null);
+            });
+        } catch (RuntimeException e) {
+            if (scope != null) {
+                try {
+                    Long runId = recordSyncRun(request, scope, request == null ? "PARTIAL" : request.normalizedMode(), receivedAt, OffsetDateTime.now(), "ERROR", 0, Map.of(), e.getMessage());
+                    auditService.record(scope.tenantId(), scope.storeId(), scope.deviceId(), scope.sourceId(), "PDV", "SYNC_ERROR", "sync_runs", String.valueOf(runId), e.getMessage(), "CRITICO", null, null, "Falha ao sincronizar", "PDV", null, null);
+                } catch (RuntimeException ignored) {
+                    // Mantém o erro original da sincronização.
+                }
             }
-
-            for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
-                TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
-                counts.put(spec.name(), upsertRows(spec, entry.getValue()));
-            }
-
-            int totalRows = counts.values().stream().mapToInt(Integer::intValue).sum();
-            Long runId = recordSyncRun(request, mode, receivedAt, OffsetDateTime.now(), "SUCCESS", totalRows, counts, "Recebido via API");
-            return syncResponse(runId, request.sourceId(), mode, "SUCCESS", totalRows, counts, null);
-        });
+            throw e;
+        }
     }
 
     public Map<String, Object> lastStatus() {
+        return lastStatus(null, null, null);
+    }
+
+    public Map<String, Object> lastStatus(String tenantId, String storeId, String sourceId) {
         initializer.ensureReady();
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, source_id, mode, status, generated_at, received_at, finished_at,
+                SELECT id, tenant_id, store_id, device_id, source_id, mode, status, generated_at, received_at, finished_at,
                        total_rows, table_counts_json, message
                 FROM sync_runs
+                WHERE (? IS NULL OR tenant_id = ?)
+                  AND (? IS NULL OR store_id = ?)
+                  AND (? IS NULL OR source_id = ?)
                 ORDER BY received_at DESC, id DESC
                 LIMIT 1
-                """);
+                """, emptyToNull(tenantId), emptyToNull(tenantId), emptyToNull(storeId), emptyToNull(storeId), emptyToNull(sourceId), emptyToNull(sourceId));
         if (rows.isEmpty()) {
-            return Map.of("status", "WAITING", "message", "Nenhuma sincronizacao recebida ainda");
+            return Map.of("status", "WAITING", "message", "Nenhuma sincronização recebida ainda");
         }
         Map<String, Object> row = rows.get(0);
-        return Map.of(
-                "id", row.get("id"),
-                "sourceId", row.get("source_id"),
-                "mode", row.get("mode"),
-                "status", row.get("status"),
-                "generatedAt", row.get("generated_at"),
-                "receivedAt", row.get("received_at"),
-                "finishedAt", row.get("finished_at"),
-                "totalRows", row.get("total_rows"),
-                "tableCounts", parseCounts(row.get("table_counts_json")),
-                "message", Objects.toString(row.get("message"), "")
-        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", row.get("id"));
+        response.put("tenantId", row.get("tenant_id"));
+        response.put("storeId", row.get("store_id"));
+        response.put("deviceId", row.get("device_id"));
+        response.put("sourceId", row.get("source_id"));
+        response.put("mode", row.get("mode"));
+        response.put("status", row.get("status"));
+        response.put("generatedAt", row.get("generated_at"));
+        response.put("receivedAt", row.get("received_at"));
+        response.put("finishedAt", row.get("finished_at"));
+        response.put("totalRows", row.get("total_rows"));
+        response.put("tableCounts", parseCounts(row.get("table_counts_json")));
+        response.put("message", Objects.toString(row.get("message"), ""));
+        return response;
     }
 
     private void validateRequest(SyncPushRequest request) {
         if (request == null || request.sourceId() == null || request.sourceId().isBlank()) {
-            throw new IllegalArgumentException("sourceId e obrigatorio");
+            throw new IllegalArgumentException("sourceId é obrigatório");
         }
         if (request.tables() == null || request.tables().isEmpty()) {
             throw new IllegalArgumentException("Informe ao menos uma tabela em tables");
@@ -126,7 +159,48 @@ public class SyncIngestService {
         }
     }
 
-    private Map<String, List<Map<String, Object>>> normalizeTables(Map<String, List<Map<String, Object>>> requestedTables) {
+    private SyncScope scope(SyncPushRequest request) {
+        String sourceId = requiredText(request.sourceId(), "sourceId");
+        String tenantId = optionalText(request.tenantId(), LEGACY_TENANT_ID);
+        String storeId = optionalText(request.storeId(), sourceId);
+        String deviceId = optionalText(request.deviceId(), LEGACY_DEVICE_ID);
+        String tenantName = optionalText(request.tenantName(), tenantId.equals(LEGACY_TENANT_ID) ? "Cliente legado" : tenantId);
+        String storeName = optionalText(request.storeName(), displayName(sourceId));
+        String deviceName = optionalText(request.deviceName(), deviceId);
+        return new SyncScope(tenantId, tenantName, storeId, storeName, deviceId, deviceName, sourceId);
+    }
+
+    private void upsertScopeMetadata(SyncScope scope, OffsetDateTime receivedAt) {
+        jdbcTemplate.update("""
+                INSERT INTO tenants (id, name, status)
+                VALUES (?, ?, 'ACTIVE')
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    status = 'ACTIVE',
+                    updated_at = CURRENT_TIMESTAMP
+                """, scope.tenantId(), scope.tenantName());
+        jdbcTemplate.update("""
+                INSERT INTO tenant_stores (tenant_id, id, name, source_id, status)
+                VALUES (?, ?, ?, ?, 'ACTIVE')
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    source_id = VALUES(source_id),
+                    status = 'ACTIVE',
+                    updated_at = CURRENT_TIMESTAMP
+                """, scope.tenantId(), scope.storeId(), scope.storeName(), scope.sourceId());
+        jdbcTemplate.update("""
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
+                ON DUPLICATE KEY UPDATE
+                    name = VALUES(name),
+                    source_id = VALUES(source_id),
+                    status = 'ACTIVE',
+                    last_seen_at = VALUES(last_seen_at),
+                    updated_at = CURRENT_TIMESTAMP
+                """, scope.tenantId(), scope.storeId(), scope.deviceId(), scope.deviceName(), scope.sourceId(), Timestamp.from(receivedAt.toInstant()));
+    }
+
+    private Map<String, List<Map<String, Object>>> normalizeTables(SyncScope scope, Map<String, List<Map<String, Object>>> requestedTables) {
         Map<String, List<Map<String, Object>>> normalized = new LinkedHashMap<>();
         List<String> names = new ArrayList<>(requestedTables.keySet());
         names.sort(Comparator.comparingInt(this::tableOrder));
@@ -134,18 +208,57 @@ public class SyncIngestService {
         for (String tableName : names) {
             TableSpec spec = TABLES_BY_NAME.get(tableName);
             if (spec == null) {
-                throw new IllegalArgumentException("Tabela nao permitida para sincronizacao: " + tableName);
+            throw new IllegalArgumentException("Tabela não permitida para sincronização: " + tableName);
             }
             List<Map<String, Object>> rows = requestedTables.get(tableName);
             if (rows == null) {
                 rows = List.of();
             }
-            for (Map<String, Object> row : rows) {
+            List<Map<String, Object>> scopedRows = rows.stream()
+                    .map(row -> compatibleRow(spec, row))
+                    .map(row -> scopedRow(scope, row))
+                    .toList();
+            for (Map<String, Object> row : scopedRows) {
                 validateRow(spec, row);
             }
-            normalized.put(tableName, rows);
+            normalized.put(tableName, scopedRows);
         }
         return normalized;
+    }
+
+    private Map<String, Object> compatibleRow(TableSpec spec, Map<String, Object> row) {
+        if (row == null || row.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> compatible = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            String column = entry.getKey();
+            if (spec.columns().contains(column)) {
+                compatible.put(column, entry.getValue());
+                continue;
+            }
+            if (isIgnorablePdvColumn(column)) {
+                continue;
+            }
+            compatible.put(column, entry.getValue());
+        }
+        return compatible;
+    }
+
+    private boolean isIgnorablePdvColumn(String column) {
+        return column != null && (column.endsWith("_uid") || column.equals("sync_status") || column.equals("last_sync_at"));
+    }
+
+    private Map<String, Object> scopedRow(SyncScope scope, Map<String, Object> row) {
+        if (row == null) {
+            return Map.of();
+        }
+        Map<String, Object> scoped = new LinkedHashMap<>(row);
+        scoped.put("tenant_id", scope.tenantId());
+        scoped.put("store_id", scope.storeId());
+        scoped.put("device_id", scope.deviceId());
+        scoped.put("source_id", scope.sourceId());
+        return scoped;
     }
 
     private void validateRow(TableSpec spec, Map<String, Object> row) {
@@ -154,21 +267,22 @@ public class SyncIngestService {
         }
         for (String key : row.keySet()) {
             if (!spec.columns().contains(key)) {
-                throw new IllegalArgumentException("Coluna nao permitida em " + spec.name() + ": " + key);
+                throw new IllegalArgumentException("Coluna não permitida em " + spec.name() + ": " + key);
             }
         }
         for (String key : spec.primaryKeys()) {
             if (!row.containsKey(key) || row.get(key) == null || Objects.toString(row.get(key), "").isBlank()) {
-                throw new IllegalArgumentException("Chave primaria ausente em " + spec.name() + ": " + key);
+                throw new IllegalArgumentException("Chave primária ausente em " + spec.name() + ": " + key);
             }
         }
     }
 
-    private void clearTables(Set<String> tableNames) {
+    private void clearTables(SyncScope scope, Set<String> tableNames) {
         List<String> ordered = new ArrayList<>(tableNames);
         ordered.sort((left, right) -> Integer.compare(tableOrder(right), tableOrder(left)));
         for (String tableName : ordered) {
-            jdbcTemplate.update("DELETE FROM " + quote(tableName));
+            jdbcTemplate.update("DELETE FROM " + quote(tableName) + " WHERE tenant_id = ? AND store_id = ?",
+                    scope.tenantId(), scope.storeId());
         }
     }
 
@@ -227,6 +341,12 @@ public class SyncIngestService {
         return value;
     }
 
+    private String normalizeText(Object value) {
+        String text = Objects.toString(value, "").trim().toUpperCase();
+        return Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+    }
+
     private Timestamp parseDateTime(String text) {
         if (text == null || text.isBlank()) {
             return null;
@@ -253,13 +373,14 @@ public class SyncIngestService {
             try {
                 return Timestamp.valueOf(value.replace('T', ' ').replaceAll("Z$", ""));
             } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("Data/hora invalida para sincronizacao: " + text);
+                throw new IllegalArgumentException("Data/hora inválida para sincronização: " + text);
             }
         }
     }
 
     private Long recordSyncRun(
             SyncPushRequest request,
+            SyncScope scope,
             String mode,
             OffsetDateTime receivedAt,
             OffsetDateTime finishedAt,
@@ -270,10 +391,13 @@ public class SyncIngestService {
     ) {
         jdbcTemplate.update("""
                 INSERT INTO sync_runs
-                    (source_id, mode, status, generated_at, received_at, finished_at, total_rows, table_counts_json, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (tenant_id, store_id, device_id, source_id, mode, status, generated_at, received_at, finished_at, total_rows, table_counts_json, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                request.sourceId(),
+                scope.tenantId(),
+                scope.storeId(),
+                scope.deviceId(),
+                scope.sourceId(),
                 mode,
                 status,
                 request.generatedAt() == null ? null : Timestamp.from(request.generatedAt().toInstant()),
@@ -308,7 +432,7 @@ public class SyncIngestService {
 
     private Map<String, Object> syncResponse(
             Long runId,
-            String sourceId,
+            SyncScope scope,
             String mode,
             String status,
             int totalRows,
@@ -317,7 +441,10 @@ public class SyncIngestService {
     ) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", runId);
-        response.put("sourceId", sourceId);
+        response.put("tenantId", scope.tenantId());
+        response.put("storeId", scope.storeId());
+        response.put("deviceId", scope.deviceId());
+        response.put("sourceId", scope.sourceId());
         response.put("mode", mode);
         response.put("status", status);
         response.put("totalRows", totalRows);
@@ -326,6 +453,36 @@ public class SyncIngestService {
             response.put("message", message);
         }
         return response;
+    }
+
+    private String requiredText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " é obrigatório");
+        }
+        return value.trim();
+    }
+
+    private String optionalText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private String displayName(String value) {
+        String normalized = value.trim()
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replaceAll("\\s+", " ")
+                .toLowerCase();
+        StringBuilder builder = new StringBuilder();
+        for (String part : normalized.split(" ")) {
+            if (part.isBlank()) {
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(part.substring(0, 1).toUpperCase()).append(part.substring(1));
+        }
+        return builder.isEmpty() ? value : builder.toString();
     }
 
     private int tableOrder(String tableName) {
@@ -341,12 +498,27 @@ public class SyncIngestService {
         return "`" + identifier + "`";
     }
 
+    private String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private static TableSpec table(String name, List<String> columns, List<String> primaryKeys) {
         return table(name, columns, primaryKeys, List.of());
     }
 
     private static TableSpec table(String name, List<String> columns, List<String> primaryKeys, List<String> dateColumns) {
         return new TableSpec(name, Set.copyOf(columns), Set.copyOf(primaryKeys), Set.copyOf(dateColumns));
+    }
+
+    private record SyncScope(
+            String tenantId,
+            String tenantName,
+            String storeId,
+            String storeName,
+            String deviceId,
+            String deviceName,
+            String sourceId
+    ) {
     }
 
     private record TableSpec(String name, Set<String> columns, Set<String> primaryKeys, Set<String> dateColumns) {
