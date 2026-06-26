@@ -1,0 +1,21 @@
+name: Teste Runner Ubuntu
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  teste:
+    runs-on: self-hosted
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+
+      - name: Testar servidor
+        run: |
+          echo "Runner funcionando no Ubuntu!"
+          pwd
+          ls -la
