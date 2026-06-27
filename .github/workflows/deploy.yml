@@ -1,4 +1,4 @@
-name: Teste Runner Ubuntu
+name: Deploy Zentrix Web
 
 on:
   push:
@@ -7,15 +7,9 @@ on:
       - master
 
 jobs:
-  teste:
+  deploy:
     runs-on: self-hosted
 
     steps:
-      - name: Baixar projeto
-        uses: actions/checkout@v4
-
-      - name: Testar servidor
-        run: |
-          echo "Runner funcionando no Ubuntu!"
-          pwd
-          ls -la
+      - name: Deploy na VM Ubuntu
+        run: /usr/local/bin/deploy-zentrix-web.sh
