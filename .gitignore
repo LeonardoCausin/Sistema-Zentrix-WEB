@@ -1,0 +1,11 @@
+
+# Configurações locais / segredos
+BackEnd/.env
+BackEnd/.env.properties
+BackEnd/cp.txt
+
+# Build Maven
+BackEnd/target/
+
+# Logs
+*.log
