@@ -3,6 +3,8 @@ package br.com.zentrix.web.controller;
 import br.com.zentrix.web.dto.StockAdjustmentRequest;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.BusinessOperationsService;
+import br.com.zentrix.web.service.PermissionService;
+import br.com.zentrix.web.service.PermissionService.Permission;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -17,13 +19,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/stock")
 public class StockManagementController {
     private final BusinessOperationsService operationsService;
+    private final PermissionService permissionService;
 
-    public StockManagementController(BusinessOperationsService operationsService) {
+    public StockManagementController(BusinessOperationsService operationsService, PermissionService permissionService) {
         this.operationsService = operationsService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping("/movements")
     public List<Map<String, Object>> movements(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_PANEL);
         return operationsService.stockMovements(AuthContext.tenantId(), store);
     }
 

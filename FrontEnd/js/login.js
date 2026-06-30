@@ -50,7 +50,7 @@
         password: passwordField.value
       });
 
-      localStorage.setItem('zentrix-session', JSON.stringify(session));
+      writeSession(session);
       window.location.href = form.getAttribute('action') || 'pages/dashboard.html';
     } catch (error) {
       showError(error.message || 'Não foi possível entrar no painel.');
@@ -130,5 +130,14 @@
 
   function apiBases() {
     return Array.from(new Set([storedApiBase, defaultApiBase].filter(Boolean)));
+  }
+
+  function writeSession(session) {
+    try {
+      sessionStorage.setItem('zentrix-session', JSON.stringify(session));
+      localStorage.removeItem('zentrix-session');
+    } catch (error) {
+      localStorage.setItem('zentrix-session', JSON.stringify(session));
+    }
   }
 })();

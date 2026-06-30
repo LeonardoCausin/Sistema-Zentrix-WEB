@@ -150,10 +150,12 @@ public class BusinessOperationsService {
         return cashSession(tenantId, store, id);
     }
 
+    @Transactional
     public Map<String, Object> withdrawal(String tenantId, String storeId, int id, CashMovementRequest request) {
         return cashMovement(tenantId, storeId, id, request, "SANGRIA", "CASH_WITHDRAWAL");
     }
 
+    @Transactional
     public Map<String, Object> supply(String tenantId, String storeId, int id, CashMovementRequest request) {
         return cashMovement(tenantId, storeId, id, request, "SUPRIMENTO", "CASH_SUPPLY");
     }
@@ -317,8 +319,20 @@ public class BusinessOperationsService {
     }
 
     private int nextScopedId(String table, String tenantId, String storeId) {
-        Integer next = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) + 1 FROM `" + table + "` WHERE tenant_id = ? AND store_id = ?", Integer.class, tenantId, storeId);
-        return next == null ? 1 : next;
+        Integer baseline = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(id), 0) + 1 FROM `" + table + "` WHERE tenant_id = ? AND store_id = ?", Integer.class, tenantId, storeId);
+        int safeBaseline = baseline == null || baseline < 1 ? 1 : baseline;
+        jdbcTemplate.update("""
+                INSERT INTO scoped_sequences (tenant_id, store_id, sequence_name, next_value)
+                VALUES (?, ?, ?, LAST_INSERT_ID(? + 1))
+                ON DUPLICATE KEY UPDATE
+                    next_value = LAST_INSERT_ID(GREATEST(next_value, VALUES(next_value) - 1) + 1),
+                    updated_at = CURRENT_TIMESTAMP
+                """, tenantId, storeId, table, safeBaseline);
+        Long nextValue = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        if (nextValue == null || nextValue <= 1 || nextValue - 1 > Integer.MAX_VALUE) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Nao foi possivel reservar o proximo identificador.");
+        }
+        return Math.toIntExact(nextValue - 1);
     }
 
     private BigDecimal decimal(Object value) {

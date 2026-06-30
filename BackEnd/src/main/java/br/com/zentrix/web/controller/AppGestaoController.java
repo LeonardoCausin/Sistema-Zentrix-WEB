@@ -4,6 +4,8 @@ import br.com.zentrix.web.service.AlertService;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.BusinessOperationsService;
 import br.com.zentrix.web.service.LicenseService;
+import br.com.zentrix.web.service.PermissionService;
+import br.com.zentrix.web.service.PermissionService.Permission;
 import br.com.zentrix.web.service.ReportService;
 import br.com.zentrix.web.service.WebDataService;
 import java.util.List;
@@ -23,63 +25,75 @@ public class AppGestaoController {
     private final WebDataService webDataService;
     private final BusinessOperationsService operationsService;
     private final ReportService reportService;
+    private final PermissionService permissionService;
 
     public AppGestaoController(
             AlertService alertService,
             LicenseService licenseService,
             WebDataService webDataService,
             BusinessOperationsService operationsService,
-            ReportService reportService
+            ReportService reportService,
+            PermissionService permissionService
     ) {
         this.alertService = alertService;
         this.licenseService = licenseService;
         this.webDataService = webDataService;
         this.operationsService = operationsService;
         this.reportService = reportService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping("/alerts")
     public List<Map<String, Object>> alerts(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_PANEL);
         return alertService.alerts(AuthContext.tenantId(), store);
     }
 
     @GetMapping("/license")
     public Map<String, Object> license() {
+        permissionService.require(Permission.MANAGE_LICENSE);
         return licenseService.current(AuthContext.tenantId());
     }
 
     @GetMapping("/devices")
     public List<Map<String, Object>> devices() {
+        permissionService.require(Permission.MANAGE_LICENSE);
         return licenseService.devices(AuthContext.tenantId());
     }
 
     @GetMapping("/reports/sales")
     public Object salesReport(@RequestParam(defaultValue = "today") String period, @RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.sales(AuthContext.tenantId(), period, store);
     }
 
     @GetMapping("/reports/products")
     public Object productsReport(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.products(AuthContext.tenantId(), store);
     }
 
     @GetMapping("/reports/stock")
     public Object stockReport(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.stock(AuthContext.tenantId(), store);
     }
 
     @GetMapping("/reports/cash")
     public Object cashReport(@RequestParam(defaultValue = "today") String period, @RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.cash(AuthContext.tenantId(), period, store);
     }
 
     @GetMapping("/reports/finance")
     public Object financeReport(@RequestParam(defaultValue = "today") String period, @RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.finance(AuthContext.tenantId(), period, store);
     }
 
     @GetMapping("/reports/audit")
     public Object auditReport(@RequestParam(defaultValue = "today") String period, @RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
         return reportService.audit(AuthContext.tenantId(), period, store);
     }
 

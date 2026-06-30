@@ -4,6 +4,8 @@ import br.com.zentrix.web.dto.CashMovementRequest;
 import br.com.zentrix.web.dto.CloseCashSessionRequest;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.BusinessOperationsService;
+import br.com.zentrix.web.service.PermissionService;
+import br.com.zentrix.web.service.PermissionService.Permission;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,18 +20,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class CashManagementController {
     private final BusinessOperationsService operationsService;
+    private final PermissionService permissionService;
 
-    public CashManagementController(BusinessOperationsService operationsService) {
+    public CashManagementController(BusinessOperationsService operationsService, PermissionService permissionService) {
         this.operationsService = operationsService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping("/cash/current")
     public Map<String, Object> current(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_PANEL);
         return operationsService.currentCash(AuthContext.tenantId(), store);
     }
 
     @GetMapping("/cash-sessions/{id}")
     public Map<String, Object> detail(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store) {
+        permissionService.require(Permission.VIEW_PANEL);
         return operationsService.cashSession(AuthContext.tenantId(), store, id);
     }
 

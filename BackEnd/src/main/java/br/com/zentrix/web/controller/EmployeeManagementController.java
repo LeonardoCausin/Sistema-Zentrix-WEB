@@ -4,6 +4,8 @@ import br.com.zentrix.web.dto.EmployeeRequest;
 import br.com.zentrix.web.dto.PermissionUpdateRequest;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.BusinessOperationsService;
+import br.com.zentrix.web.service.PermissionService;
+import br.com.zentrix.web.service.PermissionService.Permission;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,13 +22,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/employees")
 public class EmployeeManagementController {
     private final BusinessOperationsService operationsService;
+    private final PermissionService permissionService;
 
-    public EmployeeManagementController(BusinessOperationsService operationsService) {
+    public EmployeeManagementController(BusinessOperationsService operationsService, PermissionService permissionService) {
         this.operationsService = operationsService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping("/{username}")
     public Map<String, Object> detail(@PathVariable String username) {
+        permissionService.require(Permission.MANAGE_USERS);
         return operationsService.employee(AuthContext.tenantId(), username);
     }
 

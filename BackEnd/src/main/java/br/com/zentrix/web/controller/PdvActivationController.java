@@ -3,12 +3,12 @@ package br.com.zentrix.web.controller;
 import br.com.zentrix.web.dto.ActivateStoreRequest;
 import br.com.zentrix.web.dto.ProvisionTenantRequest;
 import br.com.zentrix.web.service.ProvisioningService;
-import java.util.LinkedHashMap;
+import br.com.zentrix.web.service.SetupKeyService;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -17,22 +17,25 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/pdv/activation")
 public class PdvActivationController {
     private final ProvisioningService provisioningService;
+    private final SetupKeyService setupKeyService;
 
-    @Value("${zentrix.sync.api-key:}")
-    private String syncKey;
-
-    public PdvActivationController(ProvisioningService provisioningService) {
+    public PdvActivationController(ProvisioningService provisioningService, SetupKeyService setupKeyService) {
         this.provisioningService = provisioningService;
+        this.setupKeyService = setupKeyService;
     }
 
     @PostMapping("/create-account")
-    public Map<String, Object> createAccount(@RequestBody CreateAccountRequest request) {
+    public Map<String, Object> createAccount(
+            @RequestHeader(value = "X-Zentrix-Setup-Key", required = false) String setupKey,
+            @RequestBody CreateAccountRequest request
+    ) {
+        setupKeyService.require(setupKey);
         AdminRequest admin = request == null ? null : request.admin();
         if (request == null || admin == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe os dados da conta administradora");
         }
 
-        Map<String, Object> response = provisioningService.bootstrap(new ProvisionTenantRequest(
+        return provisioningService.bootstrap(new ProvisionTenantRequest(
                 request.tenantName(),
                 null,
                 request.storeName(),
@@ -44,29 +47,24 @@ public class PdvActivationController {
                 null,
                 admin.passwordHash()
         ));
-        return withSyncKey(response);
     }
 
     @PostMapping("/activate-device")
-    public Map<String, Object> activateDevice(@RequestBody ActivateDeviceRequest request) {
+    public Map<String, Object> activateDevice(
+            @RequestHeader(value = "X-Zentrix-Setup-Key", required = false) String setupKey,
+            @RequestBody ActivateDeviceRequest request
+    ) {
+        setupKeyService.require(setupKey);
         if (request == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe os dados de ativação");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe os dados de ativacao");
         }
 
-        Map<String, Object> response = provisioningService.activateCode(new ActivateStoreRequest(
+        return provisioningService.activateCode(new ActivateStoreRequest(
                 request.activationCode(),
                 request.deviceId(),
                 request.sourceId(),
                 request.sourceId()
         ));
-        return withSyncKey(response);
-    }
-
-    private Map<String, Object> withSyncKey(Map<String, Object> original) {
-        Map<String, Object> response = new LinkedHashMap<>(original);
-        response.put("syncKey", syncKey == null ? "" : syncKey.trim());
-        response.put("webSyncKey", syncKey == null ? "" : syncKey.trim());
-        return response;
     }
 
     public record CreateAccountRequest(

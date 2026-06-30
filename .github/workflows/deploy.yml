@@ -1,21 +1,32 @@
-name: Teste Runner Ubuntu
+name: Validacao Zentrix Web
 
 on:
   push:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
 
 jobs:
-  teste:
+  backend:
     runs-on: self-hosted
 
     steps:
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      - name: Testar servidor
+      - name: Bloquear arquivos locais versionados
+        shell: bash
         run: |
-          echo "Runner funcionando no Ubuntu!"
-          pwd
-          ls -la
+          forbidden="$(git ls-files 'BackEnd/.env' 'BackEnd/target/**' '*.log')"
+          if [ -n "$forbidden" ]; then
+            echo "Arquivos locais nao podem ser versionados:"
+            echo "$forbidden"
+            exit 1
+          fi
+
+      - name: Testar backend
+        run: mvn -B -q -f BackEnd/pom.xml test

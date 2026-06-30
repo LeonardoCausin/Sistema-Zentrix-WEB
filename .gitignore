@@ -1,0 +1,18 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+BackEnd/.env
+BackEnd/.env.*
+!BackEnd/.env.example
+
+# Build artifacts
+target/
+BackEnd/target/
+
+# Runtime logs
+*.log
+
+# OS and editor noise
+Thumbs.db
+.DS_Store

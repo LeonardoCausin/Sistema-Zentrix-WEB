@@ -183,6 +183,16 @@ public class WebDatabaseInitializer {
                     INDEX idx_sync_runs_source (tenant_id, store_id, source_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS scoped_sequences (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    sequence_name VARCHAR(80) NOT NULL,
+                    next_value INT NOT NULL DEFAULT 1,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, store_id, sequence_name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
                 scopedTable("users", """
                     username VARCHAR(80) NOT NULL,
                     password VARCHAR(120) NOT NULL,

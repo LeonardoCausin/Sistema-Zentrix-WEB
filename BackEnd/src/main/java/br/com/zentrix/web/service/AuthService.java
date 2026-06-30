@@ -60,6 +60,10 @@ public class AuthService {
             String username = String.valueOf(user.get("username"));
             String displayName = String.valueOf(user.get("display_name"));
             String role = String.valueOf(user.get("role"));
+            if (!isWebAdminRole(role)) {
+                passwordMatchedNonAdmin = true;
+                continue;
+            }
             Map<String, Object> sessionScope = resolveSessionScope(user);
             String tenantId = String.valueOf(sessionScope.get("tenant_id"));
             String tenantName = String.valueOf(sessionScope.get("tenant_name"));
@@ -146,6 +150,13 @@ public class AuthService {
             return BCrypt.checkpw(plainPassword, storedPassword);
         }
         return false;
+    }
+
+    private boolean isWebAdminRole(String role) {
+        return switch (normalizeRole(role)) {
+            case "ADMIN", "ADMINISTRADOR", "ADMINISTRATOR", "DONO", "OWNER" -> true;
+            default -> false;
+        };
     }
 
     private String normalizeRole(String role) {

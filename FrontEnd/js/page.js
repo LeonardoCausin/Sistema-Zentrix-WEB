@@ -6,14 +6,33 @@
   const closeSidebarButton = document.getElementById("closeSidebarButton");
   const sidebarBackdrop = document.getElementById("sidebarBackdrop");
   const storedTheme = localStorage.getItem("zentrix-theme");
-  const session = localStorage.getItem("zentrix-session");
+  const SESSION_KEY = "zentrix-session";
+  const session = readSessionRaw();
   let currentPeriod = localStorage.getItem("zentrix-period") || "today";
   let currentStore = localStorage.getItem("zentrix-store") || "all";
   let storesCache = readStoresCache();
   let refreshTimer = null;
   let loadingData = false;
-  const API_CACHE_MAX_AGE = 5 * 60 * 1000;
+  let pendingDataReload = false;
+  let prefetchTimer = null;
+  let forceFreshData = false;
+  const API_CACHE_MAX_AGE = 15 * 60 * 1000;
+  const VIEW_CACHE_MAX_AGE = 10 * 60 * 1000;
+  const VIEW_CACHE_PREFIX = "zentrix-view-cache:";
+  const VIEW_STATE_PREFIX = "zentrix-view-state:";
+  const CLIENT_CACHE_VERSION = "20260629-cash-close";
   const pendingApiRefresh = new Set();
+  const pendingApiRequests = new Map();
+  const PREFETCH_PERIODS = ["today", "7d", "month", "year"];
+
+  try {
+    if (sessionStorage.getItem("zentrix-client-cache-version") !== CLIENT_CACHE_VERSION) {
+      clearApiCache();
+      sessionStorage.setItem("zentrix-client-cache-version", CLIENT_CACHE_VERSION);
+    }
+  } catch (error) {
+    // Mantem a navegação funcionando mesmo se o navegador bloquear sessionStorage.
+  }
 
   if (body.classList.contains("is-authenticated") && !session) {
     const loginPath = location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html";
@@ -50,36 +69,17 @@
   document.querySelectorAll('a[href$="index.html"]').forEach((link) => {
     link.addEventListener("click", () => {
       clearApiCache();
-      localStorage.removeItem("zentrix-session");
+      clearStoredSession();
     });
   });
 
   window.zentrixApi = async function zentrixApi(path, options) {
-    const storedSession = JSON.parse(localStorage.getItem("zentrix-session") || "null");
+    const storedSession = readStoredSession();
     const apiBase = localStorage.getItem("zentrix-api-base") || "http://localhost:8080/api";
-    const response = await fetch(apiBase + path, {
-      ...(options || {}),
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: storedSession ? "Bearer " + storedSession.token : "",
-        ...((options && options.headers) || {})
-      }
-    });
-    if (response.status === 401) {
-      localStorage.removeItem("zentrix-session");
-      window.location.replace(location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html");
-      throw new Error("Sessão expirada");
+    const requestOptions = { ...(options || {}) };
+    if (forceFreshData && requestOptions.cache !== "no-store") {
+      requestOptions.cache = "refresh";
     }
-    if (!response.ok) {
-      throw new Error("Não foi possível carregar os dados.");
-    }
-    return response.json();
-  };
-
-  window.zentrixApi = async function zentrixApi(path, options) {
-    const storedSession = JSON.parse(localStorage.getItem("zentrix-session") || "null");
-    const apiBase = localStorage.getItem("zentrix-api-base") || "http://localhost:8080/api";
-    const requestOptions = options || {};
     const method = String(requestOptions.method || "GET").toUpperCase();
     const canCache = method === "GET" && !requestOptions.body && requestOptions.cache !== "no-store";
     const cacheKey = canCache ? apiCacheKey(apiBase, path, storedSession && storedSession.token) : null;
@@ -90,11 +90,27 @@
       return cached.data;
     }
 
-    const data = await fetchApiJson(apiBase, path, requestOptions, storedSession);
-    if (canCache) {
-      writeApiCache(cacheKey, data);
+    if (canCache && pendingApiRequests.has(cacheKey)) {
+      return pendingApiRequests.get(cacheKey);
     }
-    return data;
+
+    const request = fetchApiJson(apiBase, path, requestOptions, storedSession)
+      .then((data) => {
+        if (canCache) {
+          writeApiCache(cacheKey, data);
+        }
+        return data;
+      })
+      .finally(() => {
+        if (canCache) {
+          pendingApiRequests.delete(cacheKey);
+        }
+      });
+
+    if (canCache) {
+      pendingApiRequests.set(cacheKey, request);
+    }
+    return request;
   };
 
   const viewHost = document.querySelector(".view-host");
@@ -106,8 +122,11 @@
   }
 
   async function fetchApiJson(apiBase, path, options, storedSession) {
+    const fetchOptions = { ...(options || {}) };
+    delete fetchOptions.cache;
+    delete fetchOptions.prefetch;
     const response = await fetch(apiBase + path, {
-      ...(options || {}),
+      ...fetchOptions,
       headers: {
         "Content-Type": "application/json",
         Authorization: storedSession ? "Bearer " + storedSession.token : "",
@@ -116,7 +135,7 @@
     });
     if (response.status === 401) {
       clearApiCache();
-      localStorage.removeItem("zentrix-session");
+      clearStoredSession();
       window.location.replace(location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html");
       throw new Error("Sessao expirada");
     }
@@ -128,6 +147,12 @@
 
   function apiCacheKey(apiBase, path, token) {
     return "zentrix-api-cache:" + encodeURIComponent([token || "public", apiBase, path].join("|"));
+  }
+
+  function currentApiCacheKey(path) {
+    const storedSession = readStoredSession();
+    const apiBase = localStorage.getItem("zentrix-api-base") || "http://localhost:8080/api";
+    return apiCacheKey(apiBase, path, storedSession && storedSession.token);
   }
 
   function readApiCache(key) {
@@ -165,16 +190,209 @@
     Object.keys(sessionStorage)
       .filter((key) => key.startsWith("zentrix-api-cache:"))
       .forEach((key) => sessionStorage.removeItem(key));
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith(VIEW_CACHE_PREFIX) || key.startsWith(VIEW_STATE_PREFIX))
+      .forEach((key) => sessionStorage.removeItem(key));
     pendingApiRefresh.clear();
+    pendingApiRequests.clear();
+  }
+
+  function readSessionRaw() {
+    try {
+      return sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+    } catch (error) {
+      return localStorage.getItem(SESSION_KEY);
+    }
+  }
+
+  function readStoredSession() {
+    try {
+      return JSON.parse(readSessionRaw() || "null");
+    } catch (error) {
+      clearStoredSession();
+      return null;
+    }
+  }
+
+  function clearStoredSession() {
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch (error) {
+      // Ignora navegadores que bloqueiam sessionStorage.
+    }
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch (error) {
+      // Ignora navegadores que bloqueiam localStorage.
+    }
+  }
+
+  function prefetchApi(path) {
+    if (readApiCache(currentApiCacheKey(path))) {
+      return;
+    }
+    window.zentrixApi(path, { prefetch: true }).catch(() => null);
+  }
+
+  function viewCacheKey(page) {
+    const storedSession = readStoredSession();
+    const tokenPart = storedSession && storedSession.token ? storedSession.token.slice(-18) : "public";
+    return [tokenPart, page || currentPageName(), currentStore, currentPeriod].join("|");
+  }
+
+  function restoreCachedView(page) {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(VIEW_CACHE_PREFIX + viewCacheKey(page)) || "null");
+      if (!cached || Date.now() - cached.savedAt > VIEW_CACHE_MAX_AGE || !cached.html) {
+        return false;
+      }
+      viewHost.innerHTML = cached.html;
+      body.classList.add("app-data-ready");
+      wireCachedView(page);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function cacheCurrentView(page) {
+    try {
+      if (!viewHost || !viewHost.innerHTML || viewHost.querySelector(".skeleton") || viewHost.querySelector(".state-box")) {
+        return;
+      }
+      sessionStorage.setItem(VIEW_CACHE_PREFIX + viewCacheKey(page), JSON.stringify({ savedAt: Date.now(), html: viewHost.innerHTML }));
+    } catch (error) {
+      clearOldViewCache();
+    }
+  }
+
+  function clearOldViewCache() {
+    Object.keys(sessionStorage)
+      .filter((key) => key.startsWith(VIEW_CACHE_PREFIX))
+      .forEach((key) => {
+        try {
+          const cached = JSON.parse(sessionStorage.getItem(key) || "null");
+          if (!cached || Date.now() - cached.savedAt > VIEW_CACHE_MAX_AGE) {
+            sessionStorage.removeItem(key);
+          }
+        } catch (error) {
+          sessionStorage.removeItem(key);
+        }
+      });
+  }
+
+  function viewStateKey(page, name) {
+    return VIEW_STATE_PREFIX + viewCacheKey(page) + ":" + name;
+  }
+
+  function saveViewState(page, name, value) {
+    try {
+      sessionStorage.setItem(viewStateKey(page, name), JSON.stringify(value));
+    } catch (error) {
+      clearOldViewCache();
+    }
+  }
+
+  function readViewState(page, name) {
+    try {
+      return JSON.parse(sessionStorage.getItem(viewStateKey(page, name)) || "null");
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function wireCachedView(page) {
+    wireStoreTabs();
+    restoreCsvExports(page);
+    wirePageActions(page);
+    if (page === "relatorios") {
+      wireReportActions(readViewState(page, "reports-overview"));
+    }
+  }
+
+  function wirePageActions(page) {
+    const productButton = viewHost.querySelector('[data-action="new-product"]');
+    if (productButton && productButton.dataset.ready !== "true") {
+      productButton.dataset.ready = "true";
+      productButton.addEventListener("click", () => {
+        renderToast("Cadastre o produto no Zentrix PDV para manter preço e estoque iguais. Depois ele aparece aqui automaticamente.", "info");
+      });
+    }
+
+    const backupButton = viewHost.querySelector('[data-action="download-backup"]');
+    if (backupButton && backupButton.dataset.ready !== "true") {
+      backupButton.dataset.ready = "true";
+      backupButton.addEventListener("click", () => {
+        const payload = readViewState(page || currentPageName(), "csv:export-backups");
+        if (payload) {
+          downloadCsvPayload(payload.title, payload.headers || [], payload.rows || []);
+          renderToast("Backup baixado com sucesso. Guarde este arquivo em um local seguro.", "success");
+          return;
+        }
+        const exportButton = document.getElementById("export-backups");
+        if (exportButton && !exportButton.disabled) {
+          exportButton.click();
+          return;
+        }
+        renderToast("Ainda não há backup recebido do PDV para baixar.", "warning");
+      });
+    }
+  }
+
+  function schedulePrefetch(page) {
+    if (prefetchTimer) {
+      window.clearTimeout(prefetchTimer);
+    }
+    prefetchTimer = window.setTimeout(() => {
+      const paths = prefetchPaths(page || currentPageName());
+      paths.forEach((path, index) => {
+        window.setTimeout(() => prefetchApi(path), index * 80);
+      });
+    }, 250);
+  }
+
+  function prefetchPaths(page) {
+    const paths = new Set();
+    PREFETCH_PERIODS.forEach((period) => {
+      pageApiPaths(page, period, currentStore).forEach((path) => paths.add(path));
+    });
+    ["dashboard", "vendas", "financeiro", "caixa", "produtos", "estoque", "clientes", "relatorios"].forEach((name) => {
+      pageApiPaths(name, currentPeriod, currentStore).forEach((path) => paths.add(path));
+    });
+    paths.add("/stores");
+    return Array.from(paths).slice(0, 18);
+  }
+
+  function pageApiPaths(page, period, store) {
+    const periodSuffix = queryString(period, store);
+    const storeSuffix = queryString(null, store);
+    return {
+      dashboard: ["/dashboard" + periodSuffix],
+      vendas: ["/sales" + periodSuffix],
+      financeiro: ["/finance" + periodSuffix],
+      caixa: ["/cash-sessions" + periodSuffix],
+      auditoria: ["/audit" + periodSuffix],
+      relatorios: ["/reports" + periodSuffix],
+      produtos: ["/products" + storeSuffix],
+      estoque: ["/stock/alerts" + storeSuffix],
+      clientes: ["/clients" + storeSuffix],
+      funcionarios: ["/employees" + storeSuffix],
+      backups: ["/backups" + storeSuffix],
+      configuracoes: ["/settings" + storeSuffix]
+    }[page] || [];
   }
 
   async function loadPageData(options) {
     const silent = options && options.silent;
     if (loadingData) {
+      pendingDataReload = true;
       return;
     }
     loadingData = true;
-    const page = location.pathname.split("/").pop().replace(".html", "");
+    const previousForceFresh = forceFreshData;
+    forceFreshData = Boolean(options && options.fresh);
+    const page = currentPageName();
+    const restoredFromCache = !silent && restoreCachedView(page);
     const loaders = {
       dashboard: renderDashboard,
       vendas: renderSales,
@@ -187,10 +405,10 @@
       auditoria: renderAudit,
       relatorios: renderReports,
       backups: renderBackups,
-      configuracoes: renderSettings
+      configuracoes: renderOwnerSettings
     };
     const loader = loaders[page];
-    if (!silent) {
+    if (!silent && !restoredFromCache && !body.classList.contains("app-data-ready")) {
       viewHost.innerHTML = '<section class="skeleton" aria-label="Carregando dados"></section>';
     }
     try {
@@ -199,6 +417,8 @@
       const chromePromise = refreshChrome();
       if (loader) {
         await loader();
+        wirePageActions(page);
+        cacheCurrentView(page);
         body.classList.add("app-data-ready");
       }
       await storesPromise;
@@ -206,12 +426,18 @@
         wireStoreTabs();
       }
       await chromePromise;
+      schedulePrefetch(page);
     } catch (error) {
       await refreshChrome();
       renderError(error.message || "Não foi possível carregar os dados.");
     } finally {
       body.classList.add("app-data-ready");
       loadingData = false;
+      forceFreshData = previousForceFresh;
+      if (pendingDataReload) {
+        pendingDataReload = false;
+        loadPageData({ silent: true });
+      }
     }
   }
 
@@ -223,8 +449,8 @@
       if (document.hidden || !body.classList.contains("is-authenticated")) {
         return;
       }
-      loadPageData({ silent: true });
-    }, 5000);
+      loadPageData({ silent: true, fresh: true });
+    }, 8000);
   }
 
   async function renderDashboard() {
@@ -240,7 +466,7 @@
         </div>
         <div class="hero-status">
           <div class="status-card"><span>Status do PDV</span><strong>${esc(syncStatusLabel(data))}</strong></div>
-          <div class="status-card"><span>Última sincronização</span><strong>${esc(data.lastSync || "Aguardando envio")}</strong></div>
+          <div class="status-card"><span>Última atualização</span><strong>${esc(data.lastSync || "Aguardando dados do PDV")}</strong></div>
         </div>
       </section>
     `;
@@ -271,7 +497,7 @@
         </section>
         <section class="panel">
           <div class="panel-title"><div><h3>Alertas importantes</h3><span>Operação e estoque</span></div></div>
-          <div class="stack-list">${statusRowsHtml(data.stockHealth || [])}${syncAlertHtml(data)}</div>
+          <div class="stack-list">${statusRowsHtml(data.stockHealth || [])}${syncAlertOwnerHtml(data)}</div>
         </section>
       </div>
     `, { hideHeader: true, noStoreTabs: true });
@@ -318,7 +544,7 @@
     renderShell("Financeiro", "Entradas, saldo, previsão e recebimentos por forma de pagamento.", `
       <div class="grid metrics-grid">
         ${metricCard("Entradas", data.periodTotal || data.todayTotal, periodLabel(), "success", "+", "Recebido")}
-        ${metricCard("Saídas", "Não sincronizadas", "Aguardando despesas do PDV", "warning", "-", "Pendente")}
+        ${metricCard("Saídas", "A informar", "Quando houver despesas no PDV, elas entram aqui", "warning", "-", "Pendente")}
         ${metricCard("Saldo", data.periodTotal || data.todayTotal, "Saldo operacional do período", "info", "$", "Atual")}
         ${metricCard("Previsão", data.monthTotal, "Faturamento do mês", "info", ">", "Mês")}
       </div>
@@ -341,6 +567,14 @@
   async function renderCash() {
     const rows = await window.zentrixApi("/cash-sessions" + periodQuery());
     const openRows = rows.filter((row) => String(row.status || "").toLowerCase().includes("aberto"));
+    const closedRows = rows.filter((row) => !String(row.status || "").toLowerCase().includes("aberto") && row.informed && row.informed !== "-");
+    const expectedTotal = sumMoney(closedRows.map((row) => row.expected));
+    const closingTotal = sumMoney(closedRows.map((row) => row.informed));
+    const missingTotal = closedRows.reduce((total, row) => {
+      const difference = cashDifferenceValue(row);
+      return difference < 0 ? total + Math.abs(difference) : total;
+    }, 0);
+    const divergentRows = closedRows.filter((row) => cashDifferenceValue(row) < 0).length;
     const exportId = "export-caixa";
     renderShell("Caixa", "Sessões abertas, fechadas e movimentações operacionais.", `
       <section class="cash-hero">
@@ -354,17 +588,20 @@
         ${metricCard("Sessões", String(rows.length), "Registros no período", "info", "#", periodLabel())}
         ${metricCard("Abertos", String(openRows.length), "Caixas em operação", openRows.length ? "warning" : "success", "ON", "Agora")}
         ${metricCard("Fechados", String(rows.length - openRows.length), "Sessões finalizadas", "success", "OK", "PDV")}
-        ${metricCard("Diferença no fechamento", "A conferir", "Aguardando valores informados", "warning", "!", "Conciliação")}
+        ${metricCard("Diferença no fechamento", formatCurrency(closingTotal - expectedTotal), "Valor fechado menos saldo esperado", missingTotal ? "danger" : "success", "!", missingTotal ? "Atenção" : "OK")}
+        ${metricCard("Valor fechado", formatCurrency(closingTotal), "Total informado ao fechar o caixa", closedRows.length ? "info" : "warning", "$", closedRows.length ? "Conferido" : "Aguardando")}
+        ${metricCard("Saldo esperado", formatCurrency(expectedTotal), "Valor que deveria estar no caixa", closedRows.length ? "info" : "warning", "=", "Sistema")}
+        ${metricCard("Falta no caixa", formatCurrency(missingTotal), divergentRows ? `${divergentRows} fechamento(s) abaixo do esperado` : "Nenhum fechamento abaixo do esperado", divergentRows ? "danger" : "success", "!", divergentRows ? "Atenção" : "OK")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
         <section class="panel"><div class="panel-title"><div><h3>Timeline do caixa</h3><span>Abertura, sangria, suprimento e fechamento</span></div></div>${cashTimelineHtml(rows)}</section>
-        ${dataTableHtml("Caixas", ["Loja", "Código", "Operador", "Abertura", "Fechamento", "Status", "Valor inicial"], rows, (row) => [
-          row.store, row.code, row.operator, row.openedAt, row.closedAt, tag(row.status), row.expected
+        ${dataTableHtml("Caixas", ["Loja", "Código", "Operador", "Abertura", "Fechamento", "Status", "Saldo esperado", "Valor fechado", "Diferença"], rows, (row) => [
+          row.store, row.code, row.operator, row.openedAt, row.closedAt, tag(row.status), row.expected, row.informed || "-", cashDifferenceTag(row)
         ], exportId)}
       </div>
     `);
-    setupCsvExport(exportId, "Caixas", ["Loja", "Código", "Operador", "Abertura", "Fechamento", "Status", "Valor inicial"], rows.map((row) => [
-      row.store, row.code, row.operator, row.openedAt, row.closedAt, row.status, row.expected
+    setupCsvExport(exportId, "Caixas", ["Loja", "Código", "Operador", "Abertura", "Fechamento", "Status", "Saldo esperado", "Valor fechado", "Diferença"], rows.map((row) => [
+      row.store, row.code, row.operator, row.openedAt, row.closedAt, row.status, row.expected, row.informed || "-", row.difference || "-"
     ]));
   }
 
@@ -374,14 +611,14 @@
     const empty = rows.filter((row) => Number(row.currentStock || 0) <= 0).length;
     renderShell("Produtos", "Cadastro sincronizado por loja, com categoria, preço, estoque e status.", `
       <div class="grid metrics-grid">
-        ${metricCard("Total de produtos", String(rows.length), "Itens sincronizados", "info", "#", activeStoreName())}
+        ${metricCard("Total de produtos", String(rows.length), "Itens recebidos do PDV", "info", "#", activeStoreName())}
         ${metricCard("Ativos", String(rows.length - inactive), "Disponíveis para venda", "success", "OK", "Catálogo")}
         ${metricCard("Inativos", String(inactive), "Sem operação ativa", inactive ? "warning" : "success", "II", "Cadastro")}
         ${metricCard("Sem estoque", String(empty), "Risco de ruptura", empty ? "danger" : "success", "0", "Estoque")}
       </div>
-      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button">Novo produto</button><span class="chip info">Cadastro conectado ao PDV</span></div>
+      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="new-product">Novo produto</button><span class="chip info">Cadastro feito no PDV</span></div>
       <div class="entity-grid">
-        ${rows.map((row) => productCardHtml(row)).join("") || emptyState("Nenhum produto sincronizado.")}
+        ${rows.map((row) => productCardHtml(row)).join("") || emptyState("Ainda não há produtos nesta loja.")}
       </div>
     `);
   }
@@ -397,7 +634,7 @@
         ${metricCard("Saídas", "Sincronizadas", "Vendas e baixas operacionais", "info", ">", "PDV")}
       </div>
       <div class="entity-grid" style="margin-top: 16px">
-        ${rows.map((row) => stockCardHtml(row)).join("") || emptyState("Nenhum alerta de estoque.")}
+        ${rows.map((row) => stockCardHtml(row)).join("") || emptyState("Nenhum produto precisa de atenção no estoque.")}
       </div>
     `);
   }
@@ -413,7 +650,7 @@
         ${metricCard("Frequência", "PDV", "Acompanhamento comercial", "info", "R", "Online")}
       </div>
       <div class="entity-grid" style="margin-top: 16px">
-        ${rows.slice(0, 9).map((row) => clientCardHtml(row)).join("") || emptyState("Nenhum cliente sincronizado.")}
+        ${rows.slice(0, 9).map((row) => clientCardHtml(row)).join("") || emptyState("Ainda não há clientes para mostrar.")}
       </div>
       <div style="margin-top: 16px">
         ${dataTableHtml("Clientes", ["Loja", "Nome", "CPF/CNPJ", "Telefone", "E-mail", "Endereço", "Cadastro"], rows, (row) => [
@@ -437,7 +674,7 @@
         ${metricCard("Operadores", String(rows.filter((row) => roleTone(row.role) !== "danger").length), "Atendimento e vendas", "info", "OP", "Equipe")}
       </div>
       <div class="entity-grid" style="margin-top: 16px">
-        ${rows.map((row) => employeeCardHtml(row)).join("") || emptyState("Nenhum funcionário sincronizado.")}
+        ${rows.map((row) => employeeCardHtml(row)).join("") || emptyState("Ainda não há funcionários recebidos do PDV.")}
       </div>
     `);
   }
@@ -467,6 +704,7 @@
 
   async function renderReports() {
     const data = await window.zentrixApi("/reports" + periodQuery());
+    saveViewState(currentPageName(), "reports-overview", data);
     const summaryCards = Array.isArray(data.summaryCards) && data.summaryCards.length ? data.summaryCards : [
       { label: "Vendas", value: data.sales || 0, description: "Registros do per\u00edodo", tone: "info" },
       { label: "Produtos", value: data.products || 0, description: "Itens no cat\u00e1logo", tone: "info" },
@@ -515,7 +753,7 @@
         ${metricCard("Lotes recebidos", String(rows.length), "Sincronizações recentes", "info", "#", activeStoreName())}
         ${metricCard("Falhas", String(failed), "Backups com erro", failed ? "danger" : "success", "X", "Auditoria")}
       </div>
-      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button">Baixar backup</button><span class="chip success">Dados protegidos</span></div>
+      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="download-backup">Baixar backup</button><span class="chip success">Dados protegidos</span></div>
       <div class="grid two-column">
         <section class="panel"><div class="panel-title"><div><h3>Timeline de backups</h3><span>Últimas sincronizações</span></div></div>${backupTimelineHtml(rows)}</section>
         ${dataTableHtml("Backups", ["Data", "Origem", "Registros", "Status"], rows, (row) => [
@@ -526,6 +764,36 @@
     setupCsvExport(exportId, "Backups", ["Data", "Origem", "Registros", "Status"], rows.map((row) => [
       row.date, row.origin, row.size, row.status
     ]));
+  }
+
+  async function renderOwnerSettings() {
+    const data = await window.zentrixApi("/settings" + storeQuery());
+    setStores(data.stores);
+    const tenantName = data.tenant && data.tenant.name ? data.tenant.name : "Cliente Zentrix";
+    const users = data.users || 0;
+    const lastUpdate = data.lastSync || "Aguardando o primeiro envio do PDV";
+    renderShell("Configurações", "Dados da loja, equipe, segurança e integração com o Zentrix PDV.", `
+      <div class="module-grid settings-grid">
+        ${settingsCard("Empresa", "Dados principais da loja", tenantName, "info")}
+        ${settingsCard("Usuários", "Equipe com acesso ao painel", `${users} usuários`, "success")}
+        ${settingsCard("Permissões", "Perfis de acesso", "Administrador, gerente e operador", "warning")}
+        ${settingsCard("Aparência", "Tema claro e escuro", "Preferência salva neste computador", "info")}
+        ${settingsCard("Segurança", "Acesso protegido", "Conta protegida para clientes Zentrix", "success")}
+        ${settingsCard("Integração com PDV", "Loja conectada", activeStoreName(), "info")}
+      </div>
+      <div class="grid two-column" style="margin-top: 16px">
+        <section class="panel"><div class="panel-title"><div><h3>Resumo do painel</h3><span>Zentrix AppGestão</span></div></div><div class="stack-list">
+          <div class="list-item"><span class="list-icon success">OK</span><div><span class="list-title">Painel pronto para uso</span><span class="list-subtitle">Dados da loja protegidos</span></div><strong>Ativo</strong></div>
+          <div class="list-item"><span class="list-icon info">LO</span><div><span class="list-title">Conta da loja</span><span class="list-subtitle">Identificação interna protegida</span></div><strong>${esc(tenantName)}</strong></div>
+          <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Serviço online</span><span class="list-subtitle">Conectado com segurança</span></div><strong>Online</strong></div>
+          <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última atualização</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(lastUpdate)}</strong></div>
+        </div></section>
+        <section class="panel">
+          <div class="panel-title"><div><h3>Lojas cadastradas</h3><span>Lojas conectadas ao painel</span></div></div>
+          <div class="stack-list">${storesListHtml(data.stores || [])}</div>
+        </section>
+      </div>
+    `);
   }
 
   async function renderSettings() {
@@ -563,7 +831,8 @@
   }
 
   function renderError(message) {
-    viewHost.innerHTML = `<section class="state-box"><div><strong>Falha ao carregar dados</strong><p>${esc(message)}</p></div></section>`;
+    const detail = message ? friendlyMessage(message) : "Verifique se o Zentrix PDV e o serviço online estão abertos.";
+    viewHost.innerHTML = `<section class="state-box"><div><strong>Não conseguimos mostrar os dados agora</strong><p>${esc(detail)}</p></div></section>`;
   }
 
   function metricCard(label, value, note, toneValue, icon, trend) {
@@ -579,7 +848,7 @@
     return `<section class="table-panel">
       <div class="table-title"><h3>${esc(title)}</h3><div class="table-actions"><span>${esc(String(rows.length))} registros</span><button class="button btn-light compact-button" id="${esc(exportId)}" type="button">Exportar CSV</button></div></div>
       <div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>
-        ${rows.map((row) => `<tr>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Nenhum registro sincronizado.")}</td></tr>`}
+        ${rows.map((row) => `<tr>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Ainda não há informações para este período.")}</td></tr>`}
       </tbody></table></div>
     </section>`;
   }
@@ -698,7 +967,7 @@
     const diagnostics = report && Array.isArray(report.diagnostics) ? report.diagnostics : [];
     return `<section class="panel"><div class="panel-title"><div><h3>${esc(title)}</h3><span>Resumo profissional</span></div></div>
       <div class="stack-list">
-        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatório")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("Relatório aguardando dados sincronizados.")}
+        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatório")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("Relatório aguardando dados do PDV.")}
         ${diagnostics.slice(0, 2).map((item) => `<div class="list-item"><span class="list-icon warning">!</span><div><span class="list-title">Diagnóstico</span><span class="list-subtitle">${esc(item)}</span></div><strong>PDV</strong></div>`).join("")}
       </div>
     </section>`;
@@ -714,7 +983,7 @@
           const format = String(button.dataset.reportFormat || "PDF").toUpperCase();
           const title = button.dataset.reportTitle || "Relatório";
           const endpoint = normalizeReportEndpoint(button.dataset.reportEndpoint || "/reports");
-          const reportData = endpoint === "/reports" ? overviewData : await loadReportEndpoint(endpoint, overviewData);
+          const reportData = endpoint === "/reports" && overviewData ? overviewData : await loadReportEndpoint(endpoint, overviewData);
           generateReportFile(format, title, reportData);
           button.textContent = "Pronto";
           setTimeout(() => {
@@ -827,7 +1096,7 @@
       </style></head><body><main class="page">
         <section class="hero"><h1>${esc(title)}</h1><p>Zentrix AppGestão conectado ao Zentrix PDV | ${esc(periodLabel())} | ${esc(activeStoreName())}</p></section>
         <section class="grid">${cards.slice(0, 4).map((card) => `<article class="card"><span>${esc(card.label)}</span><strong>${esc(card.value)}</strong><small>${esc(card.description || card.note || "")}</small></article>`).join("")}</section>
-        <section class="panel"><h2>Dados do relatório</h2>${headers.length ? `<table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${esc(row[header] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>` : emptyState("Nenhum dado encontrado para o relatório.")}</section>
+        <section class="panel"><h2>Dados do relatório</h2>${headers.length ? `<table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${esc(row[header] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>` : emptyState("Este relatório ainda não tem dados no período escolhido.")}</section>
         ${diagnostics.length ? `<section class="panel"><h2>Diagnóstico</h2><ul class="diag">${diagnostics.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : ""}
         <p class="footer">Gerado em ${esc(new Date().toLocaleString("pt-BR"))}. Use Ctrl+P para salvar como PDF.</p>
         <button class="no-print" onclick="window.print()">Imprimir ou salvar PDF</button>
@@ -910,7 +1179,7 @@
   }
 
   function saleReceiptHtml(row) {
-    if (!row) return emptyState("Nenhuma venda sincronizada.");
+    if (!row) return emptyState("Ainda não há venda no período escolhido.");
     return `<ul class="detail-list">
       <li><span>Código</span><strong>${esc(row.code)}</strong></li>
       <li><span>Loja</span><strong>${esc(row.store)}</strong></li>
@@ -921,18 +1190,43 @@
     </ul>`;
   }
 
+  function cashDifferenceValue(row) {
+    if (!row) return 0;
+    if (row.difference && row.difference !== "-") {
+      return moneyValue(row.difference);
+    }
+    if (row.informed && row.informed !== "-" && row.expected && row.expected !== "-") {
+      return moneyValue(row.informed) - moneyValue(row.expected);
+    }
+    return 0;
+  }
+
+  function cashDifferenceTag(row) {
+    if (!row || !row.informed || row.informed === "-") {
+      return tag("Aguardando fechamento");
+    }
+    const difference = cashDifferenceValue(row);
+    if (difference < 0) {
+      return `<span class="tag danger">Faltando ${esc(formatCurrency(Math.abs(difference)))}</span>`;
+    }
+    if (difference > 0) {
+      return `<span class="tag warning">Sobra ${esc(formatCurrency(difference))}</span>`;
+    }
+    return `<span class="tag success">Conferido</span>`;
+  }
+
   function cashTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Nenhuma sessão de caixa sincronizada.");
+    if (!rows.length) return emptyState("Ainda não há caixa registrado no período escolhido.");
     return `<div class="timeline">${rows.slice(0, 8).map((row) => `
       <div class="timeline-item">
         <span class="list-icon ${tagTone(row.status)}">${String(row.status || "").toLowerCase().includes("aberto") ? "ON" : "OK"}</span>
-        <div><span class="list-title">${esc(row.code)} - ${esc(row.operator || "Operador")}</span><span class="list-subtitle">Abertura: ${esc(row.openedAt)} | Fechamento: ${esc(row.closedAt)}</span></div>
-        <strong>${esc(row.expected)}</strong>
+        <div><span class="list-title">${esc(row.code)} - ${esc(row.operator || "Operador")}</span><span class="list-subtitle">Abertura: ${esc(row.openedAt)} | Fechamento: ${esc(row.closedAt)} | Esperado: ${esc(row.expected || "-")}</span></div>
+        <strong>${esc(row.informed && row.informed !== "-" ? row.informed : row.expected)}</strong>
       </div>`).join("")}</div>`;
   }
 
   function auditTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Nenhum evento de auditoria no período.");
+    if (!rows.length) return emptyState("Nenhuma ação importante registrada no período.");
     return `<div class="timeline">${rows.slice(0, 10).map((row) => {
       const level = auditTone(row);
       return `<div class="timeline-item">
@@ -944,7 +1238,7 @@
   }
 
   function backupTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Nenhum backup recebido.");
+    if (!rows.length) return emptyState("Ainda não há backup recebido do PDV.");
     return `<div class="timeline">${rows.slice(0, 8).map((row) => `
       <div class="timeline-item">
         <span class="list-icon ${tagTone(row.status)}">CL</span>
@@ -968,7 +1262,7 @@
   }
 
   function paymentsHtml(rows) {
-    return rows.map((row) => `<div class="payment-row"><strong>${esc(row.name)}</strong><div class="progress-track"><span style="width: ${percentWidth(row.percent)}%"></span></div><span>${esc(row.total)}</span></div>`).join("") || emptyState("Nenhuma forma de pagamento sincronizada.");
+    return rows.map((row) => `<div class="payment-row"><strong>${esc(row.name)}</strong><div class="progress-track"><span style="width: ${percentWidth(row.percent)}%"></span></div><span>${esc(row.total)}</span></div>`).join("") || emptyState("Ainda não há pagamentos no período escolhido.");
   }
 
   function barChartHtml(rows) {
@@ -996,15 +1290,22 @@
         <div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(subtitle)}</span><div class="progress-track"><span style="width: ${width}%"></span></div></div>
         <strong>${esc(row.display || row.value || "0")}</strong>
       </div>`;
-    }).join("") || emptyState("Sem dados no período.");
+    }).join("") || emptyState("Ainda não há dados no período escolhido.");
   }
 
   function compactSalesList(rows) {
-    return rows.slice(0, 4).map((row) => `<div class="list-item"><span class="list-icon success">$</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(row.sales ? row.sales + " vendas" : "Loja sincronizada")}</span></div><strong>${esc(row.display || row.value || "0")}</strong></div>`).join("") || emptyState("Aguardando vendas do PDV.");
+    return rows.slice(0, 4).map((row) => `<div class="list-item"><span class="list-icon success">$</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(row.sales ? row.sales + " vendas" : "Loja atualizada")}</span></div><strong>${esc(row.display || row.value || "0")}</strong></div>`).join("") || emptyState("Aguardando vendas do PDV.");
   }
 
   function statusRowsHtml(rows) {
-    return rows.map((row) => `<div class="list-item"><span class="list-icon ${tone(row.tone)}">${esc(row.display)}</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">Status atual dos produtos</span></div><strong>${esc(row.display)}</strong></div>`).join("") || emptyState("Sem produtos sincronizados.");
+    return rows.map((row) => `<div class="list-item"><span class="list-icon ${tone(row.tone)}">${esc(row.display)}</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">Status atual dos produtos</span></div><strong>${esc(row.display)}</strong></div>`).join("") || emptyState("Ainda não há produtos para acompanhar.");
+  }
+
+  function syncAlertOwnerHtml(data) {
+    const synced = data && Number(data.syncProgress || 0) === 100 && data.lastSync;
+    const title = synced ? "PDV conectado" : "Atualização pendente";
+    const subtitle = data && data.lastSync ? data.lastSync : "Aguardando o primeiro envio do PDV";
+    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(String((data && data.syncProgress) || 0))}%</strong></div>`;
   }
 
   function syncAlertHtml(data) {
@@ -1013,7 +1314,7 @@
   }
 
   function storesListHtml(rows) {
-    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">${esc(row.label || row.id)}</span></div><strong>${esc(row.lastSync || "-")}</strong></div>`).join("") || emptyState("Nenhuma loja sincronizada.");
+    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">Loja conectada ao Zentrix PDV</span></div><strong>${esc(row.lastSync || "Aguardando atualização")}</strong></div>`).join("") || emptyState("Nenhuma loja conectada ao painel.");
   }
 
   function storeTabsHtml() {
@@ -1022,7 +1323,7 @@
     return `<div class="store-tabs" role="tablist" aria-label="Lojas">${stores.map((store) => `
       <button class="${store.id === currentStore ? "active" : ""}" type="button" data-store-id="${esc(store.id)}" role="tab" aria-selected="${store.id === currentStore ? "true" : "false"}">
         <span>${esc(store.name)}</span>
-        <small>${esc(store.isAll ? "Dados gerais" : store.label || store.id)}</small>
+        <small>${esc(store.isAll ? "Todas as lojas" : "Loja conectada")}</small>
       </button>
     `).join("")}</div>`;
   }
@@ -1051,7 +1352,25 @@
   }
 
   function emptyState(message) {
-    return `<div class="empty-state">${esc(message)}</div>`;
+    return `<div class="empty-state"><strong>${esc(message || "Ainda não há informações para mostrar.")}</strong><span>Quando o PDV enviar novos dados, esta área será atualizada automaticamente.</span></div>`;
+  }
+
+  function friendlyMessage(message) {
+    const text = normalizeText(String(message || ""));
+    if (!text) return "Verifique se o Zentrix PDV e o serviço online estão abertos.";
+    if (text.toLowerCase().includes("failed to fetch") || text.toLowerCase().includes("network")) {
+      return "Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.";
+    }
+    if (text.includes("401") || text.toLowerCase().includes("unauthorized")) {
+      return "A chave de acesso entre PDV e painel precisa ser conferida.";
+    }
+    if (text.includes("404")) {
+      return "Esta informação ainda não está disponível no painel.";
+    }
+    if (text.includes("500") || text.includes("503")) {
+      return "O serviço online do Zentrix está iniciando ou encontrou instabilidade. Tente atualizar novamente.";
+    }
+    return text.replace(/\bAPI\b/g, "serviço online").replace(/\bendpoint\b/gi, "recurso");
   }
 
   function initChromeSkeleton() {
@@ -1062,8 +1381,12 @@
     setText(".sidebar-sync span", "Carregando estado real");
     const progress = document.querySelector(".sidebar-sync .progress-track span");
     if (progress) progress.style.width = "0%";
+    setText(".sidebar-sync strong", "Preparando painel");
+    setText(".sidebar-sync span", "Buscando dados da loja");
+    setText(".sidebar-sync .button", "Ver histórico");
     setText(".sidebar-sync .button", "Histórico");
     setText(".window-title span:last-child", "Zentrix AppGestão");
+    setText(".sidebar-sync .button", "Ver histórico");
     populateStoreSelect([{ id: "all", name: "Geral", label: "Todas as lojas", isAll: true }]);
   }
 
@@ -1111,7 +1434,6 @@
     if (currentStore === next) return;
     currentStore = next;
     localStorage.setItem("zentrix-store", currentStore);
-    body.classList.remove("app-data-ready");
     loadPageData();
   }
 
@@ -1147,8 +1469,12 @@
     setText(".sidebar-sync .button", "Histórico");
     const progressBar = document.querySelector(".sidebar-sync .progress-track span");
     if (progressBar) progressBar.style.width = progress + "%";
+    setText(".sidebar-sync strong", synced ? "Loja atualizada" : "Atualizando dados");
+    setText(".sidebar-sync span", lastSync ? "Última atualização: " + lastSync : "Aguardando o primeiro envio do PDV");
+    setText(".sidebar-sync .button", "Ver histórico");
     setText(".topbar-connection", synced ? "Online" : "Atualizando");
     setText(".topbar-pdv", synced ? "PDV conectado" : "PDV aguardando");
+    setText(".topbar-pdv", synced ? "PDV conectado" : "Aguardando PDV");
   }
 
   function enhanceChrome() {
@@ -1178,7 +1504,41 @@
     if (topbarTools && !topbarTools.querySelector(".topbar-connection")) {
       topbarTools.insertAdjacentHTML("afterbegin", '<span class="chip success topbar-connection">Online</span><span class="chip info topbar-pdv">PDV conectado</span>');
     }
-    rebuildNavigation();
+    rebuildNavigationWithAssets();
+  }
+
+  function rebuildNavigationWithAssets() {
+    const nav = document.querySelector(".nav-list");
+    if (!nav) return;
+    const currentPage = location.pathname.split("/").pop();
+    const groups = [
+      ["Operação", [
+        ["dashboard.html", "Dashboard", "dashboard.png"],
+        ["vendas.html", "Vendas", "vendas.png"],
+        ["caixa.html", "Caixa", "caixa.png"]
+      ]],
+      ["Gestão", [
+        ["financeiro.html", "Financeiro", "financeiro.png"],
+        ["produtos.html", "Produtos", "produtos.png"],
+        ["estoque.html", "Estoque", "estoque.png"],
+        ["clientes.html", "Clientes", "clientes.png"],
+        ["funcionarios.html", "Funcionários", "funcionarios.png"]
+      ]],
+      ["Segurança e Sistema", [
+        ["auditoria.html", "Auditoria", "auditoria.png"],
+        ["relatorios.html", "Relatórios", "relatorios.png"],
+        ["backups.html", "Backups", "backups.png"],
+        ["configuracoes.html", "Configurações", "configuracoes.png"]
+      ]]
+    ];
+    nav.innerHTML = groups.map(([group, links]) => `
+      <div class="nav-section">${esc(group)}</div>
+      ${links.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" href="${href}"><span class="nav-icon"><img src="../assets/Icons/${escAttr(icon)}" data-fallback="../assets/Icons/${escAttr(iconFallbackFile(icon))}" alt="" loading="eager" decoding="async" onerror="this.onerror=null;this.src=this.dataset.fallback;" /></span><span>${esc(label)}</span></a>`).join("")}
+    `).join("");
+  }
+
+  function iconFallbackFile(name) {
+    return String(name || "").replace(/\.png$/i, "-removebg-preview.png");
   }
 
   function rebuildNavigation() {
@@ -1237,22 +1597,31 @@
         currentPeriod = period;
         localStorage.setItem("zentrix-period", currentPeriod);
         control.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+        schedulePrefetch(currentPageName());
         loadPageData();
       });
     });
   }
 
   function periodQuery() {
-    const params = new URLSearchParams();
-    params.set("period", currentPeriod);
-    params.set("store", currentStore);
-    return "?" + params.toString();
+    return queryString(currentPeriod, currentStore);
   }
 
   function storeQuery() {
+    return queryString(null, currentStore);
+  }
+
+  function queryString(period, store) {
     const params = new URLSearchParams();
-    params.set("store", currentStore);
+    if (period) {
+      params.set("period", period);
+    }
+    params.set("store", store || currentStore || "all");
     return "?" + params.toString();
+  }
+
+  function currentPageName() {
+    return location.pathname.split("/").pop().replace(".html", "");
   }
 
   function periodLabel(value) {
@@ -1287,20 +1656,40 @@
   }
 
   function setupCsvExport(buttonId, title, headers, rows) {
+    saveViewState(currentPageName(), "csv:" + buttonId, { title, headers, rows });
     const button = document.getElementById(buttonId);
     if (!button) return;
-    button.disabled = rows.length === 0;
-    button.addEventListener("click", () => {
-      const csv = [headers, ...rows].map((row) => row.map((value) => csvCell(normalizeText(value))).join(";")).join("\n");
-      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-") + ".csv";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(link.href);
+    wireCsvExportButton(button, title, headers, rows);
+  }
+
+  function restoreCsvExports(page) {
+    viewHost.querySelectorAll("button[id^='export-']").forEach((button) => {
+      const payload = readViewState(page, "csv:" + button.id);
+      if (payload) {
+        wireCsvExportButton(button, payload.title, payload.headers || [], payload.rows || []);
+      }
     });
+  }
+
+  function wireCsvExportButton(button, title, headers, rows) {
+    if (button.dataset.exportReady === "true") return;
+    button.dataset.exportReady = "true";
+    button.disabled = !Array.isArray(rows) || rows.length === 0;
+    button.addEventListener("click", () => {
+      downloadCsvPayload(title, headers, rows);
+    });
+  }
+
+  function downloadCsvPayload(title, headers, rows) {
+    const csv = [headers, ...rows].map((row) => row.map((value) => csvCell(normalizeText(value))).join(";")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-") + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
   }
 
   function csvCell(value) {
@@ -1448,6 +1837,16 @@
 
   function esc(value) {
     return normalizeText(value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    })[char]);
+  }
+
+  function escAttr(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
       "<": "&lt;",
       ">": "&gt;",
