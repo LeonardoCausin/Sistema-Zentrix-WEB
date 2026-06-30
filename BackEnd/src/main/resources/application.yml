@@ -27,6 +27,16 @@ zentrix:
     api-key: ${ZENTRIX_SYNC_KEY:}
   setup:
     api-key: ${ZENTRIX_SETUP_KEY:}
+  auth:
+    token-ttl-minutes: ${ZENTRIX_AUTH_TOKEN_TTL_MINUTES:480}
+  rate-limit:
+    enabled: ${ZENTRIX_RATE_LIMIT_ENABLED:true}
+    default-limit: ${ZENTRIX_RATE_LIMIT_DEFAULT_LIMIT:240}
+    default-window-seconds: ${ZENTRIX_RATE_LIMIT_DEFAULT_WINDOW_SECONDS:60}
+    auth-limit: ${ZENTRIX_RATE_LIMIT_AUTH_LIMIT:30}
+    auth-window-seconds: ${ZENTRIX_RATE_LIMIT_AUTH_WINDOW_SECONDS:300}
+    sync-limit: ${ZENTRIX_RATE_LIMIT_SYNC_LIMIT:120}
+    sync-window-seconds: ${ZENTRIX_RATE_LIMIT_SYNC_WINDOW_SECONDS:60}
   health:
     expose-details: ${ZENTRIX_HEALTH_DETAILS:false}
   cors:

@@ -8,6 +8,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -91,6 +92,7 @@ public class WebDatabaseInitializer {
         }
         migrateTenantScopedTables();
         migrateDomainColumns();
+        applyVersionedMigrations();
         seedTenantMetadataFromExistingData();
     }
 
@@ -102,6 +104,14 @@ public class WebDatabaseInitializer {
 
     private List<String> schemaStatements() {
         return List.of(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version VARCHAR(40) NOT NULL,
+                    description VARCHAR(180) NOT NULL,
+                    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (version)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
                 """
                 CREATE TABLE IF NOT EXISTS tenants (
                     id VARCHAR(80) NOT NULL,
@@ -471,6 +481,63 @@ public class WebDatabaseInitializer {
         ensureColumn("stock_movements", "reference_id", "VARCHAR(80) NULL", "AFTER reference_type");
     }
 
+    private void applyVersionedMigrations() {
+        List<Migration> migrations = List.of(
+                new Migration("2026063001", "performance indexes for panel pagination", ignored -> migrationPerformanceIndexes()),
+                new Migration("2026063002", "sync reconciliation ledger", ignored -> migrationSyncReconciliation())
+        );
+        for (Migration migration : migrations) {
+            if (migrationApplied(migration.version())) {
+                continue;
+            }
+            migration.action().accept(this);
+            jdbcTemplate.update("""
+                    INSERT INTO schema_migrations (version, description)
+                    VALUES (?, ?)
+                    """, migration.version(), migration.description());
+            log.info("Migração Zentrix aplicada: {} - {}", migration.version(), migration.description());
+        }
+    }
+
+    private void migrationPerformanceIndexes() {
+        ensureIndex("sales", "idx_sales_status_date_id", List.of("tenant_id", "store_id", "status", "date_time", "id"));
+        ensureIndex("sales", "idx_sales_scope_date_id", List.of("tenant_id", "store_id", "date_time", "id"));
+        ensureIndex("sale_items", "idx_sale_items_sale_product", List.of("tenant_id", "store_id", "sale_id", "product_code"));
+        ensureIndex("sale_items", "idx_sale_items_product_sale", List.of("tenant_id", "store_id", "product_code", "sale_id"));
+        ensureIndex("products", "idx_products_active_stock", List.of("tenant_id", "store_id", "active", "deleted_at", "stock"));
+        ensureIndex("clients", "idx_clients_active_name", List.of("tenant_id", "store_id", "active", "name"));
+        ensureIndex("cash_sessions", "idx_cash_sessions_status_dates", List.of("tenant_id", "store_id", "status", "opened_at", "closed_at"));
+        ensureIndex("cash_movements", "idx_cash_movements_date", List.of("tenant_id", "store_id", "date_time"));
+        ensureIndex("audit_log", "idx_audit_log_created_id", List.of("tenant_id", "store_id", "created_at", "id"));
+        ensureIndex("sync_runs", "idx_sync_runs_status_received", List.of("tenant_id", "store_id", "status", "received_at", "id"));
+    }
+
+    private void migrationSyncReconciliation() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS sync_reconciliation (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    run_id BIGINT NULL,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    device_id VARCHAR(120) NULL,
+                    source_id VARCHAR(120) NOT NULL,
+                    mode VARCHAR(20) NOT NULL,
+                    status VARCHAR(30) NOT NULL,
+                    expected_tables_json LONGTEXT NULL,
+                    received_tables_json LONGTEXT NULL,
+                    missing_tables_json LONGTEXT NULL,
+                    conflict_count INT NOT NULL DEFAULT 0,
+                    message TEXT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    INDEX idx_sync_reconciliation_scope (tenant_id, store_id, created_at),
+                    INDEX idx_sync_reconciliation_run (run_id),
+                    INDEX idx_sync_reconciliation_status (tenant_id, store_id, status, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+    }
+
     private void ensureScopeColumns(String tableName) {
         ensureColumn(tableName, "tenant_id", "VARCHAR(80) NULL", "FIRST");
         ensureColumn(tableName, "store_id", "VARCHAR(80) NULL", "AFTER tenant_id");
@@ -506,6 +573,26 @@ public class WebDatabaseInitializer {
                 .orElseThrow();
         String dropPrimary = currentColumns.isEmpty() ? "" : "DROP PRIMARY KEY, ";
         jdbcTemplate.execute("ALTER TABLE `" + tableName + "` " + dropPrimary + "ADD PRIMARY KEY (" + expectedSql + ")");
+    }
+
+    private boolean migrationApplied(String version) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM schema_migrations
+                WHERE version = ?
+                """, Integer.class, version);
+        return count != null && count > 0;
+    }
+
+    private void ensureIndex(String tableName, String indexName, List<String> columns) {
+        if (indexExists(tableName, indexName)) {
+            return;
+        }
+        String columnSql = columns.stream()
+                .map(column -> "`" + column + "`")
+                .reduce((left, right) -> left + ", " + right)
+                .orElseThrow();
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` ADD INDEX `" + indexName + "` (" + columnSql + ")");
     }
 
     private void seedTenantMetadataFromExistingData() {
@@ -553,6 +640,17 @@ public class WebDatabaseInitializer {
         return count != null && count > 0;
     }
 
+    private boolean indexExists(String tableName, String indexName) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = ?
+                  AND index_name = ?
+                """, Integer.class, tableName, indexName);
+        return count != null && count > 0;
+    }
+
     private List<String> primaryKeyColumns(String tableName) {
         return jdbcTemplate.query("""
                 SELECT column_name
@@ -573,5 +671,8 @@ public class WebDatabaseInitializer {
                 LIMIT 1
                 """, (rs, rowNum) -> rs.getString(1)));
         return rows.isEmpty() || rows.get(0) == null || rows.get(0).isBlank() ? "WEB" : rows.get(0);
+    }
+
+    private record Migration(String version, String description, Consumer<WebDatabaseInitializer> action) {
     }
 }

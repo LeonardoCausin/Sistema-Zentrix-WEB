@@ -21,7 +21,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260630-architecture";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260630-hardening";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -365,22 +365,10 @@
   }
 
   function pageApiPaths(page, period, store) {
-    const periodSuffix = queryString(period, store);
-    const storeSuffix = queryString(null, store);
-    return {
-      dashboard: ["/dashboard" + periodSuffix],
-      vendas: ["/sales" + periodSuffix],
-      financeiro: ["/finance" + periodSuffix],
-      caixa: ["/cash-sessions" + periodSuffix],
-      auditoria: ["/audit" + periodSuffix],
-      relatorios: ["/reports" + periodSuffix],
-      produtos: ["/products" + storeSuffix],
-      estoque: ["/stock/alerts" + storeSuffix],
-      clientes: ["/clients" + storeSuffix],
-      funcionarios: ["/employees" + storeSuffix],
-      backups: ["/backups" + storeSuffix],
-      configuracoes: ["/settings" + storeSuffix]
-    }[page] || [];
+    const domain = pageDomains()[page];
+    if (!domain || !Array.isArray(domain.endpoints)) return [];
+    const suffix = domain.query === "period" ? queryString(period, store) : queryString(null, store);
+    return domain.endpoints.map((endpoint) => endpoint + suffix);
   }
 
   async function loadPageData(options) {
@@ -394,21 +382,8 @@
     forceFreshData = Boolean(options && options.fresh);
     const page = currentPageName();
     const restoredFromCache = !silent && restoreCachedView(page);
-    const loaders = {
-      dashboard: renderDashboard,
-      vendas: renderSales,
-      financeiro: renderFinance,
-      caixa: renderCash,
-      produtos: renderProducts,
-      estoque: renderStock,
-      clientes: renderClients,
-      funcionarios: renderEmployees,
-      auditoria: renderAudit,
-      relatorios: renderReports,
-      backups: renderBackups,
-      configuracoes: renderOwnerSettings
-    };
-    const loader = loaders[page];
+    const domain = pageDomains()[page];
+    const loader = domain ? pageRenderers()[domain.renderer] : null;
     if (!silent && !restoredFromCache && !body.classList.contains("app-data-ready")) {
       viewHost.innerHTML = '<section class="skeleton" aria-label="Carregando dados"></section>';
     }
@@ -452,6 +427,40 @@
       }
       loadPageData({ silent: true, fresh: true });
     }, 8000);
+  }
+
+  function pageDomains() {
+    return window.ZentrixPageDomains || {
+      dashboard: { renderer: "renderDashboard", endpoints: ["/dashboard"], query: "period" },
+      vendas: { renderer: "renderSales", endpoints: ["/sales"], query: "period" },
+      financeiro: { renderer: "renderFinance", endpoints: ["/finance"], query: "period" },
+      caixa: { renderer: "renderCash", endpoints: ["/cash-sessions"], query: "period" },
+      produtos: { renderer: "renderProducts", endpoints: ["/products"], query: "store" },
+      estoque: { renderer: "renderStock", endpoints: ["/stock/alerts"], query: "store" },
+      clientes: { renderer: "renderClients", endpoints: ["/clients"], query: "store" },
+      funcionarios: { renderer: "renderEmployees", endpoints: ["/employees"], query: "store" },
+      auditoria: { renderer: "renderAudit", endpoints: ["/audit"], query: "period" },
+      relatorios: { renderer: "renderReports", endpoints: ["/reports"], query: "period" },
+      backups: { renderer: "renderBackups", endpoints: ["/backups"], query: "store" },
+      configuracoes: { renderer: "renderOwnerSettings", endpoints: ["/settings"], query: "store" }
+    };
+  }
+
+  function pageRenderers() {
+    return {
+      renderDashboard,
+      renderSales,
+      renderFinance,
+      renderCash,
+      renderProducts,
+      renderStock,
+      renderClients,
+      renderEmployees,
+      renderAudit,
+      renderReports,
+      renderBackups,
+      renderOwnerSettings
+    };
   }
 
   async function renderDashboard() {

@@ -13,10 +13,12 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final ApiAuthInterceptor apiAuthInterceptor;
+    private final RateLimitInterceptor rateLimitInterceptor;
     private final String[] allowedOrigins;
 
-    public WebConfig(ApiAuthInterceptor apiAuthInterceptor, Environment environment) {
+    public WebConfig(ApiAuthInterceptor apiAuthInterceptor, RateLimitInterceptor rateLimitInterceptor, Environment environment) {
         this.apiAuthInterceptor = apiAuthInterceptor;
+        this.rateLimitInterceptor = rateLimitInterceptor;
         List<String> origins = Binder.get(environment)
                 .bind("zentrix.cors.allowed-origins", Bindable.listOf(String.class))
                 .orElse(List.of("http://localhost:5500", "http://127.0.0.1:5500", "null"));
@@ -34,8 +36,11 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(rateLimitInterceptor)
+                .addPathPatterns("/api/**");
         registry.addInterceptor(apiAuthInterceptor)
                 .addPathPatterns(
+                        "/api/auth/me",
                         "/api/dashboard",
                         "/api/sales",
                         "/api/sales/**",

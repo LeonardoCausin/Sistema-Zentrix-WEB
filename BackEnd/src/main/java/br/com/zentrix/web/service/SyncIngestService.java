@@ -93,13 +93,15 @@ public class SyncIngestService {
 
                 int totalRows = counts.values().stream().mapToInt(Integer::intValue).sum();
                 Long runId = recordSyncRun(request, syncScope, mode, receivedAt, OffsetDateTime.now(), "SUCCESS", totalRows, counts, "Recebido via API");
+                Map<String, Object> reconciliation = recordReconciliation(runId, syncScope, mode, counts, null);
                 auditService.record(syncScope.tenantId(), syncScope.storeId(), syncScope.deviceId(), syncScope.sourceId(), "PDV", "SYNC_SUCCESS", "sync_runs", String.valueOf(runId), "Sincronização recebida com " + totalRows + " registro(s).", "INFO", null, countsJson(counts), null, "PDV", null, null);
-                return syncResponse(runId, syncScope, mode, "SUCCESS", totalRows, counts, null);
+                return syncResponse(runId, syncScope, mode, "SUCCESS", totalRows, counts, reconciliation, null);
             });
         } catch (RuntimeException e) {
             if (scope != null) {
                 try {
                     Long runId = recordSyncRun(request, scope, request == null ? "PARTIAL" : request.normalizedMode(), receivedAt, OffsetDateTime.now(), "ERROR", 0, Map.of(), e.getMessage());
+                    recordReconciliation(runId, scope, request == null ? "PARTIAL" : request.normalizedMode(), Map.of(), e.getMessage());
                     auditService.record(scope.tenantId(), scope.storeId(), scope.deviceId(), scope.sourceId(), "PDV", "SYNC_ERROR", "sync_runs", String.valueOf(runId), e.getMessage(), "CRITICO", null, null, "Falha ao sincronizar", "PDV", null, null);
                 } catch (RuntimeException ignored) {
                     // Mantém o erro original da sincronização.
@@ -142,6 +144,7 @@ public class SyncIngestService {
         response.put("finishedAt", row.get("finished_at"));
         response.put("totalRows", row.get("total_rows"));
         response.put("tableCounts", parseCounts(row.get("table_counts_json")));
+        response.put("reconciliation", lastReconciliation(row.get("id")));
         response.put("message", Objects.toString(row.get("message"), ""));
         return response;
     }
@@ -411,10 +414,14 @@ public class SyncIngestService {
     }
 
     private String countsJson(Map<String, Integer> counts) {
+        return toJson(counts, "{}");
+    }
+
+    private String toJson(Object value, String fallback) {
         try {
-            return objectMapper.writeValueAsString(counts);
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            return "{}";
+            return fallback;
         }
     }
 
@@ -430,6 +437,97 @@ public class SyncIngestService {
         }
     }
 
+    private Map<String, Object> recordReconciliation(
+            Long runId,
+            SyncScope scope,
+            String mode,
+            Map<String, Integer> counts,
+            String errorMessage
+    ) {
+        List<String> expected = TABLES.stream().map(TableSpec::name).toList();
+        Set<String> receivedSet = new LinkedHashSet<>(counts.keySet());
+        List<String> missing = "FULL".equals(mode)
+                ? expected.stream().filter(table -> !receivedSet.contains(table)).toList()
+                : List.of();
+        String reconciliationStatus;
+        String message;
+        if (errorMessage != null && !errorMessage.isBlank()) {
+            reconciliationStatus = "ERROR";
+            message = errorMessage;
+        } else if ("FULL".equals(mode) && missing.isEmpty()) {
+            reconciliationStatus = "IN_SYNC";
+            message = "Sincronizacao FULL completa recebida.";
+        } else if ("FULL".equals(mode)) {
+            reconciliationStatus = "INCOMPLETE_FULL";
+            message = "Sincronizacao FULL sem todas as tabelas esperadas.";
+        } else {
+            reconciliationStatus = "PARTIAL_ACCEPTED";
+            message = "Atualizacao parcial recebida e registrada para reconciliacao.";
+        }
+        jdbcTemplate.update("""
+                INSERT INTO sync_reconciliation
+                    (run_id, tenant_id, store_id, device_id, source_id, mode, status,
+                     expected_tables_json, received_tables_json, missing_tables_json, conflict_count, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                runId,
+                scope.tenantId(),
+                scope.storeId(),
+                scope.deviceId(),
+                scope.sourceId(),
+                mode,
+                reconciliationStatus,
+                toJson(expected, "[]"),
+                countsJson(counts),
+                toJson(missing, "[]"),
+                0,
+                message
+        );
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", reconciliationStatus);
+        response.put("missingTables", missing);
+        response.put("receivedTables", counts);
+        response.put("message", message);
+        return response;
+    }
+
+    private Map<String, Object> lastReconciliation(Object runId) {
+        if (runId == null) {
+            return Map.of();
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT status, missing_tables_json, received_tables_json, conflict_count, message, created_at
+                FROM sync_reconciliation
+                WHERE run_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """, runId);
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> row = rows.get(0);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", row.get("status"));
+        response.put("missingTables", parseList(row.get("missing_tables_json")));
+        response.put("receivedTables", parseCounts(row.get("received_tables_json")));
+        response.put("conflictCount", row.get("conflict_count"));
+        response.put("message", row.get("message"));
+        response.put("createdAt", row.get("created_at"));
+        return response;
+    }
+
+    private List<String> parseList(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(Objects.toString(value), objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, String.class));
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
     private Map<String, Object> syncResponse(
             Long runId,
             SyncScope scope,
@@ -437,6 +535,7 @@ public class SyncIngestService {
             String status,
             int totalRows,
             Map<String, Integer> counts,
+            Map<String, Object> reconciliation,
             String message
     ) {
         Map<String, Object> response = new LinkedHashMap<>();
@@ -449,6 +548,7 @@ public class SyncIngestService {
         response.put("status", status);
         response.put("totalRows", totalRows);
         response.put("tableCounts", counts);
+        response.put("reconciliation", reconciliation == null ? Map.of() : reconciliation);
         if (message != null) {
             response.put("message", message);
         }

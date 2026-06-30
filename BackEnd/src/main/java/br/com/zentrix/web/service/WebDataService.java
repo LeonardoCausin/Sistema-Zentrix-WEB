@@ -93,8 +93,14 @@ public class WebDataService {
     }
 
     public List<Map<String, Object>> sales(String tenantId, String period, String store) {
+        return sales(tenantId, period, store, 50, 0);
+    }
+
+    public List<Map<String, Object>> sales(String tenantId, String period, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = salesFilter(tenantId, period, store);
+        int safeLimit = safeLimit(limit, 50, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT s.tenant_id, s.store_id, s.source_id, s.id, s.operator, s.payment_method, s.status, s.date_time,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
@@ -106,7 +112,7 @@ public class WebDataService {
                 WHERE %s
                 GROUP BY s.tenant_id, s.store_id, s.source_id, s.id, s.operator, s.payment_method, s.status, s.date_time, s.discount, s.surcharge
                 ORDER BY s.date_time DESC, s.id DESC
-                LIMIT 50
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("code", "ZV-" + rs.getInt("id"));
@@ -119,19 +125,25 @@ public class WebDataService {
             row.put("status", statusName(rs.getString("status")));
             row.put("total", currency(rs.getBigDecimal("total")));
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> products(String tenantId, String store) {
+        return products(tenantId, store, 100, 0);
+    }
+
+    public List<Map<String, Object>> products(String tenantId, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = scopeFilter(tenantId, store, "p");
+        int safeLimit = safeLimit(limit, 100, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT p.tenant_id, p.store_id, p.source_id, p.code, p.description, p.unit, p.price, p.cost_price,
                        p.stock, p.min_stock, p.ideal_stock, p.category, p.barcode, p.active, p.updated_at, p.deleted_at
                 FROM products p
                 WHERE p.deleted_at IS NULL AND %s
                 ORDER BY p.description
-                LIMIT 100
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> productRow(
                 rs.getString("tenant_id"),
                 rs.getString("store_id"),
@@ -148,12 +160,18 @@ public class WebDataService {
                 rs.getString("barcode"),
                 rs.getBoolean("active"),
                 rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toString()
-        ), filter.argsArray());
+        ), pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> cashSessions(String tenantId, String period, String store) {
+        return cashSessions(tenantId, period, store, 50, 0);
+    }
+
+    public List<Map<String, Object>> cashSessions(String tenantId, String period, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = cashFilter(tenantId, period, store);
+        int safeLimit = safeLimit(limit, 50, 300);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT cs.tenant_id, cs.store_id, cs.source_id, cs.id, cs.cash_id, cs.operator,
                        cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.difference,
@@ -161,7 +179,7 @@ public class WebDataService {
                 FROM cash_sessions cs
                 WHERE %s
                 ORDER BY COALESCE(cs.opened_at, cs.closed_at) DESC, cs.id DESC
-                LIMIT 50
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             boolean closed = rs.getTimestamp("closed_at") != null
                     || !rs.getBoolean("is_open")
@@ -183,19 +201,25 @@ public class WebDataService {
             row.put("informed", rs.getBigDecimal("closing_balance") == null ? "-" : currency(rs.getBigDecimal("closing_balance")));
             row.put("difference", rs.getBigDecimal("difference") == null ? "-" : currency(rs.getBigDecimal("difference")));
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> stockAlerts(String tenantId, String store) {
+        return stockAlerts(tenantId, store, 100, 0);
+    }
+
+    public List<Map<String, Object>> stockAlerts(String tenantId, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = scopeFilter(tenantId, store, "p");
+        int safeLimit = safeLimit(limit, 100, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT p.tenant_id, p.store_id, p.source_id, p.code, p.description, p.unit, p.price, p.cost_price,
                        p.stock, p.min_stock, p.ideal_stock, p.category, p.barcode, p.active, p.updated_at, p.deleted_at
                 FROM products p
                 WHERE p.deleted_at IS NULL AND p.active = TRUE AND p.stock <= p.min_stock AND %s
                 ORDER BY p.stock ASC, p.description
-                LIMIT 100
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> productRow(
                 rs.getString("tenant_id"),
                 rs.getString("store_id"),
@@ -212,19 +236,25 @@ public class WebDataService {
                 rs.getString("barcode"),
                 rs.getBoolean("active"),
                 rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toString()
-        ), filter.argsArray());
+        ), pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> auditEvents(String tenantId, String period, String store) {
+        return auditEvents(tenantId, period, store, 50, 0);
+    }
+
+    public List<Map<String, Object>> auditEvents(String tenantId, String period, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = auditFilter(tenantId, period, store);
+        int safeLimit = safeLimit(limit, 50, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT a.tenant_id, a.store_id, a.source_id, a.acao, a.usuario, a.entity_type, a.entity_id, a.details,
                        a.risk_level, a.reason, a.origin, a.created_at
                 FROM audit_log a
                 WHERE %s
                 ORDER BY a.created_at DESC, a.id DESC
-                LIMIT 50
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
@@ -239,18 +269,24 @@ public class WebDataService {
             row.put("reason", rs.getString("reason"));
             row.put("origin", rs.getString("origin"));
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> backups(String tenantId, String store) {
+        return backups(tenantId, store, 20, 0);
+    }
+
+    public List<Map<String, Object>> backups(String tenantId, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = scopeFilter(tenantId, store, null);
+        int safeLimit = safeLimit(limit, 20, 200);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT received_at, tenant_id, store_id, device_id, source_id, total_rows, status
                 FROM sync_runs
                 WHERE %s
                 ORDER BY received_at DESC, id DESC
-                LIMIT 20
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("date", rs.getTimestamp("received_at") == null ? "-" : rs.getTimestamp("received_at").toString());
@@ -262,12 +298,18 @@ public class WebDataService {
             row.put("size", rs.getInt("total_rows") + " registros");
             row.put("status", rs.getString("status"));
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> clients(String tenantId, String store) {
+        return clients(tenantId, store, 100, 0);
+    }
+
+    public List<Map<String, Object>> clients(String tenantId, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = scopeFilter(tenantId, store, "c");
+        int safeLimit = safeLimit(limit, 100, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT c.tenant_id, c.store_id, c.source_id, c.id, c.name, c.cpf_cnpj, c.phone, c.email, c.address,
                        c.created_at, c.birth_date, c.active, c.notes, c.loyalty_points,
@@ -286,7 +328,7 @@ public class WebDataService {
                 GROUP BY c.tenant_id, c.store_id, c.source_id, c.id, c.name, c.cpf_cnpj, c.phone, c.email, c.address,
                          c.created_at, c.birth_date, c.active, c.notes, c.loyalty_points
                 ORDER BY c.name
-                LIMIT 100
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
@@ -308,18 +350,24 @@ public class WebDataService {
             row.put("averageTicket", rs.getLong("purchase_count") <= 0 ? currency(BigDecimal.ZERO) : currency(rs.getBigDecimal("total_spent").divide(BigDecimal.valueOf(rs.getLong("purchase_count")), 2, RoundingMode.HALF_UP)));
             row.put("status", rs.getBoolean("active") ? "Ativo" : "Inativo");
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public List<Map<String, Object>> employees(String tenantId, String store) {
+        return employees(tenantId, store, 100, 0);
+    }
+
+    public List<Map<String, Object>> employees(String tenantId, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = scopeFilter(tenantId, store, "u");
+        int safeLimit = safeLimit(limit, 100, 500);
+        int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
                 SELECT u.tenant_id, u.store_id, u.source_id, u.username, u.display_name, u.role, u.active, u.created_at, u.updated_at, u.last_login_at, u.permissions_json
                 FROM users u
                 WHERE %s
                 ORDER BY u.display_name
-                LIMIT 100
+                LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
@@ -334,7 +382,7 @@ public class WebDataService {
             row.put("lastLoginAt", rs.getTimestamp("last_login_at") == null ? null : rs.getTimestamp("last_login_at").toString());
             row.put("permissionsJson", rs.getString("permissions_json"));
             return row;
-        }, filter.argsArray());
+        }, pagedArgs(filter, safeLimit, safeOffset));
     }
 
     public Map<String, Object> finance(String tenantId, String period, String store) {
@@ -908,6 +956,22 @@ public class WebDataService {
     private Long number(String sql, List<Object> args) {
         Long value = jdbcTemplate.queryForObject(sql, Long.class, args.toArray());
         return value == null ? 0L : value;
+    }
+
+    private Object[] pagedArgs(Filter filter, int limit, int offset) {
+        List<Object> args = new ArrayList<>(filter.args());
+        args.add(limit);
+        args.add(offset);
+        return args.toArray();
+    }
+
+    private int safeLimit(int requested, int fallback, int max) {
+        int value = requested <= 0 ? fallback : requested;
+        return Math.max(1, Math.min(value, max));
+    }
+
+    private int safeOffset(int requested) {
+        return Math.max(0, requested);
     }
 
     private String lastSync(String tenantId, String store) {

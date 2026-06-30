@@ -38,58 +38,84 @@ public class PanelController {
     @GetMapping("/sales")
     public List<Map<String, Object>> sales(
             @RequestParam(defaultValue = "today") String period,
-            @RequestParam(defaultValue = "all") String store
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset
     ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return dataService.sales(AuthContext.tenantId(), period, store);
+        return dataService.sales(AuthContext.tenantId(), period, store, limit, offset);
     }
 
     @GetMapping("/products")
-    public List<Map<String, Object>> products(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> products(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return dataService.products(AuthContext.tenantId(), store);
+        return dataService.products(AuthContext.tenantId(), store, limit, offset);
     }
 
     @GetMapping("/cash-sessions")
     public List<Map<String, Object>> cashSessions(
             @RequestParam(defaultValue = "today") String period,
-            @RequestParam(defaultValue = "all") String store
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset
     ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return dataService.cashSessions(AuthContext.tenantId(), period, store);
+        return dataService.cashSessions(AuthContext.tenantId(), period, store, limit, offset);
     }
 
     @GetMapping("/stock/alerts")
-    public List<Map<String, Object>> stockAlerts(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> stockAlerts(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return dataService.stockAlerts(AuthContext.tenantId(), store);
+        return dataService.stockAlerts(AuthContext.tenantId(), store, limit, offset);
     }
 
     @GetMapping("/audit")
     public List<Map<String, Object>> audit(
             @RequestParam(defaultValue = "today") String period,
-            @RequestParam(defaultValue = "all") String store
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset
     ) {
         permissionService.require(Permission.VIEW_REPORTS);
-        return dataService.auditEvents(AuthContext.tenantId(), period, store);
+        return dataService.auditEvents(AuthContext.tenantId(), period, store, limit, offset);
     }
 
     @GetMapping("/backups")
-    public List<Map<String, Object>> backups(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> backups(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.MANAGE_SETTINGS);
-        return dataService.backups(AuthContext.tenantId(), store);
+        return dataService.backups(AuthContext.tenantId(), store, limit, offset);
     }
 
     @GetMapping("/clients")
-    public List<Map<String, Object>> clients(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> clients(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return dataService.clients(AuthContext.tenantId(), store);
+        return dataService.clients(AuthContext.tenantId(), store, limit, offset);
     }
 
     @GetMapping("/employees")
-    public List<Map<String, Object>> employees(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> employees(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.MANAGE_USERS);
-        return dataService.employees(AuthContext.tenantId(), store);
+        return dataService.employees(AuthContext.tenantId(), store, limit, offset);
     }
 
     @GetMapping("/finance")

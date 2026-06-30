@@ -16,6 +16,8 @@ node_modules/
 tmp/
 output/
 outputs/
+test-results/
+playwright-report/
 
 # Runtime logs
 *.log
