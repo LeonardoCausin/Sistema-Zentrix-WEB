@@ -544,6 +544,7 @@ public class WebDataService {
                 SELECT si.product_code,
                        COALESCE(p.description, si.product_code) AS description,
                        COALESCE(SUM(si.quantity), 0) AS quantity,
+                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.id)) AS sales_count,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) AS total
                 FROM sale_items si
                 INNER JOIN sales s
@@ -556,12 +557,21 @@ public class WebDataService {
                  AND p.code = si.product_code
                 WHERE s.status = 'PAID' AND %s
                 GROUP BY si.product_code, COALESCE(p.description, si.product_code)
-                ORDER BY total DESC
+                ORDER BY quantity DESC, sales_count DESC, total DESC
                 LIMIT 5
                 """.formatted(filter.sql()), (rs, rowNum) -> {
-            Map<String, Object> row = chartRow(rs.getString("description"), rs.getBigDecimal("total"));
+            BigDecimal quantity = rs.getBigDecimal("quantity");
+            BigDecimal total = rs.getBigDecimal("total");
+            Map<String, Object> row = new LinkedHashMap<>();
+            String description = rs.getString("description");
+            row.put("label", description == null || description.isBlank() ? "Sem data" : description);
+            row.put("value", safeQuantity(quantity));
+            row.put("display", quantity(quantity) + " itens");
             row.put("code", rs.getString("product_code"));
-            row.put("quantity", rs.getBigDecimal("quantity"));
+            row.put("quantity", safeQuantity(quantity));
+            row.put("sales", rs.getLong("sales_count"));
+            row.put("revenue", safeMoney(total));
+            row.put("revenueDisplay", currency(total == null ? BigDecimal.ZERO : total));
             return row;
         }, filter.argsArray());
     }
@@ -707,12 +717,29 @@ public class WebDataService {
     }
 
     private Map<String, Object> chartRow(String label, BigDecimal value) {
-        BigDecimal safeValue = value == null ? BigDecimal.ZERO : value;
+        BigDecimal safeValue = safeMoney(value);
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("label", label == null || label.isBlank() ? "Sem data" : label);
-        row.put("value", safeValue.setScale(2, RoundingMode.HALF_UP));
+        row.put("value", safeValue);
         row.put("display", currency(safeValue));
         return row;
+    }
+
+    private BigDecimal safeMoney(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal safeQuantity(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(3, RoundingMode.HALF_UP);
+    }
+
+    private String quantity(BigDecimal value) {
+        BigDecimal safe = value == null ? BigDecimal.ZERO : value;
+        BigDecimal normalized = safe.stripTrailingZeros();
+        NumberFormat format = NumberFormat.getNumberInstance(PT_BR);
+        format.setMinimumFractionDigits(0);
+        format.setMaximumFractionDigits(Math.max(0, Math.min(3, normalized.scale())));
+        return format.format(normalized);
     }
 
     private Map<String, Object> chartStatusRow(String label, Object value, String tone) {

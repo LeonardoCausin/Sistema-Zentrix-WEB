@@ -29,12 +29,12 @@ public class DatabaseConfig {
         config.setJdbcUrl(webDatabaseSettings.jdbcUrl());
         config.setUsername(webDatabaseSettings.getUsername());
         config.setPassword(webDatabaseSettings.getPassword());
-        config.setMaximumPoolSize(10);
-        config.setMinimumIdle(1);
-        config.setConnectionTimeout(5000);
-        config.setValidationTimeout(3000);
-        config.setIdleTimeout(300000);
-        config.setMaxLifetime(1800000);
+        config.setMaximumPoolSize(webDatabaseSettings.getMaximumPoolSize());
+        config.setMinimumIdle(webDatabaseSettings.getMinimumIdle());
+        config.setConnectionTimeout(webDatabaseSettings.getConnectionTimeout());
+        config.setValidationTimeout(webDatabaseSettings.getValidationTimeout());
+        config.setIdleTimeout(webDatabaseSettings.getIdleTimeout());
+        config.setMaxLifetime(webDatabaseSettings.getMaxLifetime());
         config.setInitializationFailTimeout(-1);
         return new HikariDataSource(config);
     }
@@ -57,6 +57,12 @@ public class DatabaseConfig {
         private String name = "zentrix_web";
         private String username = "root";
         private String password = "";
+        private int maximumPoolSize = 10;
+        private int minimumIdle = 1;
+        private long connectionTimeout = 5000;
+        private long validationTimeout = 3000;
+        private long idleTimeout = 300000;
+        private long maxLifetime = 1800000;
 
         public String jdbcUrl() {
             return "jdbc:mysql://" + host + ":" + port + "/" + name
@@ -108,6 +114,54 @@ public class DatabaseConfig {
 
         public void setPassword(String password) {
             this.password = password == null ? "" : password;
+        }
+
+        public int getMaximumPoolSize() {
+            return Math.max(1, maximumPoolSize);
+        }
+
+        public void setMaximumPoolSize(int maximumPoolSize) {
+            this.maximumPoolSize = maximumPoolSize;
+        }
+
+        public int getMinimumIdle() {
+            return Math.max(0, Math.min(minimumIdle, getMaximumPoolSize()));
+        }
+
+        public void setMinimumIdle(int minimumIdle) {
+            this.minimumIdle = minimumIdle;
+        }
+
+        public long getConnectionTimeout() {
+            return Math.max(250, connectionTimeout);
+        }
+
+        public void setConnectionTimeout(long connectionTimeout) {
+            this.connectionTimeout = connectionTimeout;
+        }
+
+        public long getValidationTimeout() {
+            return Math.max(250, validationTimeout);
+        }
+
+        public void setValidationTimeout(long validationTimeout) {
+            this.validationTimeout = validationTimeout;
+        }
+
+        public long getIdleTimeout() {
+            return idleTimeout <= 0 ? 0 : Math.max(10000, idleTimeout);
+        }
+
+        public void setIdleTimeout(long idleTimeout) {
+            this.idleTimeout = idleTimeout;
+        }
+
+        public long getMaxLifetime() {
+            return maxLifetime <= 0 ? 0 : Math.max(30000, maxLifetime);
+        }
+
+        public void setMaxLifetime(long maxLifetime) {
+            this.maxLifetime = maxLifetime;
         }
     }
 }

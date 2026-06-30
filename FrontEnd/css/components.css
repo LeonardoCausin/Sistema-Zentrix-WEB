@@ -517,6 +517,25 @@
   font-weight: 800;
 }
 
+.empty-state {
+  gap: 6px;
+}
+
+.empty-state strong,
+.state-box strong {
+  color: var(--text-primary);
+}
+
+.empty-state span,
+.state-box p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .skeleton {
   position: relative;
   overflow: hidden;

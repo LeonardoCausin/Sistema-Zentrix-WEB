@@ -9,6 +9,12 @@ BackEnd/.env.*
 # Build artifacts
 target/
 BackEnd/target/
+node_modules/
+
+# Generated reports and temporary tooling
+tmp/
+output/
+outputs/
 
 # Runtime logs
 *.log

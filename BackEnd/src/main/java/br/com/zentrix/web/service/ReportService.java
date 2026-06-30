@@ -215,7 +215,7 @@ public class ReportService {
 
     private List<Map<String, Object>> reportCards() {
         return List.of(
-                reportCard("sales", "Vendas", "Vendas, ticket m\u00e9dio, formas de pagamento e top produtos.", "/api/reports/sales"),
+                reportCard("sales", "Vendas", "Vendas, ticket m\u00e9dio, formas de pagamento e top produtos por quantidade.", "/api/reports/sales"),
                 reportCard("cash", "Caixa", "Aberturas, fechamentos, movimentos e diverg\u00eancias.", "/api/reports/cash"),
                 reportCard("finance", "Financeiro", "Receita, lucro estimado e concilia\u00e7\u00e3o por pagamento.", "/api/reports/finance"),
                 reportCard("products", "Produtos", "Cat\u00e1logo, status, categorias e disponibilidade.", "/api/reports/products"),
@@ -318,17 +318,26 @@ public class ReportService {
         return jdbcTemplate.query("""
                 SELECT COALESCE(NULLIF(p.description, ''), si.product_code) AS label,
                        COALESCE(SUM(si.quantity), 0) AS quantity,
+                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.id)) AS sales_count,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) AS value
                 FROM sale_items si
                 INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id
                 LEFT JOIN products p ON p.tenant_id = si.tenant_id AND p.store_id = si.store_id AND p.code = si.product_code
                 WHERE s.status = 'PAID' AND %s
                 GROUP BY COALESCE(NULLIF(p.description, ''), si.product_code)
-                ORDER BY value DESC
+                ORDER BY quantity DESC, sales_count DESC, value DESC
                 LIMIT 5
                 """.formatted(filter.sql()), (rs, rowNum) -> {
-            Map<String, Object> row = chartRow(rs.getString("label"), rs.getBigDecimal("value"), null);
-            row.put("quantity", rs.getBigDecimal("quantity"));
+            BigDecimal quantity = rs.getBigDecimal("quantity");
+            BigDecimal value = rs.getBigDecimal("value");
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("label", rs.getString("label") == null || rs.getString("label").isBlank() ? "Sem informa\u00e7\u00e3o" : rs.getString("label"));
+            row.put("value", safeQuantity(quantity));
+            row.put("display", quantity(quantity) + " itens");
+            row.put("quantity", safeQuantity(quantity));
+            row.put("sales", rs.getLong("sales_count"));
+            row.put("revenue", safeMoney(value));
+            row.put("revenueDisplay", currency(value == null ? BigDecimal.ZERO : value));
             return row;
         }, filter.argsArray());
     }
@@ -426,10 +435,10 @@ public class ReportService {
     }
 
     private Map<String, Object> chartRow(String label, BigDecimal value, BigDecimal total) {
-        BigDecimal safe = value == null ? BigDecimal.ZERO : value;
+        BigDecimal safe = safeMoney(value);
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("label", label == null || label.isBlank() ? "Sem informa\u00e7\u00e3o" : label);
-        row.put("value", safe.setScale(2, RoundingMode.HALF_UP));
+        row.put("value", safe);
         row.put("display", currency(safe));
         if (total != null && total.compareTo(BigDecimal.ZERO) > 0) {
             row.put("percent", safe.multiply(BigDecimal.valueOf(100)).divide(total, 2, RoundingMode.HALF_UP));
@@ -437,6 +446,23 @@ public class ReportService {
             row.put("percent", BigDecimal.ZERO);
         }
         return row;
+    }
+
+    private BigDecimal safeMoney(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal safeQuantity(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(3, RoundingMode.HALF_UP);
+    }
+
+    private String quantity(BigDecimal value) {
+        BigDecimal safe = value == null ? BigDecimal.ZERO : value;
+        BigDecimal normalized = safe.stripTrailingZeros();
+        NumberFormat format = NumberFormat.getNumberInstance(PT_BR);
+        format.setMinimumFractionDigits(0);
+        format.setMaximumFractionDigits(Math.max(0, Math.min(3, normalized.scale())));
+        return format.format(normalized);
     }
 
     private Map<String, Object> statusRow(String label, long value, String tone) {

@@ -17,6 +17,12 @@ zentrix:
       name: ${WEB_DB_NAME:zentrix_web}
       username: ${WEB_DB_USER:${DB_USER:root}}
       password: ${WEB_DB_PASSWORD:${DB_PASSWORD:}}
+      maximum-pool-size: ${WEB_DB_MAX_POOL_SIZE:10}
+      minimum-idle: ${WEB_DB_MIN_IDLE:1}
+      connection-timeout: ${WEB_DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${WEB_DB_VALIDATION_TIMEOUT_MS:3000}
+      idle-timeout: ${WEB_DB_IDLE_TIMEOUT_MS:300000}
+      max-lifetime: ${WEB_DB_MAX_LIFETIME_MS:1800000}
   sync:
     api-key: ${ZENTRIX_SYNC_KEY:}
   setup:

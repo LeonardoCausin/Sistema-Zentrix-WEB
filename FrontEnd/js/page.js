@@ -16,14 +16,15 @@
   let pendingDataReload = false;
   let prefetchTimer = null;
   let forceFreshData = false;
-  const API_CACHE_MAX_AGE = 15 * 60 * 1000;
-  const VIEW_CACHE_MAX_AGE = 10 * 60 * 1000;
-  const VIEW_CACHE_PREFIX = "zentrix-view-cache:";
-  const VIEW_STATE_PREFIX = "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = "20260629-cash-close";
+  const pageConfig = window.ZentrixPageConfig || {};
+  const API_CACHE_MAX_AGE = pageConfig.apiCacheMaxAge || 15 * 60 * 1000;
+  const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
+  const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
+  const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260630-architecture";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
-  const PREFETCH_PERIODS = ["today", "7d", "month", "year"];
+  const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
 
   try {
     if (sessionStorage.getItem("zentrix-client-cache-version") !== CLIENT_CACHE_VERSION) {
@@ -482,7 +483,7 @@
           ${barChartHtml(data.revenueChart || [])}
         </section>
         <section class="panel">
-          <div class="panel-title"><div><h3>Produtos mais vendidos</h3><span>Ranking por receita</span></div></div>
+          <div class="panel-title"><div><h3>Produtos mais vendidos</h3><span>Ranking por quantidade vendida</span></div></div>
           <div class="stack-list">${rankingHtml(data.topProducts || [])}</div>
         </section>
       </div>
@@ -729,7 +730,7 @@
         <section class="panel"><div class="panel-title"><div><h3>Diagnóstico</h3><span>Compatibilidade PDV + AppGestão</span></div></div><div class="stack-list">${diagnosticsHtml(data.diagnostics || [])}</div></section>
       </div>
       <div class="grid two-column" style="margin-top: 16px">
-        <section class="panel"><div class="panel-title"><div><h3>Top produtos</h3><span>Maior faturamento</span></div></div><div class="stack-list">${rankingHtml(data.topProducts || [])}</div></section>
+        <section class="panel"><div class="panel-title"><div><h3>Top produtos</h3><span>Quantidade vendida</span></div></div><div class="stack-list">${rankingHtml(data.topProducts || [])}</div></section>
         <section class="panel"><div class="panel-title"><div><h3>Estoque</h3><span>Saúde operacional</span></div></div><div class="stack-list">${statusRowsHtml(data.stockHealth || [])}</div></section>
       </div>
       <div class="grid two-column" style="margin-top: 16px">
@@ -1036,125 +1037,19 @@
   }
 
   function generateReportFile(format, title, reportData) {
-    if (format === "PDF") {
-      openPrintableReport(title, reportData);
+    const exporter = window.ZentrixReportExport;
+    if (!exporter || typeof exporter.generateReportFile !== "function") {
+      renderToast("Exportador de relatórios indisponível.", "danger");
       return;
     }
-    if (format === "XLS" || format === "EXCEL") {
-      downloadXlsReport(title, reportData);
-      return;
-    }
-    if (format === "JSON") {
-      downloadBlob(slug(title) + ".json", JSON.stringify(reportData, null, 2), "application/json;charset=utf-8");
-      return;
-    }
-    downloadCsvReport(title, reportData);
-  }
-
-  function downloadCsvReport(title, reportData) {
-    const rows = reportRows(reportData);
-    const headers = reportHeaders(rows);
-    const csv = [headers, ...rows.map((row) => headers.map((header) => row[header] ?? ""))]
-      .map((row) => row.map((value) => csvCell(normalizeText(value))).join(";"))
-      .join("\n");
-    downloadBlob(slug(title) + ".csv", "\ufeff" + csv, "text/csv;charset=utf-8");
-  }
-
-  function downloadXlsReport(title, reportData) {
-    const rows = reportRows(reportData);
-    const headers = reportHeaders(rows);
-    const table = `<table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${esc(row[header] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d7dee8;padding:8px;text-align:left}th{background:#eaf3ff}</style></head><body><h1>${esc(title)}</h1><p>Zentrix AppGestão - ${esc(periodLabel())} - ${esc(activeStoreName())}</p>${table}</body></html>`;
-    downloadBlob(slug(title) + ".xls", "\ufeff" + html, "application/vnd.ms-excel;charset=utf-8");
-  }
-
-  function openPrintableReport(title, reportData) {
-    const rows = reportRows(reportData).slice(0, 120);
-    const headers = reportHeaders(rows);
-    const cards = Array.isArray(reportData && reportData.summaryCards) ? reportData.summaryCards : [];
-    const diagnostics = Array.isArray(reportData && reportData.diagnostics) ? reportData.diagnostics : [];
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      downloadXlsReport(title, reportData);
-      renderToast("Pop-up bloqueado. Baixei uma versão em Excel do relatório.", "warning");
-      return;
-    }
-    printWindow.document.write(`<!doctype html>
-      <html><head><meta charset="utf-8"><title>${esc(title)}</title>
-      <style>
-        body{margin:0;background:#f4f8fc;color:#142033;font-family:Arial,sans-serif}
-        .page{max-width:1100px;margin:0 auto;padding:32px}
-        .hero{background:#0b4dd8;color:#fff;border-radius:18px;padding:28px;margin-bottom:18px}
-        .hero h1{margin:0 0 8px;font-size:30px}.hero p{margin:0;color:#dceaff}
-        .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
-        .card,.panel{background:#fff;border:1px solid #d9e6f5;border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(20,42,80,.08)}
-        .card span{display:block;color:#64748b;font-size:12px}.card strong{display:block;font-size:22px;margin-top:6px}
-        table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden}
-        th,td{border-bottom:1px solid #e4edf8;padding:10px;text-align:left;font-size:12px}th{background:#eaf3ff;color:#0b4dd8}
-        .diag{margin:0;padding-left:18px;color:#45556b}.footer{margin-top:18px;color:#64748b;font-size:12px}
-        @media print{body{background:#fff}.page{padding:0}.card,.panel{box-shadow:none}.no-print{display:none}}
-      </style></head><body><main class="page">
-        <section class="hero"><h1>${esc(title)}</h1><p>Zentrix AppGestão conectado ao Zentrix PDV | ${esc(periodLabel())} | ${esc(activeStoreName())}</p></section>
-        <section class="grid">${cards.slice(0, 4).map((card) => `<article class="card"><span>${esc(card.label)}</span><strong>${esc(card.value)}</strong><small>${esc(card.description || card.note || "")}</small></article>`).join("")}</section>
-        <section class="panel"><h2>Dados do relatório</h2>${headers.length ? `<table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${esc(row[header] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>` : emptyState("Este relatório ainda não tem dados no período escolhido.")}</section>
-        ${diagnostics.length ? `<section class="panel"><h2>Diagnóstico</h2><ul class="diag">${diagnostics.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : ""}
-        <p class="footer">Gerado em ${esc(new Date().toLocaleString("pt-BR"))}. Use Ctrl+P para salvar como PDF.</p>
-        <button class="no-print" onclick="window.print()">Imprimir ou salvar PDF</button>
-      </main></body></html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 350);
-  }
-
-  function reportRows(data) {
-    if (Array.isArray(data)) return data.map(flattenReportRow);
-    if (!data || typeof data !== "object") return [];
-    const preferred = data.rows || data.sessions || data.events || data.alerts || data.movements || data.topProducts || data.payments || data.reportCards;
-    if (Array.isArray(preferred) && preferred.length) return preferred.map(flattenReportRow);
-    if (Array.isArray(data.summaryCards) && data.summaryCards.length) {
-      return data.summaryCards.map((card) => flattenReportRow({
-        indicador: card.label,
-        valor: card.value,
-        descricao: card.description || card.note || "",
-        status: card.tone || ""
-      }));
-    }
-    return Object.entries(data)
-      .filter(([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value))
-      .map(([key, value]) => ({ campo: key, valor: value }));
-  }
-
-  function flattenReportRow(row) {
-    const output = {};
-    Object.entries(row || {}).forEach(([key, value]) => {
-      if (value == null) {
-        output[key] = "";
-      } else if (typeof value === "object") {
-        output[key] = JSON.stringify(value);
-      } else {
-        output[key] = normalizeText(String(value).replace(/<[^>]+>/g, ""));
-      }
+    exporter.generateReportFile(format, title, reportData, {
+      activeStoreName,
+      formatCurrency,
+      normalizeText,
+      periodLabel,
+      quantityLabel,
+      renderToast
     });
-    return output;
-  }
-
-  function reportHeaders(rows) {
-    const headers = [];
-    rows.forEach((row) => Object.keys(row).forEach((key) => {
-      if (!headers.includes(key)) headers.push(key);
-    }));
-    return headers;
-  }
-
-  function downloadBlob(fileName, content, type) {
-    const blob = new Blob([content], { type });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(link.href);
   }
 
   function renderToast(message, level) {
@@ -1164,10 +1059,6 @@
     document.body.appendChild(toast);
     setTimeout(() => toast.classList.add("show"), 20);
     setTimeout(() => toast.remove(), 3200);
-  }
-
-  function slug(value) {
-    return normalizeText(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "relatorio";
   }
 
   function settingsCard(title, subtitle, value, toneValue) {
@@ -1279,18 +1170,50 @@
   }
 
   function rankingHtml(rows) {
-    const values = rows.map((row) => Number(row.value) || 0);
+    const values = rows.map((row) => rankingValue(row));
     const max = Math.max(0, ...values);
     return rows.map((row, index) => {
-      const value = Number(row.value) || 0;
+      const value = rankingValue(row);
       const width = max <= 0 ? 0 : Math.max(6, Math.round((value / max) * 100));
-      const subtitle = row.sales ? `${row.sales} vendas` : row.code ? `Código ${row.code}` : row.quantity ? `${row.quantity} itens vendidos` : "Período atual";
+      const subtitle = rankingSubtitle(row);
       return `<div class="rank-row">
         <span class="list-icon info">${esc(String(index + 1).padStart(2, "0"))}</span>
         <div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(subtitle)}</span><div class="progress-track"><span style="width: ${width}%"></span></div></div>
-        <strong>${esc(row.display || row.value || "0")}</strong>
+        <strong>${esc(rankingDisplay(row))}</strong>
       </div>`;
     }).join("") || emptyState("Ainda não há dados no período escolhido.");
+  }
+
+  function rankingValue(row) {
+    if (row && row.quantity != null) return Number(row.quantity) || 0;
+    return Number(row && row.value) || 0;
+  }
+
+  function rankingDisplay(row) {
+    if (row && row.quantity != null) {
+      return row.display || `${quantityLabel(row.quantity)} itens`;
+    }
+    return row && (row.display || row.value) || "0";
+  }
+
+  function rankingSubtitle(row) {
+    if (!row) return "Período atual";
+    if (row.quantity != null) {
+      const parts = [];
+      if (row.sales != null) parts.push(`${quantityLabel(row.sales)} vendas`);
+      if (row.revenueDisplay) parts.push(row.revenueDisplay);
+      if (!parts.length && row.code) parts.push(`Código ${row.code}`);
+      return parts.join(" | ") || "Quantidade vendida";
+    }
+    if (row.sales) return `${row.sales} vendas`;
+    if (row.code) return `Código ${row.code}`;
+    return "Período atual";
+  }
+
+  function quantityLabel(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "0";
+    return number.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
   }
 
   function compactSalesList(rows) {

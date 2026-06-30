@@ -339,18 +339,33 @@ body.is-authenticated .app-shell {
   text-decoration: none;
 }
 
-.nav-item::before {
+.nav-icon {
   display: grid;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  content: attr(data-icon);
   border-radius: var(--radius-sm);
-  color: var(--accent-blue);
-  background: var(--soft-blue);
-  font-size: 13px;
-  font-weight: 900;
+  background: transparent;
+  box-shadow: none;
+}
+
+.nav-icon img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+:root:not([data-theme="dark"]) .nav-icon img {
+  filter: brightness(0) saturate(100%) invert(35%) sepia(96%) saturate(2463%) hue-rotate(207deg) brightness(98%) contrast(99%);
+  opacity: 0.92;
+}
+
+[data-theme="dark"] .nav-icon img {
+  filter: none;
+  opacity: 1;
 }
 
 .nav-item:hover,
@@ -358,6 +373,12 @@ body.is-authenticated .app-shell {
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--accent-blue), transparent 72%);
   background: color-mix(in srgb, var(--soft-blue), transparent 24%);
+}
+
+.nav-item:hover .nav-icon,
+.nav-item.active .nav-icon {
+  background: transparent;
+  box-shadow: none;
 }
 
 .nav-item.active::after {
