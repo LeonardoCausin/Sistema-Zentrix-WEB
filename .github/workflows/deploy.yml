@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 name: Validacao Zentrix Web
+=======
+name: Deploy Zentrix Web
+>>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f
 
 on:
   push:
@@ -11,6 +15,7 @@ on:
       - master
 
 jobs:
+<<<<<<< HEAD
   backend:
     runs-on: self-hosted
 
@@ -30,3 +35,11 @@ jobs:
 
       - name: Testar backend
         run: mvn -B -q -f BackEnd/pom.xml test
+=======
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy na VM Ubuntu
+        run: /usr/local/bin/deploy-zentrix-web.sh
+>>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f

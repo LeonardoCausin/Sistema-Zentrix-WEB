@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Local secrets
 .env
 .env.*
@@ -22,3 +23,16 @@ outputs/
 # OS and editor noise
 Thumbs.db
 .DS_Store
+=======
+
+# Configurações locais / segredos
+BackEnd/.env
+BackEnd/.env.properties
+BackEnd/cp.txt
+
+# Build Maven
+BackEnd/target/
+
+# Logs
+*.log
+>>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f
