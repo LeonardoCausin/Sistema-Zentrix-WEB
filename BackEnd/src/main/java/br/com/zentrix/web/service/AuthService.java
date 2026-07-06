@@ -2,9 +2,12 @@ package br.com.zentrix.web.service;
 
 import br.com.zentrix.web.dto.LoginRequest;
 import br.com.zentrix.web.dto.LoginResponse;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.text.Normalizer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
     private static final int MAX_LOGIN_ATTEMPTS = 5;
     private static final Duration LOCK_DURATION = Duration.ofMinutes(5);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -39,7 +43,7 @@ public class AuthService {
         ensureNotLocked(loginName);
         List<Map<String, Object>> users = jdbcTemplate.queryForList("""
                 SELECT u.tenant_id, u.store_id, u.username, u.password, u.display_name, u.role, u.source_id,
-                       COALESCE(t.name, u.tenant_id) AS tenant_name
+                       u.permissions_json, COALESCE(t.name, u.tenant_id) AS tenant_name
                 FROM users u
                 LEFT JOIN tenants t ON t.id = u.tenant_id
                 WHERE u.username = ? AND u.active = TRUE
@@ -69,6 +73,7 @@ public class AuthService {
             String tenantName = String.valueOf(sessionScope.get("tenant_name"));
             String storeId = String.valueOf(sessionScope.get("store_id"));
             String sourceId = String.valueOf(sessionScope.get("source_id"));
+            List<String> permissions = permissionsFrom(user.get("permissions_json"));
 
             attempts.remove(loginName.toLowerCase());
             jdbcTemplate.update("""
@@ -78,11 +83,14 @@ public class AuthService {
                     """, String.valueOf(user.get("tenant_id")), String.valueOf(user.get("store_id")), username);
             auditService.record(tenantId, storeId, null, sourceId, username, "LOGIN_SUCCESS", "users", username, "Login realizado com sucesso.", "INFO", null, null, null, "APPGESTAO", null, role);
             return new LoginResponse(
-                    authTokenService.issue(username, displayName, role, tenantId),
+                    authTokenService.issue(username, displayName, role, tenantId, storeId, sourceId, permissions),
                     displayName,
                     role,
                     tenantId,
-                    tenantName
+                    tenantName,
+                    storeId,
+                    sourceId,
+                    permissions
             );
         }
 
@@ -95,10 +103,10 @@ public class AuthService {
     }
 
     private Map<String, Object> resolveSessionScope(Map<String, Object> user) {
-        String userTenantId = String.valueOf(user.get("tenant_id"));
-        String userStoreId = String.valueOf(user.get("store_id"));
-        String userSourceId = String.valueOf(user.get("source_id"));
-        String userTenantName = String.valueOf(user.get("tenant_name"));
+        String userTenantId = stringValue(user.get("tenant_id"));
+        String userStoreId = stringValue(user.get("store_id"));
+        String userSourceId = stringValue(user.get("source_id"));
+        String userTenantName = stringValue(user.get("tenant_name"));
 
         List<Map<String, Object>> officialScopes = jdbcTemplate.queryForList("""
                 SELECT sr.tenant_id, sr.store_id, sr.source_id, COALESCE(t.name, sr.tenant_id) AS tenant_name
@@ -106,13 +114,31 @@ public class AuthService {
                 LEFT JOIN tenants t ON t.id = sr.tenant_id
                 WHERE sr.status = 'SUCCESS'
                   AND sr.tenant_id <> 'legacy'
+                  AND sr.tenant_id = ?
+                  AND sr.store_id = ?
                   AND (? IS NULL OR ? = '' OR sr.source_id = ?)
                 ORDER BY sr.received_at DESC, sr.id DESC
                 LIMIT 1
-                """, userSourceId, userSourceId, userSourceId);
+                """, userTenantId, userStoreId, userSourceId, userSourceId, userSourceId);
 
         if (!officialScopes.isEmpty()) {
             return officialScopes.get(0);
+        }
+
+        if ("legacy".equalsIgnoreCase(userTenantId) && hasText(userSourceId)) {
+            List<Map<String, Object>> sourceScopes = jdbcTemplate.queryForList("""
+                    SELECT sr.tenant_id, sr.store_id, sr.source_id, COALESCE(t.name, sr.tenant_id) AS tenant_name
+                    FROM sync_runs sr
+                    LEFT JOIN tenants t ON t.id = sr.tenant_id
+                    WHERE sr.status = 'SUCCESS'
+                      AND sr.tenant_id <> 'legacy'
+                      AND sr.source_id = ?
+                    ORDER BY sr.received_at DESC, sr.id DESC
+                    LIMIT 1
+                    """, userSourceId);
+            if (!sourceScopes.isEmpty()) {
+                return sourceScopes.get(0);
+            }
         }
 
         Map<String, Object> fallback = new LinkedHashMap<>();
@@ -121,6 +147,14 @@ public class AuthService {
         fallback.put("source_id", userSourceId);
         fallback.put("tenant_name", userTenantName);
         return fallback;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private void ensureNotLocked(String loginName) {
@@ -163,6 +197,30 @@ public class AuthService {
         String text = role == null ? "" : role.trim().toUpperCase();
         return Normalizer.normalize(text, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
+    }
+
+    private List<String> permissionsFrom(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isBlank()) {
+            return List.of();
+        }
+        try {
+            return JSON.readValue(text, new TypeReference<List<String>>() {
+            });
+        } catch (Exception ignored) {
+            String cleaned = text.replace("[", "").replace("]", "");
+            List<String> permissions = new ArrayList<>();
+            for (String item : cleaned.split(",")) {
+                String permission = item.trim().replace("\"", "");
+                if (!permission.isBlank()) {
+                    permissions.add(permission);
+                }
+            }
+            return permissions;
+        }
     }
 
     private record LoginAttempt(int count, Instant lastFailure) {

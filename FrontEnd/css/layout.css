@@ -339,22 +339,37 @@ body.is-authenticated .app-shell {
   text-decoration: none;
 }
 
+.nav-item > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nav-icon {
   display: grid;
   flex: 0 0 32px;
+  min-width: 32px;
   width: 32px;
+  max-width: 32px;
   height: 32px;
+  max-height: 32px;
+  overflow: hidden;
   place-items: center;
   border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
 }
 
-.nav-icon img {
+.nav-icon img,
+.nav-list .nav-item img {
   display: block;
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
+  flex: 0 0 auto;
+  width: 20px !important;
+  max-width: 20px !important;
+  height: 20px !important;
+  max-height: 20px !important;
+  object-fit: contain !important;
   image-rendering: auto;
 }
 

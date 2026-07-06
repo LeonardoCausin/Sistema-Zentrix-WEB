@@ -6,7 +6,13 @@ Este projeto e o painel web do Zentrix PDV. O usuario final nao precisa abrir te
 
 1. De dois cliques em `iniciar-zentrix-web.bat`.
 2. Aguarde a janela do sistema preparar o acesso.
-3. A tela de login sera aberta automaticamente.
+3. A tela de login sera aberta automaticamente em `http://localhost:8080/`.
+
+Tambem e possivel abrir diretamente pelo backend oficial:
+
+`http://localhost:8080/`
+
+Evite depender de Live Server/VS Code para uso normal, porque outra pasta aberta na mesma porta pode mostrar uma tela antiga ou de outro projeto.
 
 ## Login
 
@@ -15,6 +21,34 @@ Use o usuario criado no banco do Zentrix Web. Se o acesso falhar muitas vezes se
 ## Sincronizacao
 
 O Zentrix PDV deve enviar os dados para o Zentrix Web pela fila de sincronizacao. Se o computador do PDV ficar sem internet, a fila guarda os envios e manda tudo quando a conexao voltar.
+
+No painel, abra `Sincronizacao` para acompanhar:
+
+- itens pendentes Web -> PDV;
+- itens entregues aguardando ACK;
+- erros com retry;
+- dead-letter para mudancas que nao devem travar a fila.
+
+Cada chamada da API tambem recebe `X-Request-Id`, que aparece no log do backend e ajuda a localizar falhas em producao.
+
+## Servidor Ubuntu por IP
+
+No servidor, configure `BackEnd/.env` e rode:
+
+```bash
+chmod +x iniciar-zentrix-web-ubuntu.sh
+./iniciar-zentrix-web-ubuntu.sh
+```
+
+Abra pelo IP do servidor, por exemplo:
+
+`http://192.168.1.240:8080/`
+
+Se o painel for acessado por outro dominio/IP, configure `ZENTRIX_CORS_ALLOWED_ORIGINS` no `.env`.
+
+## Backups e restauracao
+
+A restauracao agora exige preview e frase de confirmacao. Antes de qualquer tentativa destrutiva, o backend registra um snapshot de seguranca. Como o backup fisico ainda nao esta implementado, a restauracao real fica bloqueada com mensagem clara em vez de apagar dados sem arquivo validado.
 
 ## Quando algo nao abrir
 

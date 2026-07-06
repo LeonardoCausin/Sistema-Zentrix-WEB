@@ -23,10 +23,18 @@
     width: 100%;
     justify-content: flex-start;
   }
+
+  .search-panel {
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 200px);
+  }
 }
 
 @media (max-width: 980px) {
   .login-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .search-panel {
     grid-template-columns: 1fr;
   }
 

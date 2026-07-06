@@ -4,9 +4,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AlertService {
@@ -80,6 +83,24 @@ public class AlertService {
     }
 
     private String normalizeStore(String storeId) {
-        return storeId == null || storeId.isBlank() ? "all" : storeId;
+        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
+        if (storeId == null || storeId.isBlank() || "all".equalsIgnoreCase(storeId)) {
+            return session == null || canAccessAllStores(session) ? "all" : session.storeId();
+        }
+        String store = storeId.trim();
+        if (session != null && !canAccessAllStores(session) && !store.equals(session.storeId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuario nao autorizado para esta loja.");
+        }
+        return store;
+    }
+
+    private boolean canAccessAllStores(AuthTokenService.SessionToken session) {
+        if (session == null) {
+            return true;
+        }
+        String role = session.role() == null ? "" : session.role().trim().toUpperCase(Locale.ROOT);
+        boolean tenantWideRole = role.equals("DONO") || role.equals("OWNER") || role.equals("ADMIN") || role.equals("ADMINISTRADOR") || role.equals("ADMINISTRATOR");
+        String store = session.storeId() == null ? "" : session.storeId().trim();
+        return tenantWideRole && (store.isBlank() || "WEB".equalsIgnoreCase(store) || "all".equalsIgnoreCase(store));
     }
 }

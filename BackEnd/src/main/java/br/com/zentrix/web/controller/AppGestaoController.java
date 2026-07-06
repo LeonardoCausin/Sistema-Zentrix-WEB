@@ -13,6 +13,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -103,7 +104,12 @@ public class AppGestaoController {
     }
 
     @PostMapping("/backups/{id}/restore")
-    public Map<String, Object> restore(@PathVariable long id) {
-        return operationsService.restoreBackup(id);
+    public Map<String, Object> restore(@PathVariable long id, @RequestBody(required = false) Map<String, Object> request) {
+        return operationsService.restoreBackup(AuthContext.tenantId(), id, request);
+    }
+
+    @GetMapping("/backups/{id}/restore/preview")
+    public Map<String, Object> restorePreview(@PathVariable long id) {
+        return operationsService.restoreBackupPreview(AuthContext.tenantId(), id);
     }
 }

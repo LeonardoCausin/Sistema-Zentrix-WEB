@@ -4,8 +4,11 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
@@ -21,12 +24,20 @@ public class AuthTokenService {
     }
 
     public String issue(String username, String displayName, String role, String tenantId) {
+        return issue(username, displayName, role, tenantId, List.of());
+    }
+
+    public String issue(String username, String displayName, String role, String tenantId, List<String> permissions) {
+        return issue(username, displayName, role, tenantId, null, null, permissions);
+    }
+
+    public String issue(String username, String displayName, String role, String tenantId, String storeId, String sourceId, List<String> permissions) {
         purgeExpired();
         byte[] bytes = new byte[32];
         secureRandom.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         Instant now = Instant.now();
-        tokens.put(token, new SessionToken(username, displayName, role, tenantId, now, now.plus(tokenTtl)));
+        tokens.put(token, new SessionToken(username, displayName, role, tenantId, normalizeStore(storeId), normalizeSource(sourceId), normalizePermissions(permissions), now, now.plus(tokenTtl)));
         return token;
     }
 
@@ -65,6 +76,40 @@ public class AuthTokenService {
         tokens.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(now));
     }
 
-    public record SessionToken(String username, String displayName, String role, String tenantId, Instant issuedAt, Instant expiresAt) {
+    private Set<String> normalizePermissions(List<String> permissions) {
+        if (permissions == null || permissions.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String permission : permissions) {
+            if (permission != null && !permission.isBlank()) {
+                normalized.add(permission.trim().toLowerCase());
+            }
+        }
+        return Set.copyOf(normalized);
+    }
+
+    private String normalizeStore(String storeId) {
+        return storeId == null || storeId.isBlank() ? "WEB" : storeId.trim();
+    }
+
+    private String normalizeSource(String sourceId) {
+        return sourceId == null || sourceId.isBlank() ? "WEB" : sourceId.trim();
+    }
+
+    public record SessionToken(
+            String username,
+            String displayName,
+            String role,
+            String tenantId,
+            String storeId,
+            String sourceId,
+            Set<String> permissions,
+            Instant issuedAt,
+            Instant expiresAt
+    ) {
+        public SessionToken(String username, String displayName, String role, String tenantId, Set<String> permissions, Instant issuedAt, Instant expiresAt) {
+            this(username, displayName, role, tenantId, "WEB", "WEB", permissions, issuedAt, expiresAt);
+        }
     }
 }

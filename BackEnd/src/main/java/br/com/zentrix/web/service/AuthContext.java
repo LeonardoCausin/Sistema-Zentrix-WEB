@@ -22,6 +22,18 @@ public final class AuthContext {
                 .orElse("legacy");
     }
 
+    public static String storeId() {
+        return current()
+                .map(AuthTokenService.SessionToken::storeId)
+                .orElse("WEB");
+    }
+
+    public static String sourceId() {
+        return current()
+                .map(AuthTokenService.SessionToken::sourceId)
+                .orElse("WEB");
+    }
+
     public static void clear() {
         CURRENT.remove();
     }

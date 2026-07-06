@@ -27,6 +27,7 @@ public class WebDatabaseInitializer {
             Map.entry("stock_movements", List.of("tenant_id", "store_id", "id")),
             Map.entry("cash_sessions", List.of("tenant_id", "store_id", "id")),
             Map.entry("cash_movements", List.of("tenant_id", "store_id", "id")),
+            Map.entry("financial_entries", List.of("tenant_id", "store_id", "id")),
             Map.entry("sales", List.of("tenant_id", "store_id", "id")),
             Map.entry("sale_items", List.of("tenant_id", "store_id", "id")),
             Map.entry("sale_cancellations", List.of("tenant_id", "store_id", "id")),
@@ -194,6 +195,35 @@ public class WebDatabaseInitializer {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
                 """
+                CREATE TABLE IF NOT EXISTS web_change_outbox (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    source_id VARCHAR(120) NOT NULL DEFAULT 'WEB',
+                    target_source_id VARCHAR(120) NULL,
+                    target_device_id VARCHAR(120) NULL,
+                    entity_type VARCHAR(40) NOT NULL,
+                    entity_id VARCHAR(120) NOT NULL,
+                    operation VARCHAR(80) NOT NULL,
+                    contract_version VARCHAR(30) NOT NULL DEFAULT '2026-07-02',
+                    payload_json LONGTEXT NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                    attempts INT NOT NULL DEFAULT 0,
+                    error_count INT NOT NULL DEFAULT 0,
+                    last_error VARCHAR(500) NULL,
+                    next_attempt_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    delivered_at DATETIME NULL,
+                    acknowledged_at DATETIME NULL,
+                    dead_letter_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    INDEX idx_web_change_outbox_pull (tenant_id, store_id, status, next_attempt_at, id),
+                    INDEX idx_web_change_outbox_target (tenant_id, store_id, target_source_id, target_device_id, status, id),
+                    INDEX idx_web_change_outbox_entity (tenant_id, store_id, entity_type, entity_id, id),
+                    INDEX idx_web_change_outbox_created (tenant_id, store_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS scoped_sequences (
                     tenant_id VARCHAR(80) NOT NULL,
                     store_id VARCHAR(80) NOT NULL,
@@ -281,6 +311,23 @@ public class WebDatabaseInitializer {
                     date_time DATETIME NULL,
                     PRIMARY KEY (tenant_id, store_id, id),
                     INDEX idx_cash_movements_session (tenant_id, store_id, session_id)
+                """),
+                scopedTable("financial_entries", """
+                    id INT NOT NULL,
+                    type VARCHAR(20) NOT NULL,
+                    category VARCHAR(120) NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    amount DECIMAL(15,2) NOT NULL,
+                    entry_date DATE NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDENTE',
+                    created_by VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NULL,
+                    origin VARCHAR(40) NOT NULL DEFAULT 'APPGESTAO',
+                    notes VARCHAR(255) NULL,
+                    PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_financial_entries_date (tenant_id, store_id, entry_date),
+                    INDEX idx_financial_entries_status (tenant_id, store_id, status, type)
                 """),
                 scopedTable("sales", """
                     id INT NOT NULL,
@@ -450,6 +497,7 @@ public class WebDatabaseInitializer {
         ensureColumn("products", "cost_price", "DECIMAL(15,2) NOT NULL DEFAULT 0.00", "AFTER price");
         ensureColumn("products", "category", "VARCHAR(120) NULL", "AFTER supplier_id");
         ensureColumn("products", "barcode", "VARCHAR(80) NULL", "AFTER category");
+        ensureColumn("products", "created_at", "DATETIME NULL", "AFTER barcode");
         ensureColumn("products", "ideal_stock", "DECIMAL(15,3) NOT NULL DEFAULT 0.000", "AFTER min_stock");
         ensureColumn("products", "active", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER ideal_stock");
         ensureColumn("products", "updated_at", "DATETIME NULL", "AFTER active");
@@ -479,12 +527,28 @@ public class WebDatabaseInitializer {
         ensureColumn("stock_movements", "origin", "VARCHAR(80) NULL", "AFTER new_stock");
         ensureColumn("stock_movements", "reference_type", "VARCHAR(80) NULL", "AFTER origin");
         ensureColumn("stock_movements", "reference_id", "VARCHAR(80) NULL", "AFTER reference_type");
+
+        ensureColumn("financial_entries", "updated_at", "DATETIME NULL", "AFTER created_at");
+        ensureColumn("financial_entries", "origin", "VARCHAR(40) NOT NULL DEFAULT 'APPGESTAO'", "AFTER updated_at");
+        ensureColumn("financial_entries", "notes", "VARCHAR(255) NULL", "AFTER origin");
+        ensureIndex("financial_entries", "idx_financial_entries_date", List.of("tenant_id", "store_id", "entry_date"));
+        ensureIndex("financial_entries", "idx_financial_entries_status", List.of("tenant_id", "store_id", "status", "type"));
+
+        ensureColumn("web_change_outbox", "target_source_id", "VARCHAR(120) NULL", "AFTER source_id");
+        ensureColumn("web_change_outbox", "target_device_id", "VARCHAR(120) NULL", "AFTER target_source_id");
+        ensureColumn("web_change_outbox", "contract_version", "VARCHAR(30) NOT NULL DEFAULT '2026-07-02'", "AFTER operation");
+        ensureColumn("web_change_outbox", "error_count", "INT NOT NULL DEFAULT 0", "AFTER attempts");
+        ensureColumn("web_change_outbox", "next_attempt_at", "DATETIME NULL", "AFTER last_error");
+        ensureColumn("web_change_outbox", "dead_letter_at", "DATETIME NULL", "AFTER acknowledged_at");
+
     }
 
     private void applyVersionedMigrations() {
         List<Migration> migrations = List.of(
                 new Migration("2026063001", "performance indexes for panel pagination", ignored -> migrationPerformanceIndexes()),
-                new Migration("2026063002", "sync reconciliation ledger", ignored -> migrationSyncReconciliation())
+                new Migration("2026063002", "sync reconciliation ledger", ignored -> migrationSyncReconciliation()),
+                new Migration("2026070201", "web change outbox retry policy", ignored -> migrationWebChangeOutboxRetryPolicy()),
+                new Migration("2026070202", "tenant period indexes for panel filters", ignored -> migrationTenantPeriodIndexes())
         );
         for (Migration migration : migrations) {
             if (migrationApplied(migration.version())) {
@@ -527,6 +591,7 @@ public class WebDatabaseInitializer {
                     received_tables_json LONGTEXT NULL,
                     missing_tables_json LONGTEXT NULL,
                     conflict_count INT NOT NULL DEFAULT 0,
+                    conflict_details_json LONGTEXT NULL,
                     message TEXT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     resolved_at DATETIME NULL,
@@ -536,6 +601,30 @@ public class WebDatabaseInitializer {
                     INDEX idx_sync_reconciliation_status (tenant_id, store_id, status, created_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """);
+    }
+
+    private void migrationWebChangeOutboxRetryPolicy() {
+        ensureColumn("web_change_outbox", "target_source_id", "VARCHAR(120) NULL", "AFTER source_id");
+        ensureColumn("web_change_outbox", "target_device_id", "VARCHAR(120) NULL", "AFTER target_source_id");
+        ensureColumn("web_change_outbox", "contract_version", "VARCHAR(30) NOT NULL DEFAULT '2026-07-02'", "AFTER operation");
+        ensureColumn("web_change_outbox", "error_count", "INT NOT NULL DEFAULT 0", "AFTER attempts");
+        ensureColumn("web_change_outbox", "next_attempt_at", "DATETIME NULL", "AFTER last_error");
+        ensureColumn("web_change_outbox", "dead_letter_at", "DATETIME NULL", "AFTER acknowledged_at");
+        ensureIndex("web_change_outbox", "idx_web_change_outbox_retry", List.of("tenant_id", "store_id", "status", "next_attempt_at", "id"));
+        ensureIndex("web_change_outbox", "idx_web_change_outbox_target", List.of("tenant_id", "store_id", "target_source_id", "target_device_id", "status", "id"));
+        ensureColumn("sync_reconciliation", "conflict_details_json", "LONGTEXT NULL", "AFTER conflict_count");
+    }
+
+    private void migrationTenantPeriodIndexes() {
+        ensureIndex("sales", "idx_sales_tenant_status_date_id", List.of("tenant_id", "status", "date_time", "id"));
+        ensureIndex("sales", "idx_sales_tenant_date_id", List.of("tenant_id", "date_time", "id"));
+        ensureIndex("cash_sessions", "idx_cash_sessions_tenant_opened_id", List.of("tenant_id", "opened_at", "id"));
+        ensureIndex("cash_sessions", "idx_cash_sessions_tenant_closed_id", List.of("tenant_id", "closed_at", "id"));
+        ensureIndex("cash_movements", "idx_cash_movements_tenant_date_id", List.of("tenant_id", "date_time", "id"));
+        ensureIndex("financial_entries", "idx_financial_entries_tenant_date_id", List.of("tenant_id", "entry_date", "id"));
+        ensureIndex("audit_log", "idx_audit_log_tenant_created_id", List.of("tenant_id", "created_at", "id"));
+        ensureIndex("products", "idx_products_tenant_active_stock", List.of("tenant_id", "active", "deleted_at", "stock"));
+        ensureIndex("clients", "idx_clients_tenant_active_name", List.of("tenant_id", "active", "name"));
     }
 
     private void ensureScopeColumns(String tableName) {

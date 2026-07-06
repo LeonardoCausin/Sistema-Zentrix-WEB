@@ -16,14 +16,32 @@ O modelo de integracao agora e por envio do PDV para o Web: o sincronizador do Z
 - `GET /api/stock/alerts`
 - `GET /api/audit`
 - `GET /api/backups`
+- `POST /api/backups/manual`
+- `GET /api/backups/{id}/restore/preview`
+- `POST /api/backups/{id}/restore`
 - `GET /api/finance`
 - `GET /api/reports`
 - `GET /api/settings`
+- `GET /api/observability`
+- `GET /api/admin/produtos`
+- `POST /api/admin/produtos`
+- `PUT /api/admin/produtos/{code}`
+- `PATCH /api/admin/produtos/{code}/status`
+- `PATCH /api/admin/produtos/{code}/preco`
+- `GET /api/admin/clientes`
+- `POST /api/admin/clientes`
+- `PUT /api/admin/clientes/{id}`
+- `PATCH /api/admin/clientes/{id}/status`
 - `POST /api/provisioning/bootstrap`
 - `POST /api/provisioning/stores`
 - `POST /api/provisioning/activation-codes`
 - `POST /api/provisioning/activate`
 - `POST /api/sync/push`
+- `GET /api/sync/pull`
+- `POST /api/sync/ack`
+- `GET /api/sync/monitor`
+- `POST /api/sync/outbox/{id}/retry`
+- `POST /api/sync/outbox/{id}/dead-letter`
 - `GET /api/sync/status`
 
 As rotas do painel leem o banco `zentrix_web`. O banco e criado automaticamente se o usuario MySQL tiver permissao para `CREATE DATABASE`.
@@ -159,9 +177,22 @@ ZENTRIX_RATE_LIMIT_ENABLED=true
 ZENTRIX_RATE_LIMIT_DEFAULT_LIMIT=240
 ZENTRIX_RATE_LIMIT_AUTH_LIMIT=30
 ZENTRIX_RATE_LIMIT_SYNC_LIMIT=120
+ZENTRIX_CORS_ALLOWED_ORIGINS=http://192.168.1.240,http://192.168.1.240:5500
+ZENTRIX_CSP_CONNECT_SRC=
 ```
 
 `ZENTRIX_SYNC_KEY` e obrigatoria. O PDV deve enviar o mesmo valor no header `X-Zentrix-Sync-Key`.
+
+Quando o painel for aberto por IP ou dominio em outro servidor, configure `ZENTRIX_CORS_ALLOWED_ORIGINS` com as origens exatas do frontend. O frontend oficial e servido pelo proprio backend em `http://<ip-do-servidor>:8080/`, e a API fica em `http://<ip-do-servidor>:8080/api`.
+
+Em Ubuntu:
+
+```bash
+chmod +x ../iniciar-zentrix-web-ubuntu.sh
+../iniciar-zentrix-web-ubuntu.sh
+```
+
+Toda resposta da API inclui `X-Request-Id`. Use esse valor para procurar a mesma chamada no log do backend.
 
 ## Contrato de sincronizacao
 

@@ -20,4 +20,9 @@ public class HealthController {
     public Map<String, Object> health() {
         return healthService.health();
     }
+
+    @GetMapping("/observability")
+    public Map<String, Object> observability() {
+        return healthService.observability();
+    }
 }

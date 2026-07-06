@@ -50,6 +50,28 @@ class AuthServiceTest {
         assertEquals(1, authTokenService.issuedCount);
     }
 
+    @Test
+    void legacyAdminUsesLatestOfficialScopeForSameSource() {
+        Map<String, Object> legacyAdmin = user("admin", "ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)));
+        legacyAdmin.put("tenant_id", "legacy");
+        legacyAdmin.put("store_id", "LC Multimarcas");
+        legacyAdmin.put("source_id", "LC Multimarcas");
+        jdbcTemplate.addQueryResult(List.of(legacyAdmin));
+        jdbcTemplate.addQueryResult(List.of());
+        jdbcTemplate.addQueryResult(List.of(scope(
+                "tenant-lc",
+                "store-lc",
+                "LC Multimarcas",
+                "LC Multimarcas"
+        )));
+
+        var response = authService.login(new LoginRequest("admin", "senha"));
+
+        assertEquals("tenant-lc", response.companyId());
+        assertEquals("store-lc", authTokenService.lastStoreId);
+        assertEquals("LC Multimarcas", authTokenService.lastSourceId);
+    }
+
     private Map<String, Object> user(String username, String role, String password) {
         Map<String, Object> user = new LinkedHashMap<>();
         user.put("tenant_id", "tenant-1");
@@ -61,6 +83,15 @@ class AuthServiceTest {
         user.put("source_id", "WEB");
         user.put("tenant_name", "Empresa");
         return user;
+    }
+
+    private Map<String, Object> scope(String tenantId, String storeId, String sourceId, String tenantName) {
+        Map<String, Object> scope = new LinkedHashMap<>();
+        scope.put("tenant_id", tenantId);
+        scope.put("store_id", storeId);
+        scope.put("source_id", sourceId);
+        scope.put("tenant_name", tenantName);
+        return scope;
     }
 
     private static class FakeJdbcTemplate extends JdbcTemplate {
@@ -96,10 +127,26 @@ class AuthServiceTest {
 
     private static class RecordingAuthTokenService extends AuthTokenService {
         int issuedCount;
+        String lastStoreId;
+        String lastSourceId;
 
         @Override
         public String issue(String username, String displayName, String role, String tenantId) {
             issuedCount++;
+            return "token-123";
+        }
+
+        @Override
+        public String issue(String username, String displayName, String role, String tenantId, List<String> permissions) {
+            issuedCount++;
+            return "token-123";
+        }
+
+        @Override
+        public String issue(String username, String displayName, String role, String tenantId, String storeId, String sourceId, List<String> permissions) {
+            issuedCount++;
+            lastStoreId = storeId;
+            lastSourceId = sourceId;
             return "token-123";
         }
     }

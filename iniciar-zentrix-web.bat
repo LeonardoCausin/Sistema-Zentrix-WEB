@@ -27,6 +27,6 @@ pause
 exit /b 1
 
 :abrir_site
-start "" "%~dp0index.html"
+start "" "http://localhost:8080/"
 
 echo Zentrix Web iniciado.

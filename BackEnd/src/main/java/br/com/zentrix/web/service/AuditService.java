@@ -26,9 +26,9 @@ public class AuditService {
         AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
         record(
                 session == null ? "legacy" : session.tenantId(),
-                "WEB",
+                session == null ? "WEB" : session.storeId(),
                 null,
-                "WEB",
+                session == null ? "WEB" : session.sourceId(),
                 session == null ? null : session.username(),
                 action,
                 entityType,

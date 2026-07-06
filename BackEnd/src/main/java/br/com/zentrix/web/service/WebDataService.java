@@ -3,39 +3,54 @@ package br.com.zentrix.web.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.NumberFormat;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class WebDataService {
     private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
+    private static final Duration PANEL_CACHE_TTL = Duration.ofSeconds(20);
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
     private final AlertService alertService;
     private final LicenseService licenseService;
     private final SettingsService settingsService;
+    private final PanelCacheService panelCacheService;
 
     public WebDataService(
             JdbcTemplate jdbcTemplate,
             WebDatabaseInitializer initializer,
             AlertService alertService,
             LicenseService licenseService,
-            SettingsService settingsService
+            SettingsService settingsService,
+            PanelCacheService panelCacheService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
         this.alertService = alertService;
         this.licenseService = licenseService;
         this.settingsService = settingsService;
+        this.panelCacheService = panelCacheService;
     }
 
     public Map<String, Object> dashboard(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("dashboard", tenantId, normalizePeriod(period), normalizeStore(store)),
+                PANEL_CACHE_TTL, () -> dashboardUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> dashboardUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter salesFilter = salesFilter(tenantId, period, store);
         Filter productFilter = scopeFilter(tenantId, store, "p");
@@ -97,6 +112,11 @@ public class WebDataService {
     }
 
     public List<Map<String, Object>> sales(String tenantId, String period, String store, int limit, int offset) {
+        return panelCacheService.get(panelCacheService.key("sales", tenantId, normalizePeriod(period), normalizeStore(store), safeLimit(limit, 50, 500), safeOffset(offset)),
+                PANEL_CACHE_TTL, () -> salesUncached(tenantId, period, store, limit, offset));
+    }
+
+    private List<Map<String, Object>> salesUncached(String tenantId, String period, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = salesFilter(tenantId, period, store);
         int safeLimit = safeLimit(limit, 50, 500);
@@ -168,6 +188,11 @@ public class WebDataService {
     }
 
     public List<Map<String, Object>> cashSessions(String tenantId, String period, String store, int limit, int offset) {
+        return panelCacheService.get(panelCacheService.key("cash-sessions", tenantId, normalizePeriod(period), normalizeStore(store), safeLimit(limit, 50, 300), safeOffset(offset)),
+                PANEL_CACHE_TTL, () -> cashSessionsUncached(tenantId, period, store, limit, offset));
+    }
+
+    private List<Map<String, Object>> cashSessionsUncached(String tenantId, String period, String store, int limit, int offset) {
         initializer.ensureReady();
         Filter filter = cashFilter(tenantId, period, store);
         int safeLimit = safeLimit(limit, 50, 300);
@@ -386,17 +411,33 @@ public class WebDataService {
     }
 
     public Map<String, Object> finance(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("finance", tenantId, normalizePeriod(period), normalizeStore(store)),
+                PANEL_CACHE_TTL, () -> financeUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> financeUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter salesFilter = salesFilter(tenantId, period, store);
         Filter monthFilter = salesFilter(tenantId, "month", store);
+        Filter entryFilter = financialEntryFilter(tenantId, period, store);
         BigDecimal periodTotal = salesTotal(salesFilter);
         BigDecimal monthTotal = salesTotal(monthFilter);
+        BigDecimal manualRevenue = financialEntryTotal(entryFilter, "RECEITA", "PAGO");
+        BigDecimal manualExpenses = financialEntryTotal(entryFilter, "DESPESA", "PAGO");
+        BigDecimal pendingReceivable = financialEntryTotal(entryFilter, "RECEITA", "PENDENTE");
+        BigDecimal pendingPayable = financialEntryTotal(entryFilter, "DESPESA", "PENDENTE");
+        BigDecimal netTotal = periodTotal.add(manualRevenue).subtract(manualExpenses);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("activeStore", activeStore(tenantId, store));
         response.put("todayTotal", currency(periodTotal));
         response.put("periodTotal", currency(periodTotal));
         response.put("periodLabel", periodLabel(period));
         response.put("monthTotal", currency(monthTotal));
+        response.put("manualRevenue", currency(manualRevenue));
+        response.put("manualExpenses", currency(manualExpenses));
+        response.put("pendingReceivable", currency(pendingReceivable));
+        response.put("pendingPayable", currency(pendingPayable));
+        response.put("netTotal", currency(netTotal));
         response.put("paidSales", number("SELECT COUNT(*) FROM sales s WHERE s.status = 'PAID' AND " + salesFilter.sql(), salesFilter.args()));
         response.put("cancelledSales", number("SELECT COUNT(*) FROM sales s WHERE s.status = 'CANCELLED' AND " + salesFilter.sql(), salesFilter.args()));
         response.put("payments", payments(periodTotal, salesFilter));
@@ -408,6 +449,11 @@ public class WebDataService {
     }
 
     public Map<String, Object> reports(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("reports", tenantId, normalizePeriod(period), normalizeStore(store)),
+                PANEL_CACHE_TTL, () -> reportsUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> reportsUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter salesFilter = salesFilter(tenantId, period, store);
         Filter productFilter = scopeFilter(tenantId, store, "p");
@@ -463,7 +509,7 @@ public class WebDataService {
         all.put("isAll", true);
         response.add(all);
 
-        response.addAll(jdbcTemplate.query("""
+        List<Map<String, Object>> stores = jdbcTemplate.query("""
                 SELECT store_id, MAX(name) AS name, MAX(source_id) AS source_id, MAX(last_sync) AS last_sync, SUM(total_rows) AS total_rows
                 FROM (
                     SELECT id AS store_id, name, source_id, NULL AS last_sync, 0 AS total_rows
@@ -500,7 +546,9 @@ public class WebDataService {
             row.put("totalRows", rs.getLong("total_rows"));
             row.put("isAll", false);
             return row;
-        }, tenantId, tenantId, tenantId, tenantId));
+        }, tenantId, tenantId, tenantId, tenantId);
+
+        response.addAll(deduplicateStores(stores));
         return response;
     }
 
@@ -720,23 +768,40 @@ public class WebDataService {
 
     private Map<String, Object> financeSummary(String tenantId, String period, String store) {
         Filter filter = salesFilter(tenantId, period, store);
+        Filter entryFilter = financialEntryFilter(tenantId, period, store);
         BigDecimal gross = money("SELECT COALESCE(SUM(si.quantity * si.unit_price), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
         BigDecimal discounts = money("SELECT COALESCE(SUM(si.discount), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
         BigDecimal surcharges = money("SELECT COALESCE(SUM(s.surcharge), 0) FROM sales s WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
         BigDecimal net = salesTotal(filter);
         BigDecimal cost = estimatedCost(filter);
+        BigDecimal manualRevenue = financialEntryTotal(entryFilter, "RECEITA", "PAGO");
+        BigDecimal manualExpenses = financialEntryTotal(entryFilter, "DESPESA", "PAGO");
+        BigDecimal operationalBalance = net.add(manualRevenue).subtract(manualExpenses);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("grossRevenue", currency(gross));
         response.put("discounts", currency(discounts));
         response.put("surcharges", currency(surcharges));
+        response.put("manualRevenue", currency(manualRevenue));
+        response.put("manualExpenses", currency(manualExpenses));
         response.put("productCost", currency(cost));
-        response.put("profitEstimate", currency(net.subtract(cost)));
-        response.put("operationalBalance", currency(net));
+        response.put("profitEstimate", currency(net.add(manualRevenue).subtract(manualExpenses).subtract(cost)));
+        response.put("operationalBalance", currency(operationalBalance));
         return response;
     }
 
     private BigDecimal estimatedProfit(Filter salesFilter) {
         return salesTotal(salesFilter).subtract(estimatedCost(salesFilter));
+    }
+
+    private BigDecimal financialEntryTotal(Filter filter, String type, String status) {
+        List<Object> args = new ArrayList<>(filter.args());
+        args.add(type);
+        args.add(status);
+        return money("""
+                SELECT COALESCE(SUM(fe.amount), 0)
+                FROM financial_entries fe
+                WHERE %s AND fe.type = ? AND fe.status = ?
+                """.formatted(filter.sql()), args);
     }
 
     private BigDecimal estimatedCost(Filter salesFilter) {
@@ -801,15 +866,31 @@ public class WebDataService {
     }
 
     private Filter salesFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "s").and(salesPeriodCondition(period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("s.date_time", period, periodAnchor(period, "sales", "date_time", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "s")
+                .and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter cashFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "cs").and(periodCondition("COALESCE(cs.opened_at, cs.closed_at, CURRENT_TIMESTAMP)", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("COALESCE(cs.opened_at, cs.closed_at)", period, periodAnchor(period, "cash_sessions", "COALESCE(opened_at, closed_at)", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "cs")
+                .and(periodFilter.sql(), periodFilter.argsArray());
+    }
+
+    private Filter financialEntryFilter(String tenantId, String period, String store) {
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("fe.entry_date", period, periodAnchor(period, "financial_entries", "entry_date", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "fe")
+                .and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter auditFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "a").and(periodCondition("a.created_at", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("a.created_at", period, periodAnchor(period, "audit_log", "created_at", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "a")
+                .and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter scopeFilter(String tenantId, String store, String alias) {
@@ -828,17 +909,37 @@ public class WebDataService {
         return alias == null || alias.isBlank() ? column : alias + "." + column;
     }
 
-    private String salesPeriodCondition(String period) {
-        return periodCondition("s.date_time", period);
+    private Filter periodCondition(String column, String period, LocalDate anchor) {
+        String normalizedPeriod = normalizePeriod(period);
+        LocalDate safeAnchor = "today".equals(normalizedPeriod) || anchor == null ? LocalDate.now() : anchor;
+        LocalDate start = switch (normalizePeriod(period)) {
+            case "7d" -> safeAnchor.minusDays(6);
+            case "month" -> safeAnchor.minusDays(29);
+            case "year" -> safeAnchor.minusDays(364);
+            default -> safeAnchor;
+        };
+        LocalDate end = safeAnchor.plusDays(1);
+        return new Filter(column + " >= ? AND " + column + " < ?", List.of(start, end));
     }
 
-    private String periodCondition(String column, String period) {
-        return switch (normalizePeriod(period)) {
-            case "7d" -> column + " >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
-            case "month" -> column + " >= DATE_FORMAT(CURDATE(), '%Y-%m-01')";
-            case "year" -> column + " >= MAKEDATE(YEAR(CURDATE()), 1)";
-            default -> "DATE(" + column + ") = CURDATE()";
-        };
+    private LocalDate periodAnchor(String period, String table, String expression, String tenantId, String store) {
+        return "today".equals(normalizePeriod(period)) ? null : anchorDate(table, expression, tenantId, store);
+    }
+
+    private LocalDate anchorDate(String table, String expression, String tenantId, String store) {
+        List<Object> args = new ArrayList<>();
+        args.add(tenantId);
+        StringBuilder sql = new StringBuilder("SELECT DATE(MAX(")
+                .append(expression)
+                .append(")) FROM ")
+                .append(table)
+                .append(" WHERE tenant_id = ?");
+        if (store != null) {
+            sql.append(" AND store_id = ?");
+            args.add(store);
+        }
+        java.sql.Date value = jdbcTemplate.queryForObject(sql.toString(), java.sql.Date.class, args.toArray());
+        return value == null ? LocalDate.now() : value.toLocalDate();
     }
 
     private String bucketLabelExpression(String column, String period) {
@@ -855,7 +956,7 @@ public class WebDataService {
         }
         return switch (period.trim().toLowerCase(Locale.ROOT)) {
             case "7d", "7", "week" -> "7d";
-            case "month", "mes" -> "month";
+            case "month", "mes", "30d", "30dias", "30 dias" -> "month";
             case "year", "ano" -> "year";
             default -> "today";
         };
@@ -864,19 +965,36 @@ public class WebDataService {
     private String periodLabel(String period) {
         return switch (normalizePeriod(period)) {
             case "7d" -> "7 dias";
-            case "month" -> "Mês";
-            case "year" -> "Ano";
+            case "month" -> "30 dias";
+            case "year" -> "1 ano";
             default -> "Hoje";
         };
     }
 
     private String normalizeStore(String store) {
+        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
         if (store == null || store.isBlank()) {
-            return null;
+            return session == null || canAccessAllStores(session) ? null : session.storeId();
         }
         String value = store.trim();
         String lower = value.toLowerCase(Locale.ROOT);
-        return lower.equals("all") || lower.equals("geral") || lower.equals("todos") ? null : value;
+        if (lower.equals("all") || lower.equals("geral") || lower.equals("todos")) {
+            return session == null || canAccessAllStores(session) ? null : session.storeId();
+        }
+        if (session != null && !canAccessAllStores(session) && !value.equals(session.storeId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuario nao autorizado para esta loja.");
+        }
+        return value;
+    }
+
+    private boolean canAccessAllStores(AuthTokenService.SessionToken session) {
+        if (session == null) {
+            return true;
+        }
+        String role = session.role() == null ? "" : session.role().trim().toUpperCase(Locale.ROOT);
+        boolean tenantWideRole = role.equals("DONO") || role.equals("OWNER") || role.equals("ADMIN") || role.equals("ADMINISTRADOR") || role.equals("ADMINISTRATOR");
+        String store = session.storeId() == null ? "" : session.storeId().trim();
+        return tenantWideRole && (store.isBlank() || "WEB".equalsIgnoreCase(store) || "all".equalsIgnoreCase(store));
     }
 
     private Map<String, Object> company(String tenantId, String store) {
@@ -1010,6 +1128,25 @@ public class WebDataService {
                 .replace('\u00A0', ' ');
     }
 
+    static List<Map<String, Object>> deduplicateStores(List<Map<String, Object>> stores) {
+        List<Map<String, Object>> deduplicated = new ArrayList<>();
+        Set<String> seenSources = new LinkedHashSet<>();
+        for (Map<String, Object> storeRow : stores) {
+            String key = storeDedupKey(storeRow);
+            if (seenSources.add(key)) {
+                deduplicated.add(storeRow);
+            }
+        }
+        return deduplicated;
+    }
+
+    private static String storeDedupKey(Map<String, Object> storeRow) {
+        Object sourceId = storeRow.get("sourceId");
+        Object storeId = storeRow.get("id");
+        String raw = sourceId == null || sourceId.toString().isBlank() ? String.valueOf(storeId) : sourceId.toString();
+        return raw == null ? "" : raw.trim().toLowerCase(PT_BR);
+    }
+
     private String storeDisplayName(String preferredName, String fallback) {
         String raw = preferredName == null || preferredName.isBlank() ? fallback : preferredName;
         if (raw == null || raw.isBlank()) {
@@ -1061,6 +1198,14 @@ public class WebDataService {
     private record Filter(String sql, List<Object> args) {
         private Filter and(String condition) {
             return new Filter("(" + sql + ") AND (" + condition + ")", args);
+        }
+
+        private Filter and(String condition, Object... extraArgs) {
+            List<Object> copy = new ArrayList<>(args);
+            if (extraArgs != null) {
+                copy.addAll(List.of(extraArgs));
+            }
+            return new Filter("(" + sql + ") AND (" + condition + ")", copy);
         }
 
         private Object[] argsArray() {

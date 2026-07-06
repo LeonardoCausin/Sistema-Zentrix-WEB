@@ -7,8 +7,6 @@
   const togglePasswordButton = document.getElementById('togglePasswordButton');
   const errorBox = document.getElementById('loginError');
   const submitButton = form.querySelector('button[type="submit"]');
-  const defaultApiBase = 'http://localhost:8080/api';
-  const storedApiBase = localStorage.getItem('zentrix-api-base');
   const previewStatus = document.getElementById('previewStatus');
   const previewService = document.getElementById('previewService');
   const previewLastSync = document.getElementById('previewLastSync');
@@ -45,8 +43,10 @@
     }
 
     try {
+      const login = userField.value.trim();
       const session = await loginWithFallback({
-        email: userField.value.trim(),
+        email: login,
+        username: login,
         password: passwordField.value
       });
 
@@ -74,26 +74,40 @@
         });
 
         if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error('Usuário ou senha inválidos.');
-          }
-          if (response.status === 429) {
-            throw new Error('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
-          }
-          if (response.status === 403) {
-            throw new Error('Acesso restrito a usuários administradores.');
-          }
-          throw new Error('Não foi possível entrar agora. Verifique se o sistema está aberto.');
+          throw new LoginHttpError(loginErrorMessage(response.status));
         }
 
-        localStorage.setItem('zentrix-api-base', base);
+        rememberApiBase(base);
         return response.json();
       } catch (error) {
+        if (error instanceof LoginHttpError) {
+          throw error;
+        }
         lastError = error;
       }
     }
 
-    throw lastError || new Error('Não foi possível conectar ao sistema.');
+    throw new Error(
+      'Não foi possível conectar ao sistema. Abra pelo http://localhost:8080/ e confira se o backend está iniciado.'
+    );
+  }
+
+  class LoginHttpError extends Error {}
+
+  function loginErrorMessage(status) {
+    if (status === 401) {
+      return 'Usuário ou senha inválidos.';
+    }
+    if (status === 429) {
+      return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+    }
+    if (status === 403) {
+      return 'Acesso restrito a usuários administradores.';
+    }
+    if (status >= 500) {
+      return 'Não foi possível entrar agora. O servidor está iniciando ou indisponível.';
+    }
+    return 'Não foi possível entrar agora. Confira os dados informados.';
   }
 
   async function refreshPreview() {
@@ -118,7 +132,7 @@
       try {
         const response = await fetch(base + '/health');
         if (response.ok) {
-          localStorage.setItem('zentrix-api-base', base);
+          rememberApiBase(base);
           return response;
         }
       } catch (error) {
@@ -129,7 +143,18 @@
   }
 
   function apiBases() {
-    return Array.from(new Set([storedApiBase, defaultApiBase].filter(Boolean)));
+    if (window.ZentrixApiBase && typeof window.ZentrixApiBase.getFallbackBases === 'function') {
+      return window.ZentrixApiBase.getFallbackBases();
+    }
+    return ['http://localhost:8080/api', 'http://127.0.0.1:8080/api'];
+  }
+
+  function rememberApiBase(base) {
+    if (window.ZentrixApiBase && typeof window.ZentrixApiBase.rememberApiBase === 'function') {
+      window.ZentrixApiBase.rememberApiBase(base);
+      return;
+    }
+    localStorage.setItem('zentrix-api-base', base);
   }
 
   function writeSession(session) {

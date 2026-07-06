@@ -85,6 +85,10 @@
   background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
 }
 
+.segmented-control[aria-busy="true"] button.is-loading {
+  cursor: progress;
+}
+
 .card,
 .metric-card,
 .panel,

@@ -41,6 +41,49 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
   gap: 10px;
 }
 
+.search-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) auto auto;
+  align-items: end;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.search-field,
+.search-filter {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-field span,
+.search-filter span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.metric-action-card {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-action-card:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 3px;
+}
+
+.is-filtered-out {
+  display: none !important;
+}
+
 .dashboard-hero {
   position: relative;
   display: grid;
@@ -311,6 +354,13 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
   white-space: nowrap;
 }
 
+.entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .stock-meter {
   display: grid;
   gap: 7px;
@@ -457,6 +507,28 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
   border-radius: var(--radius-md);
 }
 
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.permission-group {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.permission-group h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
 .switch {
   position: relative;
   display: inline-flex;
@@ -495,4 +567,17 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
 
 .switch input:checked + span::after {
   transform: translateX(20px);
+}
+
+@media (max-width: 900px) {
+  .permission-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .permission-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }

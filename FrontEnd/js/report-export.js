@@ -81,7 +81,7 @@
     const summaryRows = Array.isArray(data.summaryCards) ? data.summaryCards.map((card) => flattenReportRow({
       Indicador: card.label,
       Valor: card.value,
-      Descricao: card.description || card.note || "",
+      Descrição: card.description || card.note || "",
       Status: card.tone || ""
     }, context)) : [];
     if (summaryRows.length) sections.push({ title: "Resumo executivo", rows: summaryRows });

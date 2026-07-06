@@ -1,6 +1,8 @@
 package br.com.zentrix.web.service;
 
 import br.com.zentrix.web.config.DatabaseConfig.DatabaseSettings;
+import java.lang.management.ManagementFactory;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class HealthService {
+    private static final Instant STARTED_AT = Instant.now();
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -57,6 +60,34 @@ public class HealthService {
         return response;
     }
 
+    public Map<String, Object> observability() {
+        Map<String, Object> response = new LinkedHashMap<>();
+        Runtime runtime = Runtime.getRuntime();
+        response.put("service", "zentrix-web-api");
+        response.put("apiVersion", "0.1.0-SNAPSHOT");
+        response.put("status", health().get("status"));
+        response.put("startedAt", STARTED_AT.toString());
+        response.put("uptimeMs", ManagementFactory.getRuntimeMXBean().getUptime());
+        response.put("serverTime", OffsetDateTime.now().toString());
+        response.put("memory", Map.of(
+                "freeBytes", runtime.freeMemory(),
+                "totalBytes", runtime.totalMemory(),
+                "maxBytes", runtime.maxMemory()
+        ));
+        if (exposeDetails) {
+            response.put("database", Map.of(
+                    "name", databaseSettings.getName(),
+                    "tenants", safeCount("tenants"),
+                    "stores", safeCount("tenant_stores"),
+                    "devices", safeCount("tenant_devices"),
+                    "syncRuns", safeCount("sync_runs"),
+                    "outbox", safeCount("web_change_outbox"),
+                    "auditEvents", safeCount("audit_log")
+            ));
+        }
+        return response;
+    }
+
     private Object lastSync() {
         List<String> rows = jdbcTemplate.query("""
                 SELECT CAST(received_at AS CHAR)
@@ -71,5 +102,13 @@ public class HealthService {
     private Long count(String table) {
         Long value = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
         return value == null ? 0L : value;
+    }
+
+    private Long safeCount(String table) {
+        try {
+            return count(table);
+        } catch (Exception e) {
+            return -1L;
+        }
     }
 }

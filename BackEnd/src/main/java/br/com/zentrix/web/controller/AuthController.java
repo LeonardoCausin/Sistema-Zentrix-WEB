@@ -44,6 +44,9 @@ public class AuthController {
         response.put("displayName", session.displayName());
         response.put("role", session.role());
         response.put("tenantId", session.tenantId());
+        response.put("storeId", session.storeId());
+        response.put("sourceId", session.sourceId());
+        response.put("permissions", session.permissions());
         response.put("issuedAt", session.issuedAt().toString());
         response.put("expiresAt", session.expiresAt().toString());
         return response;

@@ -4,30 +4,42 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.text.NumberFormat;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ReportService {
     private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
+    private static final Duration REPORT_CACHE_TTL = Duration.ofSeconds(20);
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
     private final WebDataService webDataService;
+    private final PanelCacheService panelCacheService;
 
-    public ReportService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, WebDataService webDataService) {
+    public ReportService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, WebDataService webDataService, PanelCacheService panelCacheService) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
         this.webDataService = webDataService;
+        this.panelCacheService = panelCacheService;
     }
 
     public Map<String, Object> overview(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("report-overview", tenantId, normalizePeriod(period), normalizeStore(store)),
+                REPORT_CACHE_TTL, () -> overviewUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> overviewUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter salesFilter = salesFilter(tenantId, period, store);
         Filter productFilter = scopeFilter(tenantId, store, "p");
@@ -70,6 +82,11 @@ public class ReportService {
     }
 
     public Map<String, Object> sales(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("report-sales", tenantId, normalizePeriod(period), normalizeStore(store)),
+                REPORT_CACHE_TTL, () -> salesUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> salesUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter filter = salesFilter(tenantId, period, store);
         long totalSales = number("SELECT COUNT(*) FROM sales s WHERE " + filter.sql(), filter.args());
@@ -142,6 +159,11 @@ public class ReportService {
     }
 
     public Map<String, Object> cash(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("report-cash", tenantId, normalizePeriod(period), normalizeStore(store)),
+                REPORT_CACHE_TTL, () -> cashUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> cashUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter filter = cashFilter(tenantId, period, store);
         Filter movementFilter = cashMovementFilter(tenantId, period, store);
@@ -172,6 +194,11 @@ public class ReportService {
     }
 
     public Map<String, Object> finance(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("report-finance", tenantId, normalizePeriod(period), normalizeStore(store)),
+                REPORT_CACHE_TTL, () -> financeUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> financeUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Map<String, Object> finance = webDataService.finance(tenantId, period, store);
         Map<String, Object> response = baseReport("Relat\u00f3rio Financeiro", tenantId, period, store);
@@ -186,6 +213,11 @@ public class ReportService {
     }
 
     public Map<String, Object> audit(String tenantId, String period, String store) {
+        return panelCacheService.get(panelCacheService.key("report-audit", tenantId, normalizePeriod(period), normalizeStore(store)),
+                REPORT_CACHE_TTL, () -> auditUncached(tenantId, period, store));
+    }
+
+    private Map<String, Object> auditUncached(String tenantId, String period, String store) {
         initializer.ensureReady();
         Filter filter = auditFilter(tenantId, period, store);
         long total = number("SELECT COUNT(*) FROM audit_log a WHERE " + filter.sql(), filter.args());
@@ -497,19 +529,27 @@ public class ReportService {
     }
 
     private Filter salesFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "s").and(periodCondition("s.date_time", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("s.date_time", period, periodAnchor(period, "sales", "date_time", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "s").and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter cashFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "cs").and(periodCondition("COALESCE(cs.opened_at, cs.closed_at, CURRENT_TIMESTAMP)", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("COALESCE(cs.opened_at, cs.closed_at)", period, periodAnchor(period, "cash_sessions", "COALESCE(opened_at, closed_at)", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "cs").and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter cashMovementFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "cm").and(periodCondition("COALESCE(cm.date_time, CURRENT_TIMESTAMP)", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("cm.date_time", period, periodAnchor(period, "cash_movements", "date_time", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "cm").and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter auditFilter(String tenantId, String period, String store) {
-        return scopeFilter(tenantId, store, "a").and(periodCondition("a.created_at", period));
+        String normalizedStore = normalizeStore(store);
+        Filter periodFilter = periodCondition("a.created_at", period, periodAnchor(period, "audit_log", "created_at", tenantId, normalizedStore));
+        return scopeFilter(tenantId, normalizedStore, "a").and(periodFilter.sql(), periodFilter.argsArray());
     }
 
     private Filter scopeFilter(String tenantId, String store, String alias) {
@@ -524,13 +564,37 @@ public class ReportService {
         return new Filter(sql.toString(), args);
     }
 
-    private String periodCondition(String column, String period) {
-        return switch (normalizePeriod(period)) {
-            case "7d" -> column + " >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
-            case "month" -> column + " >= DATE_FORMAT(CURDATE(), '%Y-%m-01')";
-            case "year" -> column + " >= MAKEDATE(YEAR(CURDATE()), 1)";
-            default -> "DATE(" + column + ") = CURDATE()";
+    private Filter periodCondition(String column, String period, LocalDate anchor) {
+        String normalizedPeriod = normalizePeriod(period);
+        LocalDate safeAnchor = "today".equals(normalizedPeriod) || anchor == null ? LocalDate.now() : anchor;
+        LocalDate start = switch (normalizePeriod(period)) {
+            case "7d" -> safeAnchor.minusDays(6);
+            case "month" -> safeAnchor.minusDays(29);
+            case "year" -> safeAnchor.minusDays(364);
+            default -> safeAnchor;
         };
+        LocalDate end = safeAnchor.plusDays(1);
+        return new Filter(column + " >= ? AND " + column + " < ?", List.of(start, end));
+    }
+
+    private LocalDate periodAnchor(String period, String table, String expression, String tenantId, String store) {
+        return "today".equals(normalizePeriod(period)) ? null : anchorDate(table, expression, tenantId, store);
+    }
+
+    private LocalDate anchorDate(String table, String expression, String tenantId, String store) {
+        List<Object> args = new ArrayList<>();
+        args.add(tenantId);
+        StringBuilder sql = new StringBuilder("SELECT DATE(MAX(")
+                .append(expression)
+                .append(")) FROM ")
+                .append(table)
+                .append(" WHERE tenant_id = ?");
+        if (store != null) {
+            sql.append(" AND store_id = ?");
+            args.add(store);
+        }
+        java.sql.Date value = jdbcTemplate.queryForObject(sql.toString(), java.sql.Date.class, args.toArray());
+        return value == null ? LocalDate.now() : value.toLocalDate();
     }
 
     private String bucketLabelExpression(String column, String period) {
@@ -547,7 +611,7 @@ public class ReportService {
         }
         return switch (period.trim().toLowerCase(Locale.ROOT)) {
             case "7d", "7", "week" -> "7d";
-            case "month", "mes", "m\u00eas" -> "month";
+            case "month", "mes", "m\u00eas", "30d", "30dias", "30 dias" -> "month";
             case "year", "ano" -> "year";
             default -> "today";
         };
@@ -556,19 +620,36 @@ public class ReportService {
     private String periodLabel(String period) {
         return switch (normalizePeriod(period)) {
             case "7d" -> "7 dias";
-            case "month" -> "M\u00eas";
-            case "year" -> "Ano";
+            case "month" -> "30 dias";
+            case "year" -> "1 ano";
             default -> "Hoje";
         };
     }
 
     private String normalizeStore(String store) {
+        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
         if (store == null || store.isBlank()) {
-            return null;
+            return session == null || canAccessAllStores(session) ? null : session.storeId();
         }
         String value = store.trim();
         String lower = value.toLowerCase(Locale.ROOT);
-        return lower.equals("all") || lower.equals("geral") || lower.equals("todos") ? null : value;
+        if (lower.equals("all") || lower.equals("geral") || lower.equals("todos")) {
+            return session == null || canAccessAllStores(session) ? null : session.storeId();
+        }
+        if (session != null && !canAccessAllStores(session) && !value.equals(session.storeId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuario nao autorizado para esta loja.");
+        }
+        return value;
+    }
+
+    private boolean canAccessAllStores(AuthTokenService.SessionToken session) {
+        if (session == null) {
+            return true;
+        }
+        String role = session.role() == null ? "" : session.role().trim().toUpperCase(Locale.ROOT);
+        boolean tenantWideRole = role.equals("DONO") || role.equals("OWNER") || role.equals("ADMIN") || role.equals("ADMINISTRADOR") || role.equals("ADMINISTRATOR");
+        String store = session.storeId() == null ? "" : session.storeId().trim();
+        return tenantWideRole && (store.isBlank() || "WEB".equalsIgnoreCase(store) || "all".equalsIgnoreCase(store));
     }
 
     private String column(String alias, String column) {
@@ -608,6 +689,17 @@ public class ReportService {
                 return this;
             }
             List<Object> copy = new ArrayList<>(args);
+            return new Filter("(" + sql + ") AND (" + condition + ")", copy);
+        }
+
+        private Filter and(String condition, Object... extraArgs) {
+            if (condition == null || condition.isBlank()) {
+                return this;
+            }
+            List<Object> copy = new ArrayList<>(args);
+            if (extraArgs != null) {
+                copy.addAll(List.of(extraArgs));
+            }
             return new Filter("(" + sql + ") AND (" + condition + ")", copy);
         }
 

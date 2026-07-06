@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-name: Validacao Zentrix Web
-=======
-name: Deploy Zentrix Web
->>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f
+name: Validacao e Deploy Zentrix Web
 
 on:
   push:
@@ -15,7 +11,6 @@ on:
       - master
 
 jobs:
-<<<<<<< HEAD
   backend:
     runs-on: self-hosted
 
@@ -26,7 +21,7 @@ jobs:
       - name: Bloquear arquivos locais versionados
         shell: bash
         run: |
-          forbidden="$(git ls-files 'BackEnd/.env' 'BackEnd/target/**' '*.log')"
+          forbidden="$(git ls-files 'BackEnd/.env' 'BackEnd/target/**' 'target/**' 'node_modules/**' '*.log')"
           if [ -n "$forbidden" ]; then
             echo "Arquivos locais nao podem ser versionados:"
             echo "$forbidden"
@@ -35,11 +30,63 @@ jobs:
 
       - name: Testar backend
         run: mvn -B -q -f BackEnd/pom.xml test
-=======
+
+      - name: Empacotar backend
+        run: mvn -B -q -f BackEnd/pom.xml -DskipTests package
+
+  frontend:
+    runs-on: self-hosted
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias do frontend
+        working-directory: FrontEnd
+        run: npm ci
+
+      - name: Validar JavaScript
+        shell: bash
+        run: |
+          node --check FrontEnd/js/core/api-base.js
+          node --check FrontEnd/js/core/api.js
+          node --check FrontEnd/js/login.js
+          node --check FrontEnd/js/page.js
+          node --check FrontEnd/js/page-config.js
+          node --check FrontEnd/js/page-domains.js
+          node --check FrontEnd/js/page-permissions.js
+          node --check FrontEnd/js/page-utils.js
+          node --check FrontEnd/js/page-csv.js
+          node --check FrontEnd/js/page-renderers.js
+          node --check FrontEnd/js/report-export.js
+
+      - name: Instalar navegador Playwright
+        working-directory: FrontEnd
+        run: npx playwright install chromium
+
+      - name: Rodar e2e do painel
+        shell: bash
+        working-directory: .
+        run: |
+          npx --yes http-server . -p 5501 -a 127.0.0.1 -c-1 &
+          server_pid=$!
+          trap "kill $server_pid" EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5501/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          cd FrontEnd
+          ZENTRIX_FRONTEND_URL=http://127.0.0.1:5501 npm run test:e2e
+
   deploy:
+    if: github.event_name == 'push'
+    needs:
+      - backend
+      - frontend
     runs-on: self-hosted
 
     steps:
       - name: Deploy na VM Ubuntu
         run: /usr/local/bin/deploy-zentrix-web.sh
->>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f

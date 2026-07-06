@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Local secrets
 .env
 .env.*
@@ -6,11 +5,21 @@
 BackEnd/.env
 BackEnd/.env.*
 !BackEnd/.env.example
+BackEnd/.env.properties
+
+# Local generated helper files
+BackEnd/cp.txt
 
 # Build artifacts
 target/
 BackEnd/target/
+build/
+dist/
+*.class
+
+# Node dependencies and reports
 node_modules/
+FrontEnd/node_modules/
 
 # Generated reports and temporary tooling
 tmp/
@@ -20,21 +29,11 @@ test-results/
 playwright-report/
 
 # Runtime logs
+logs/
 *.log
 
 # OS and editor noise
 Thumbs.db
 .DS_Store
-=======
-
-# Configurações locais / segredos
-BackEnd/.env
-BackEnd/.env.properties
-BackEnd/cp.txt
-
-# Build Maven
-BackEnd/target/
-
-# Logs
-*.log
->>>>>>> fc6b07ed114beeeeaca43e5b3458e989722ba51f
+.idea/
+.vscode/

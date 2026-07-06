@@ -5,9 +5,13 @@ import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.PermissionService;
 import br.com.zentrix.web.service.PermissionService.Permission;
 import br.com.zentrix.web.service.ReportService;
+import br.com.zentrix.web.service.WebChangeOutboxService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,11 +23,18 @@ public class PanelController {
     private final WebDataService dataService;
     private final ReportService reportService;
     private final PermissionService permissionService;
+    private final WebChangeOutboxService webChangeOutboxService;
 
-    public PanelController(WebDataService dataService, ReportService reportService, PermissionService permissionService) {
+    public PanelController(
+            WebDataService dataService,
+            ReportService reportService,
+            PermissionService permissionService,
+            WebChangeOutboxService webChangeOutboxService
+    ) {
         this.dataService = dataService;
         this.reportService = reportService;
         this.permissionService = permissionService;
+        this.webChangeOutboxService = webChangeOutboxService;
     }
 
     @GetMapping("/dashboard")
@@ -146,5 +157,36 @@ public class PanelController {
     public List<Map<String, Object>> stores() {
         permissionService.require(Permission.VIEW_PANEL);
         return dataService.stores(AuthContext.tenantId());
+    }
+
+    @GetMapping("/sync/monitor")
+    public Map<String, Object> syncMonitor(@RequestParam(defaultValue = "all") String store) {
+        permissionService.require(Permission.VIEW_REPORTS);
+        return webChangeOutboxService.monitor(AuthContext.tenantId(), store);
+    }
+
+    @PostMapping("/sync/outbox/{id}/retry")
+    public Map<String, Object> retryOutbox(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "all") String store,
+            @RequestBody(required = false) Map<String, Object> request
+    ) {
+        permissionService.require(Permission.VIEW_REPORTS);
+        return webChangeOutboxService.retryOutboxItem(AuthContext.tenantId(), store, id, reason(request));
+    }
+
+    @PostMapping("/sync/outbox/{id}/dead-letter")
+    public Map<String, Object> deadLetterOutbox(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "all") String store,
+            @RequestBody(required = false) Map<String, Object> request
+    ) {
+        permissionService.require(Permission.VIEW_REPORTS);
+        return webChangeOutboxService.deadLetterOutboxItem(AuthContext.tenantId(), store, id, reason(request));
+    }
+
+    private String reason(Map<String, Object> request) {
+        Object value = request == null ? null : request.get("reason");
+        return value == null ? null : String.valueOf(value);
     }
 }

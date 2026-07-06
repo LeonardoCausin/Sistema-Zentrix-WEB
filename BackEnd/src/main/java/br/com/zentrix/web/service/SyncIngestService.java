@@ -33,7 +33,7 @@ public class SyncIngestService {
             table("users", List.of("tenant_id", "store_id", "device_id", "source_id", "username", "password", "display_name", "role", "active", "created_at", "updated_at", "last_login_at", "permissions_json"), List.of("tenant_id", "store_id", "username"), List.of("created_at", "updated_at", "last_login_at")),
             table("suppliers", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cnpj", "phone", "email", "address", "created_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at")),
             table("clients", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cpf_cnpj", "phone", "email", "address", "created_at", "birth_date", "active", "notes", "loyalty_points", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at", "updated_at", "deleted_at")),
-            table("products", List.of("tenant_id", "store_id", "device_id", "source_id", "code", "description", "unit", "price", "cost_price", "stock", "supplier_id", "category", "barcode", "min_stock", "ideal_stock", "active", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "code"), List.of("updated_at", "deleted_at")),
+            table("products", List.of("tenant_id", "store_id", "device_id", "source_id", "code", "description", "unit", "price", "cost_price", "stock", "supplier_id", "category", "barcode", "created_at", "min_stock", "ideal_stock", "active", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "code"), List.of("created_at", "updated_at", "deleted_at")),
             table("stock_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "product_code", "type", "quantity", "previous_stock", "new_stock", "origin", "reference_type", "reference_id", "reason", "user", "created_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at")),
             table("cash_sessions", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "cash_id", "operator", "opening_balance", "closing_balance", "expected_balance", "difference", "observation", "opened_at", "closed_at", "closed_by", "close_reason", "is_open", "status"), List.of("tenant_id", "store_id", "id"), List.of("opened_at", "closed_at")),
             table("cash_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "type", "value", "observation", "date_time"), List.of("tenant_id", "store_id", "id"), List.of("date_time")),
@@ -46,25 +46,32 @@ public class SyncIngestService {
     );
     private static final Map<String, TableSpec> TABLES_BY_NAME = TABLES.stream()
             .collect(Collectors.toUnmodifiableMap(TableSpec::name, spec -> spec));
+    private static final Set<String> FULL_REQUIRED_TABLES = Set.of(
+            "users", "clients", "products", "stock_movements", "cash_sessions", "cash_movements",
+            "sales", "sale_items", "sale_cancellations", "financial_entries"
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final WebDatabaseInitializer initializer;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
+    private final PanelCacheService panelCacheService;
 
     public SyncIngestService(
             JdbcTemplate jdbcTemplate,
             TransactionTemplate transactionTemplate,
             WebDatabaseInitializer initializer,
             ObjectMapper objectMapper,
-            AuditService auditService
+            AuditService auditService,
+            PanelCacheService panelCacheService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.initializer = initializer;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.panelCacheService = panelCacheService;
     }
 
     public Map<String, Object> ingest(SyncPushRequest request) {
@@ -77,31 +84,38 @@ public class SyncIngestService {
             scope = scope(request);
             String mode = request.normalizedMode();
             Map<String, List<Map<String, Object>>> normalizedTables = normalizeTables(scope, request.tables());
+            validateFullSync(mode, normalizedTables);
             SyncScope syncScope = scope;
 
-            return transactionTemplate.execute(status -> {
+            Map<String, Object> response = transactionTemplate.execute(status -> {
                 upsertScopeMetadata(syncScope, receivedAt);
                 Map<String, Integer> counts = new LinkedHashMap<>();
                 if ("FULL".equals(mode)) {
                     clearTables(syncScope, normalizedTables.keySet());
                 }
 
+                List<Map<String, Object>> conflicts = "FULL".equals(mode) ? List.of() : detectConflicts(normalizedTables);
+                Map<String, List<Map<String, Object>>> rowsToApply = conflicts.isEmpty()
+                        ? normalizedTables
+                        : withoutConflicts(normalizedTables, conflicts);
                 for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
                     TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
-                    counts.put(spec.name(), upsertRows(spec, entry.getValue()));
+                    counts.put(spec.name(), upsertRows(spec, rowsToApply.getOrDefault(entry.getKey(), List.of())));
                 }
 
                 int totalRows = counts.values().stream().mapToInt(Integer::intValue).sum();
                 Long runId = recordSyncRun(request, syncScope, mode, receivedAt, OffsetDateTime.now(), "SUCCESS", totalRows, counts, "Recebido via API");
-                Map<String, Object> reconciliation = recordReconciliation(runId, syncScope, mode, counts, null);
+                Map<String, Object> reconciliation = recordReconciliation(runId, syncScope, mode, counts, conflicts, null);
                 auditService.record(syncScope.tenantId(), syncScope.storeId(), syncScope.deviceId(), syncScope.sourceId(), "PDV", "SYNC_SUCCESS", "sync_runs", String.valueOf(runId), "Sincronização recebida com " + totalRows + " registro(s).", "INFO", null, countsJson(counts), null, "PDV", null, null);
                 return syncResponse(runId, syncScope, mode, "SUCCESS", totalRows, counts, reconciliation, null);
             });
+            panelCacheService.clear();
+            return response;
         } catch (RuntimeException e) {
             if (scope != null) {
                 try {
                     Long runId = recordSyncRun(request, scope, request == null ? "PARTIAL" : request.normalizedMode(), receivedAt, OffsetDateTime.now(), "ERROR", 0, Map.of(), e.getMessage());
-                    recordReconciliation(runId, scope, request == null ? "PARTIAL" : request.normalizedMode(), Map.of(), e.getMessage());
+                    recordReconciliation(runId, scope, request == null ? "PARTIAL" : request.normalizedMode(), Map.of(), List.of(), e.getMessage());
                     auditService.record(scope.tenantId(), scope.storeId(), scope.deviceId(), scope.sourceId(), "PDV", "SYNC_ERROR", "sync_runs", String.valueOf(runId), e.getMessage(), "CRITICO", null, null, "Falha ao sincronizar", "PDV", null, null);
                 } catch (RuntimeException ignored) {
                     // Mantém o erro original da sincronização.
@@ -280,6 +294,141 @@ public class SyncIngestService {
         }
     }
 
+    private void validateFullSync(String mode, Map<String, List<Map<String, Object>>> normalizedTables) {
+        if (!"FULL".equals(mode)) {
+            return;
+        }
+        Set<String> received = normalizedTables.keySet();
+        List<String> missing = FULL_REQUIRED_TABLES.stream()
+                .filter(table -> !received.contains(table))
+                .sorted()
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("FULL sync recusado: payload sem tabelas obrigatórias " + missing);
+        }
+    }
+
+    private List<Map<String, Object>> detectConflicts(Map<String, List<Map<String, Object>>> normalizedTables) {
+        List<Map<String, Object>> conflicts = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
+            TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
+            String revisionColumn = revisionColumn(spec);
+            if (revisionColumn == null) {
+                continue;
+            }
+            for (Map<String, Object> row : entry.getValue()) {
+                Object incomingRevisionValue = row.get(revisionColumn);
+                Timestamp incomingRevision = timestampOrNull(spec, revisionColumn, incomingRevisionValue);
+                if (incomingRevision == null) {
+                    continue;
+                }
+                Map<String, Object> existing = existingRevision(spec, row, revisionColumn);
+                if (existing.isEmpty()) {
+                    continue;
+                }
+                Timestamp existingRevision = timestampOrNull(spec, revisionColumn, existing.get(revisionColumn));
+                String existingSource = Objects.toString(existing.get("source_id"), "");
+                String incomingSource = Objects.toString(row.get("source_id"), "");
+                if (!existingSource.equalsIgnoreCase(incomingSource)
+                        && existingRevision != null
+                        && existingRevision.after(incomingRevision)) {
+                    Map<String, Object> conflict = new LinkedHashMap<>();
+                    conflict.put("table", spec.name());
+                    conflict.put("key", primaryKeyValues(spec, row));
+                    conflict.put("revisionColumn", revisionColumn);
+                    conflict.put("existingSourceId", existingSource);
+                    conflict.put("incomingSourceId", incomingSource);
+                    conflict.put("existingRevision", existingRevision.toLocalDateTime().toString());
+                    conflict.put("incomingRevision", incomingRevision.toLocalDateTime().toString());
+                    conflict.put("message", "Registro local mais recente que o payload recebido; atualização não aplicada automaticamente.");
+                    conflicts.add(conflict);
+                }
+            }
+        }
+        return conflicts;
+    }
+
+    private Map<String, List<Map<String, Object>>> withoutConflicts(
+            Map<String, List<Map<String, Object>>> normalizedTables,
+            List<Map<String, Object>> conflicts
+    ) {
+        Set<String> conflictKeys = conflicts.stream()
+                .map(conflict -> conflictKey(
+                        Objects.toString(conflict.get("table"), ""),
+                        castStringMap(conflict.get("key"))))
+                .collect(Collectors.toSet());
+        Map<String, List<Map<String, Object>>> filtered = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
+            TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
+            List<Map<String, Object>> rows = entry.getValue().stream()
+                    .filter(row -> !conflictKeys.contains(conflictKey(spec.name(), primaryKeyValues(spec, row))))
+                    .toList();
+            filtered.put(entry.getKey(), rows);
+        }
+        return filtered;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castStringMap(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    private Map<String, Object> existingRevision(TableSpec spec, Map<String, Object> row, String revisionColumn) {
+        List<Object> args = new ArrayList<>();
+        String where = spec.primaryKeys().stream()
+                .map(key -> {
+                    args.add(normalizeValue(spec, key, row.get(key)));
+                    return quote(key) + " = ?";
+                })
+                .collect(Collectors.joining(" AND "));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT source_id, %s
+                FROM %s
+                WHERE %s
+                LIMIT 1
+                """.formatted(quote(revisionColumn), quote(spec.name()), where), args.toArray());
+        return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    private Map<String, Object> primaryKeyValues(TableSpec spec, Map<String, Object> row) {
+        Map<String, Object> key = new LinkedHashMap<>();
+        spec.primaryKeys().stream().sorted().forEach(column -> key.put(column, row.get(column)));
+        return key;
+    }
+
+    private String conflictKey(String tableName, Map<String, Object> key) {
+        return tableName + ":" + key.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + Objects.toString(entry.getValue(), ""))
+                .collect(Collectors.joining("|"));
+    }
+
+    private String revisionColumn(TableSpec spec) {
+        for (String column : List.of("updated_at", "date_time", "closed_at", "opened_at", "cancelled_at", "created_at", "last_login_at")) {
+            if (spec.columns().contains(column)) {
+                return column;
+            }
+        }
+        return null;
+    }
+
+    private Timestamp timestampOrNull(TableSpec spec, String column, Object value) {
+        if (value == null) {
+            return null;
+        }
+        Object normalized = normalizeValue(spec, column, value);
+        if (normalized instanceof Timestamp timestamp) {
+            return timestamp;
+        }
+        if (normalized instanceof java.sql.Date date) {
+            return Timestamp.valueOf(date.toLocalDate().atStartOfDay());
+        }
+        try {
+            return parseDateTime(Objects.toString(normalized, ""));
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     private void clearTables(SyncScope scope, Set<String> tableNames) {
         List<String> ordered = new ArrayList<>(tableNames);
         ordered.sort((left, right) -> Integer.compare(tableOrder(right), tableOrder(left)));
@@ -442,6 +591,7 @@ public class SyncIngestService {
             SyncScope scope,
             String mode,
             Map<String, Integer> counts,
+            List<Map<String, Object>> conflicts,
             String errorMessage
     ) {
         List<String> expected = TABLES.stream().map(TableSpec::name).toList();
@@ -449,11 +599,15 @@ public class SyncIngestService {
         List<String> missing = "FULL".equals(mode)
                 ? expected.stream().filter(table -> !receivedSet.contains(table)).toList()
                 : List.of();
+        int conflictCount = conflicts == null ? 0 : conflicts.size();
         String reconciliationStatus;
         String message;
         if (errorMessage != null && !errorMessage.isBlank()) {
             reconciliationStatus = "ERROR";
             message = errorMessage;
+        } else if (conflictCount > 0) {
+            reconciliationStatus = "CONFLICT";
+            message = "Conflito detectado: " + conflictCount + " registro(s) não foram sobrescritos automaticamente.";
         } else if ("FULL".equals(mode) && missing.isEmpty()) {
             reconciliationStatus = "IN_SYNC";
             message = "Sincronizacao FULL completa recebida.";
@@ -467,8 +621,8 @@ public class SyncIngestService {
         jdbcTemplate.update("""
                 INSERT INTO sync_reconciliation
                     (run_id, tenant_id, store_id, device_id, source_id, mode, status,
-                     expected_tables_json, received_tables_json, missing_tables_json, conflict_count, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     expected_tables_json, received_tables_json, missing_tables_json, conflict_count, conflict_details_json, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 runId,
                 scope.tenantId(),
@@ -480,13 +634,16 @@ public class SyncIngestService {
                 toJson(expected, "[]"),
                 countsJson(counts),
                 toJson(missing, "[]"),
-                0,
+                conflictCount,
+                toJson(conflicts == null ? List.of() : conflicts, "[]"),
                 message
         );
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", reconciliationStatus);
         response.put("missingTables", missing);
         response.put("receivedTables", counts);
+        response.put("conflictCount", conflictCount);
+        response.put("conflicts", conflicts == null ? List.of() : conflicts);
         response.put("message", message);
         return response;
     }
@@ -496,7 +653,7 @@ public class SyncIngestService {
             return Map.of();
         }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT status, missing_tables_json, received_tables_json, conflict_count, message, created_at
+                SELECT status, missing_tables_json, received_tables_json, conflict_count, conflict_details_json, message, created_at
                 FROM sync_reconciliation
                 WHERE run_id = ?
                 ORDER BY created_at DESC, id DESC
@@ -511,6 +668,7 @@ public class SyncIngestService {
         response.put("missingTables", parseList(row.get("missing_tables_json")));
         response.put("receivedTables", parseCounts(row.get("received_tables_json")));
         response.put("conflictCount", row.get("conflict_count"));
+        response.put("conflicts", parseObjects(row.get("conflict_details_json")));
         response.put("message", row.get("message"));
         response.put("createdAt", row.get("created_at"));
         return response;
@@ -523,6 +681,18 @@ public class SyncIngestService {
         try {
             return objectMapper.readValue(Objects.toString(value), objectMapper.getTypeFactory()
                     .constructCollectionType(List.class, String.class));
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private List<Map<String, Object>> parseObjects(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(Objects.toString(value), objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, Map.class));
         } catch (Exception e) {
             return List.of();
         }
