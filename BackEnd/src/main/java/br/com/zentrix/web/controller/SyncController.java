@@ -17,10 +17,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/sync")
 public class SyncController {
+    private static final Logger log = LoggerFactory.getLogger(SyncController.class);
 
     private final SyncIngestService syncIngestService;
     private final SyncKeyService syncKeyService;
@@ -83,6 +86,10 @@ public class SyncController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (DataAccessException | IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponivel para entregar mudancas", e);
+        } catch (RuntimeException e) {
+            log.error("Falha inesperada no pull Web -> PDV tenant={} store={} source={} device={} afterId={}",
+                    tenantId, storeId, sourceId, deviceId, afterId, e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Servico de sincronizacao temporariamente indisponivel", e);
         }
     }
 
