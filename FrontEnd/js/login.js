@@ -146,7 +146,7 @@
     if (window.ZentrixApiBase && typeof window.ZentrixApiBase.getFallbackBases === 'function') {
       return window.ZentrixApiBase.getFallbackBases();
     }
-    return ['http://localhost:8080/api', 'http://127.0.0.1:8080/api'];
+    return ['https://api.zentrixsystems.com.br/api', 'http://localhost:8080/api', 'http://127.0.0.1:8080/api'];
   }
 
   function rememberApiBase(base) {

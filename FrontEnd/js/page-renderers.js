@@ -339,11 +339,6 @@
       <div class="entity-grid" data-search-container="clients" style="margin-top: 16px">
         ${rows.map((row) => clientCardHtml(row)).join("") || emptyState("Ainda não há clientes para mostrar.")}
       </div>
-      <div style="margin-top: 16px">
-        ${dataTableHtml("Clientes", ["Loja", "Nome", "CPF/CNPJ", "Telefone", "E-mail", "Endereço", "Cadastro"], rows, (row) => [
-          row.store, row.name, row.cpfCnpj || "-", row.phone || "-", row.email || "-", row.address || "-", row.createdAt || "-"
-        ], exportId)}
-      </div>
     `);
     setupCsvExport(exportId, "Clientes", ["Loja", "Nome", "CPF/CNPJ", "Telefone", "E-mail", "Endereço", "Cadastro"], rows.map((row) => [
       row.store, row.name, row.cpfCnpj || "-", row.phone || "-", row.email || "-", row.address || "-", row.createdAt || "-"

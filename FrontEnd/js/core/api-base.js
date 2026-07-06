@@ -2,10 +2,19 @@
   "use strict";
 
   const STORAGE_KEY = "zentrix-api-base";
+  const PUBLIC_API_BASE = "https://api.zentrixsystems.com.br/api";
   const LOCAL_FALLBACK = "http://localhost:8080/api";
 
   function normalizeApiBase(value) {
     return String(value || "").trim().replace(/\/+$/, "");
+  }
+
+  function isLocalHost(hostname) {
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  }
+
+  function isLocalApiBase(value) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(value || "");
   }
 
   function readStoredApiBase() {
@@ -17,11 +26,13 @@
   }
 
   function inferApiBaseFromLocation() {
-    if (!location || !location.hostname) {
-      return LOCAL_FALLBACK;
+    if (!location || !location.hostname || !/^https?:$/.test(location.protocol)) {
+      return PUBLIC_API_BASE;
     }
-    const protocol = location.protocol === "https:" ? "https:" : "http:";
-    return protocol + "//" + location.hostname + ":8080/api";
+    if (isLocalHost(location.hostname)) {
+      return location.origin.replace(/\/+$/, "") + "/api";
+    }
+    return PUBLIC_API_BASE;
   }
 
   function getApiBase() {
@@ -30,7 +41,7 @@
       return configured;
     }
     const stored = readStoredApiBase();
-    if (stored) {
+    if (stored && (isLocalHost(location.hostname) || !isLocalApiBase(stored))) {
       return stored;
     }
     return normalizeApiBase(inferApiBaseFromLocation());
@@ -40,6 +51,7 @@
     return Array.from(new Set([
       getApiBase(),
       inferApiBaseFromLocation(),
+      PUBLIC_API_BASE,
       LOCAL_FALLBACK,
       "http://127.0.0.1:8080/api"
     ].map(normalizeApiBase).filter(Boolean)));

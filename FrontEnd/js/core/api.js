@@ -45,7 +45,7 @@
     if (window.ZentrixApiBase && typeof window.ZentrixApiBase.getApiBase === "function") {
       return window.ZentrixApiBase.getApiBase();
     }
-    return "http://localhost:8080/api";
+    return "https://api.zentrixsystems.com.br/api";
   }
 
   async function request(path, options, context) {

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:encoding": "node scripts/check-encoding.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

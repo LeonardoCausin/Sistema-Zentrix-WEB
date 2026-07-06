@@ -56,7 +56,7 @@
       sessionStorage.setItem("zentrix-client-cache-version", CLIENT_CACHE_VERSION);
     }
   } catch (error) {
-    // Mantem a navegaÃ§Ã£o funcionando mesmo se o navegador bloquear sessionStorage.
+    // Mantem a navegação funcionando mesmo se o navegador bloquear sessionStorage.
   }
 
   if (body.classList.contains("is-authenticated") && !session) {
@@ -169,10 +169,10 @@
       clearApiCache();
       clearStoredSession();
       window.location.replace(location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html");
-      throw new Error("SessÃ£o expirada");
+      throw new Error("Sessão expirada");
     }
     if (!response.ok) {
-      throw new Error("NÃ£o foi possÃ­vel carregar os dados.");
+      throw new Error("Não foi possível carregar os dados.");
     }
     return response.json();
   }
@@ -193,17 +193,18 @@
     }
     try {
       const stored = localStorage.getItem("zentrix-api-base");
-      if (stored) {
+      const localPage = location && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+      const localApi = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(stored || "");
+      if (stored && (localPage || !localApi)) {
         return stored.replace(/\/+$/, "");
       }
     } catch (error) {
       // Continua com inferencia pela URL atual.
     }
-    if (location && location.hostname) {
-      const protocol = location.protocol === "https:" ? "https:" : "http:";
-      return protocol + "//" + location.hostname + ":8080/api";
+    if (location && location.hostname && /^https?:$/.test(location.protocol) && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+      return location.origin.replace(/\/+$/, "") + "/api";
     }
-    return "http://localhost:8080/api";
+    return "https://api.zentrixsystems.com.br/api";
   }
 
   function readApiCache(key) {
@@ -512,7 +513,7 @@
           exportButton.click();
           return;
         }
-        renderToast("Ainda nÃ£o hÃ¡ backup recebido do PDV para baixar.", "warning");
+        renderToast("Ainda não há backup recebido do PDV para baixar.", "warning");
       });
     }
 
@@ -522,7 +523,50 @@
       button.addEventListener("click", () => handleSyncOutboxAction(button));
     });
 
+    ensurePageSearchPanel(page || currentPageName());
     wireListFilters();
+  }
+
+  function ensurePageSearchPanel(page) {
+    const configs = {
+      vendas: {
+        scope: "sales",
+        placeholder: "Buscar venda por codigo, operador, pagamento ou loja",
+        filters: [["all", "Todas"], ["paid", "Pagas"], ["cancelled", "Canceladas"]],
+        container: ".table-panel"
+      },
+      produtos: {
+        scope: "products",
+        placeholder: "Buscar produto por nome, codigo, categoria ou codigo de barras",
+        filters: [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["empty", "Sem estoque"]],
+        container: ".entity-grid"
+      },
+      clientes: {
+        scope: "clients",
+        placeholder: "Buscar cliente por nome, CPF/CNPJ, telefone, email ou endereco",
+        filters: [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"]],
+        container: ".entity-grid"
+      },
+      funcionarios: {
+        scope: "employees",
+        placeholder: "Buscar funcionario por nome, login, cargo ou permissao",
+        filters: [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["admin", "Administradores"]],
+        container: ".entity-grid"
+      }
+    };
+    const config = configs[page];
+    if (!config) return;
+    if (!viewHost.querySelector(`[data-search-controls="${config.scope}"]`)) {
+      const anchor = viewHost.querySelector(".page-actions") || viewHost.querySelector(".grid.metrics-grid") || viewHost.firstElementChild;
+      if (anchor) {
+        anchor.insertAdjacentHTML(anchor.classList && anchor.classList.contains("page-actions") ? "beforebegin" : "afterend", searchPanelHtml(config.scope, config.placeholder, config.filters));
+      }
+    }
+    viewHost.querySelectorAll(config.container).forEach((container) => {
+      if (!container.dataset.searchContainer) {
+        container.dataset.searchContainer = config.scope;
+      }
+    });
   }
 
   function wireListFilters() {
@@ -738,7 +782,7 @@
       referenceType: "APPGESTAO",
       referenceId: "manual"
     };
-    await submitAdminForm(form, endpoint, payload, "MovimentaÃ§Ã£o de estoque registrada.", "POST");
+    await submitAdminForm(form, endpoint, payload, "Movimentação de estoque registrada.", "POST");
   }
 
   async function submitAdminEmployee(event, form) {
@@ -781,7 +825,7 @@
       renderToast(mode === "edit" ? "Funcionario atualizado." : "Funcionario cadastrado.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "NÃ£o foi possÃ­vel salvar o funcionÃ¡rio.", "danger");
+      renderToast(error.message || "Não foi possível salvar o funcionário.", "danger");
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -804,7 +848,7 @@
       renderToast(successMessage, "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "NÃ£o foi possÃ­vel salvar.", "danger");
+      renderToast(error.message || "Não foi possível salvar.", "danger");
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -866,13 +910,13 @@
       setFormValue(form, "minStock", row.minimumStock || row.minStock || "");
       setFormValue(form, "category", row.category || "");
       setFormValue(form, "barcode", row.barcode || "");
-      setFormSubmitText(form, "Salvar alteraÃ§Ãµes");
+      setFormSubmitText(form, "Salvar alterações");
       setFieldReadOnly(form, "code", true);
       setFieldReadOnly(form, "stock", true);
       form.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       releaseAdminFormLock();
-      renderToast(error.message || "NÃ£o foi possÃ­vel abrir o produto.", "danger");
+      renderToast(error.message || "Não foi possível abrir o produto.", "danger");
     }
   }
 
@@ -900,11 +944,11 @@
       setFormValue(form, "phone", row.phone || "");
       setFormValue(form, "email", row.email || "");
       setFormValue(form, "address", row.address || "");
-      setFormSubmitText(form, "Salvar alteraÃ§Ãµes");
+      setFormSubmitText(form, "Salvar alterações");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       releaseAdminFormLock();
-      renderToast(error.message || "NÃ£o foi possÃ­vel abrir o cliente.", "danger");
+      renderToast(error.message || "Não foi possível abrir o cliente.", "danger");
     }
   }
 
@@ -952,11 +996,11 @@
       setFieldReadOnly(form, "username", true);
       setEmployeePasswordRequired(form, false);
       setEmployeePermissions(form, employeePermissions(row));
-      setFormSubmitText(form, "Salvar alteraÃ§Ãµes");
+      setFormSubmitText(form, "Salvar alterações");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       releaseAdminFormLock();
-      renderToast(error.message || "NÃ£o foi possÃ­vel abrir o funcionÃ¡rio.", "danger");
+      renderToast(error.message || "Não foi possível abrir o funcionário.", "danger");
     }
   }
 
@@ -974,7 +1018,7 @@
       renderToast(nextActive ? "Funcionario reativado." : "Funcionario inativado.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "NÃ£o foi possÃ­vel alterar o funcionÃ¡rio.", "danger");
+      renderToast(error.message || "Não foi possível alterar o funcionário.", "danger");
     }
   }
 
@@ -995,7 +1039,7 @@
     const endpoint = mode === "edit"
       ? "/finance/entries/" + encodeURIComponent(id) + "?store=" + encodeURIComponent(store)
       : "/finance/entries?store=" + encodeURIComponent(store);
-    await submitAdminForm(form, endpoint, payload, mode === "edit" ? "LanÃ§amento atualizado." : "LanÃ§amento registrado.", mode === "edit" ? "PUT" : "POST");
+    await submitAdminForm(form, endpoint, payload, mode === "edit" ? "Lançamento atualizado." : "Lançamento registrado.", mode === "edit" ? "PUT" : "POST");
   }
 
   async function openFinancialEntryEditor(button) {
@@ -1012,7 +1056,7 @@
       const form = panel && panel.querySelector("form");
       if (!panel || !form) return;
       panel.hidden = false;
-      setAdminFormTitle(panel, "Editar lanÃ§amento", "Atualize dados financeiros manuais com auditoria");
+      setAdminFormTitle(panel, "Editar lançamento", "Atualize dados financeiros manuais com auditoria");
       setFormValue(form, "mode", "edit");
       setFormValue(form, "id", row.id || id);
       setFormValue(form, "storeId", row.storeId || store);
@@ -1023,11 +1067,11 @@
       setFormValue(form, "entryDate", row.entryDate || todayDateValue());
       setFormValue(form, "status", row.status || "PAGO");
       setFormValue(form, "notes", row.notes || "");
-      setFormSubmitText(form, "Salvar alteraÃ§Ãµes");
+      setFormSubmitText(form, "Salvar alterações");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       releaseAdminFormLock();
-      renderToast(error.message || "NÃ£o foi possÃ­vel abrir o lanÃ§amento.", "danger");
+      renderToast(error.message || "Não foi possível abrir o lançamento.", "danger");
     }
   }
 
@@ -1037,19 +1081,19 @@
     const status = button.dataset.nextStatus || "";
     if (!id || !status) return;
     const label = status === "PAGO" ? "marcar como pago" : status === "CANCELADO" ? "cancelar" : "marcar como pendente";
-    if (!window.confirm("Deseja " + label + " este lanÃ§amento")) return;
+    if (!window.confirm("Deseja " + label + " este lançamento")) return;
     button.disabled = true;
     try {
       await window.zentrixApi("/finance/entries/" + encodeURIComponent(id) + "/status?store=" + encodeURIComponent(store), {
         method: "PATCH",
         cache: "no-store",
-        body: JSON.stringify({ status, reason: "AlteraÃ§Ã£o feita no AppGestÃ£o" })
+        body: JSON.stringify({ status, reason: "Alteração feita no AppGestão" })
       });
       clearApiCache();
       renderToast("Status financeiro atualizado.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "NÃ£o foi possÃ­vel alterar o lanÃ§amento.", "danger");
+      renderToast(error.message || "Não foi possível alterar o lançamento.", "danger");
     } finally {
       button.disabled = false;
     }
@@ -1060,13 +1104,13 @@
       await window.zentrixApi(endpoint, {
         method: "PATCH",
         cache: "no-store",
-        body: JSON.stringify({ active, reason: "AlteraÃ§Ã£o feita no AppGestÃ£o" })
+        body: JSON.stringify({ active, reason: "Alteração feita no AppGestão" })
       });
       clearApiCache();
       renderToast(successMessage, "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "NÃ£o foi possÃ­vel alterar o status.", "danger");
+      renderToast(error.message || "Não foi possível alterar o status.", "danger");
     }
   }
 
@@ -1176,7 +1220,7 @@
         return;
       }
       await refreshChrome().catch(() => null);
-      renderPageFallback(page, error.message || "NÃ£o foi possÃ­vel carregar os dados.");
+      renderPageFallback(page, error.message || "Não foi possível carregar os dados.");
     } finally {
       renderingSilentLoad = false;
       if (loadId === loadSequence) {
@@ -1323,8 +1367,8 @@
   }
 
   function renderError(message) {
-    const detail = message ? friendlyMessage(message) : "Verifique se o Zentrix PDV e o serviÃ§o online estÃ£o abertos.";
-    viewHost.innerHTML = `<section class="state-box"><div><strong>NÃ£o conseguimos mostrar os dados agora</strong><p>${esc(detail)}</p></div></section>`;
+    const detail = message ? friendlyMessage(message) : "Verifique se o Zentrix PDV e o serviço online estão abertos.";
+    viewHost.innerHTML = `<section class="state-box"><div><strong>Não conseguimos mostrar os dados agora</strong><p>${esc(detail)}</p></div></section>`;
   }
 
   function renderPageFallback(page, message) {
@@ -1345,27 +1389,27 @@
       return;
     }
     const labels = {
-      dashboard: ["Dashboard", "Indicadores da operaÃ§Ã£o em tempo real"],
+      dashboard: ["Dashboard", "Indicadores da operação em tempo real"],
       vendas: ["Vendas", "Consulta de vendas, itens e pagamentos"],
       financeiro: ["Financeiro", "Receitas, despesas e fechamento"],
-      caixa: ["Caixa", "SessÃµes abertas, fechadas e movimentaÃ§Ãµes"],
-      produtos: ["Produtos", "Cadastro, preÃ§o, categoria e status"],
-      estoque: ["Estoque", "NÃ­veis mÃ­nimos, entradas e saÃ­das"],
+      caixa: ["Caixa", "Sessões abertas, fechadas e movimentações"],
+      produtos: ["Produtos", "Cadastro, preço, categoria e status"],
+      estoque: ["Estoque", "Níveis mínimos, entradas e saídas"],
       clientes: ["Clientes", "Cadastro e relacionamento"],
-      funcionarios: ["FuncionÃ¡rios", "Equipe e permissÃµes"],
-      auditoria: ["Auditoria", "AÃ§Ãµes sensÃ­veis e sincronizaÃ§Ã£o"],
-      relatorios: ["RelatÃ³rios", "ExportaÃ§Ãµes por perÃ­odo"],
-      backups: ["Backups", "HistÃ³rico e seguranÃ§a dos dados"],
-      configuracoes: ["ConfiguraÃ§Ãµes", "Empresa, usuÃ¡rios e preferÃªncias"]
+      funcionarios: ["Funcionários", "Equipe e permissões"],
+      auditoria: ["Auditoria", "Ações sensíveis e sincronização"],
+      relatorios: ["Relatórios", "Exportações por período"],
+      backups: ["Backups", "Histórico e segurança dos dados"],
+      configuracoes: ["Configurações", "Empresa, usuários e preferências"]
     };
-    const [title, subtitle] = labels[page] || ["Painel", "Dados do Zentrix AppGestÃ£o"];
+    const [title, subtitle] = labels[page] || ["Painel", "Dados do Zentrix AppGestão"];
     renderShell(title, subtitle, `
       <section class="panel">
         <div class="panel-title">
-          <div><h3>Dados temporariamente indisponÃ­veis</h3><span>${esc(friendlyMessage(message))}</span></div>
+          <div><h3>Dados temporariamente indisponíveis</h3><span>${esc(friendlyMessage(message))}</span></div>
           <button class="button btn-primary compact-button" type="button" data-action="retry-page-load">Atualizar</button>
         </div>
-        ${emptyState("Aguardando uma resposta vÃ¡lida do serviÃ§o online.")}
+        ${emptyState("Aguardando uma resposta válida do serviço online.")}
       </section>
     `);
     const retryButton = viewHost.querySelector('[data-action="retry-page-load"]');
@@ -1387,7 +1431,7 @@
     return `<section class="table-panel">
       <div class="table-title"><h3>${esc(title)}</h3><div class="table-actions"><span>${esc(String(rows.length))} registros</span><button class="button btn-light compact-button" id="${esc(exportId)}" type="button">Exportar CSV</button></div></div>
       <div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>
-        ${rows.map((row) => `<tr>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Ainda nÃ£o hÃ¡ informaÃ§Ãµes para este perÃ­odo.")}</td></tr>`}
+        ${rows.map((row) => `<tr>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Ainda não há informações para este período.")}</td></tr>`}
       </tbody></table></div>
     </section>`;
   }
@@ -1443,21 +1487,21 @@
 
   function productFormHtml() {
     return `<section class="panel" hidden data-admin-form="product" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Novo produto</h3><span>Cadastro direto no AppGestÃ£o para sincronizaÃ§Ã£o administrativa</span></div></div>
+      <div class="panel-title"><div><h3>Novo produto</h3><span>Cadastro direto no AppGestão para sincronização administrativa</span></div></div>
       <form class="form-grid">
         <input type="hidden" name="mode" value="create" />
         <input type="hidden" name="originalCode" />
         <input type="hidden" name="storeId" />
         <input type="hidden" name="active" value="true" />
-        <label class="field"><span>CÃ³digo interno</span><input class="text-field" name="code" required /></label>
+        <label class="field"><span>Código interno</span><input class="text-field" name="code" required /></label>
         <label class="field"><span>Nome</span><input class="text-field" name="description" required /></label>
         <label class="field"><span>Unidade</span><input class="text-field" name="unit" value="UN" /></label>
-        <label class="field"><span>PreÃ§o de venda</span><input class="text-field" name="price" inputmode="decimal" required /></label>
-        <label class="field"><span>PreÃ§o de custo</span><input class="text-field" name="costPrice" inputmode="decimal" /></label>
+        <label class="field"><span>Preço de venda</span><input class="text-field" name="price" inputmode="decimal" required /></label>
+        <label class="field"><span>Preço de custo</span><input class="text-field" name="costPrice" inputmode="decimal" /></label>
         <label class="field"><span>Estoque inicial</span><input class="text-field" name="stock" inputmode="decimal" /></label>
-        <label class="field"><span>Estoque mÃ­nimo</span><input class="text-field" name="minStock" inputmode="decimal" /></label>
+        <label class="field"><span>Estoque mínimo</span><input class="text-field" name="minStock" inputmode="decimal" /></label>
         <label class="field"><span>Categoria</span><input class="text-field" name="category" /></label>
-        <label class="field full"><span>CÃ³digo de barras</span><input class="text-field" name="barcode" /></label>
+        <label class="field full"><span>Código de barras</span><input class="text-field" name="barcode" /></label>
         <div class="form-line full"><button class="button btn-primary" type="submit">Salvar produto</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
       </form>
     </section>`;
@@ -1465,7 +1509,7 @@
 
   function clientFormHtml() {
     return `<section class="panel" hidden data-admin-form="client" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Novo cliente</h3><span>Cadastro direto no AppGestÃ£o</span></div></div>
+      <div class="panel-title"><div><h3>Novo cliente</h3><span>Cadastro direto no AppGestão</span></div></div>
       <form class="form-grid">
         <input type="hidden" name="mode" value="create" />
         <input type="hidden" name="id" />
@@ -1475,7 +1519,7 @@
         <label class="field"><span>CPF/CNPJ</span><input class="text-field" name="cpfCnpj" /></label>
         <label class="field"><span>Telefone</span><input class="text-field" name="phone" /></label>
         <label class="field full"><span>E-mail</span><input class="text-field" name="email" type="email" /></label>
-        <label class="field full"><span>EndereÃ§o</span><input class="text-field" name="address" /></label>
+        <label class="field full"><span>Endereço</span><input class="text-field" name="address" /></label>
         <div class="form-line full"><button class="button btn-primary" type="submit">Salvar cliente</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
       </form>
     </section>`;
@@ -1483,10 +1527,10 @@
 
   function stockMovementFormHtml() {
     return `<section class="panel" hidden data-admin-form="stock" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Movimentar estoque</h3><span>Registre entrada, saÃ­da ou ajuste manual com motivo</span></div></div>
+      <div class="panel-title"><div><h3>Movimentar estoque</h3><span>Registre entrada, saída ou ajuste manual com motivo</span></div></div>
       <form class="form-grid">
-        <label class="field"><span>CÃ³digo do produto</span><input class="text-field" name="productCode" required /></label>
-        <label class="field"><span>Tipo</span><select class="select-field" name="type"><option value="ENTRADA">Entrada</option><option value="SAIDA_MANUAL">SaÃ­da manual</option><option value="AJUSTE">Ajuste</option></select></label>
+        <label class="field"><span>Código do produto</span><input class="text-field" name="productCode" required /></label>
+        <label class="field"><span>Tipo</span><select class="select-field" name="type"><option value="ENTRADA">Entrada</option><option value="SAIDA_MANUAL">Saída manual</option><option value="AJUSTE">Ajuste</option></select></label>
         <label class="field"><span>Quantidade</span><input class="text-field" name="quantity" inputmode="decimal" required /></label>
         <label class="field full"><span>Motivo</span><input class="text-field" name="reason" required /></label>
         <div class="form-line full"><button class="button btn-primary" type="submit">Registrar movimento</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
@@ -1536,7 +1580,7 @@
 
   function financialEntryFormHtml() {
     return `<section class="panel" hidden data-admin-form="finance" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Novo lanÃ§amento</h3><span>Receita ou despesa manual com auditoria</span></div></div>
+      <div class="panel-title"><div><h3>Novo lançamento</h3><span>Receita ou despesa manual com auditoria</span></div></div>
       <form class="form-grid">
         <input type="hidden" name="mode" value="create" />
         <input type="hidden" name="id" />
@@ -1546,9 +1590,9 @@
         <label class="field"><span>Data</span><input class="text-field" name="entryDate" type="date" required /></label>
         <label class="field"><span>Valor</span><input class="text-field" name="amount" inputmode="decimal" required /></label>
         <label class="field"><span>Categoria</span><input class="text-field" name="category" required /></label>
-        <label class="field full"><span>DescriÃ§Ã£o</span><input class="text-field" name="description" required /></label>
-        <label class="field full"><span>ObservaÃ§Ãµes</span><input class="text-field" name="notes" /></label>
-        <div class="form-line full"><button class="button btn-primary" type="submit">Salvar lanÃ§amento</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
+        <label class="field full"><span>Descrição</span><input class="text-field" name="description" required /></label>
+        <label class="field full"><span>Observações</span><input class="text-field" name="notes" /></label>
+        <div class="form-line full"><button class="button btn-primary" type="submit">Salvar lançamento</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
       </form>
     </section>`;
   }
@@ -1557,17 +1601,17 @@
     const metricMap = new Map((data.metrics || []).map((item) => [normalizeKey(item.label), item]));
     const revenue = metricMap.get("faturamento") || {};
     const sales = metricMap.get("vendas pagas") || {};
-    const ticket = metricMap.get("ticket medio") || metricMap.get("ticket mÃ©dio") || {};
+    const ticket = metricMap.get("ticket medio") || metricMap.get("ticket médio") || {};
     const stock = metricMap.get("estoque baixo") || {};
     const productsSold = (data.topProducts || []).reduce((total, row) => total + Number(row.quantity || 0), 0);
     return [
       { label: "Vendas hoje", value: sales.value || "0", note: "Quantidade de vendas pagas", tone: "success", icon: "$", trend: sales.trend || periodLabel() },
       { label: "Faturamento", value: revenue.value || "R$ 0,00", note: activeStoreLabel(data), tone: "info", icon: "R$", trend: revenue.trend || periodLabel() },
-      { label: "Lucro estimado", value: "Em anÃ¡lise", note: "Depende do custo sincronizado", tone: "warning", icon: "%", trend: "Estimativa" },
-      { label: "Ticket mÃ©dio", value: ticket.value || "R$ 0,00", note: "MÃ©dia por venda concluÃ­da", tone: "info", icon: "~", trend: ticket.trend || periodLabel() },
+      { label: "Lucro estimado", value: "Em análise", note: "Depende do custo sincronizado", tone: "warning", icon: "%", trend: "Estimativa" },
+      { label: "Ticket médio", value: ticket.value || "R$ 0,00", note: "Média por venda concluída", tone: "info", icon: "~", trend: ticket.trend || periodLabel() },
       { label: "Produtos vendidos", value: productsSold ? String(Math.round(productsSold)) : "0", note: "Itens presentes no ranking", tone: "success", icon: "#", trend: "Top itens" },
       { label: "Caixa atual", value: syncStatusLabel(data), note: "Status recebido do Zentrix PDV", tone: data.lastSync ? "success" : "warning", icon: "PDV", trend: "Online" },
-      { label: "Estoque crÃ­tico", value: stock.value || "0", note: stock.trend || "Produtos em atenÃ§Ã£o", tone: "danger", icon: "!", trend: "CrÃ­tico" }
+      { label: "Estoque crítico", value: stock.value || "0", note: stock.trend || "Produtos em atenção", tone: "danger", icon: "!", trend: "Crítico" }
     ];
   }
 
@@ -1580,9 +1624,9 @@
       <div class="stock-meter"><header><span>Estoque</span><strong>${esc(String(row.currentStock))}/${esc(String(row.minimumStock))}</strong></header><div class="progress-track"><span style="width: ${level.width}%"></span></div></div>
       <div class="entity-meta">
         <div><span>Loja</span><strong>${esc(row.store)}</strong></div>
-        <div><span>CÃ³digo</span><strong>${esc(row.code)}</strong></div>
+        <div><span>Código</span><strong>${esc(row.code)}</strong></div>
         <div><span>Categoria</span><strong>${esc(row.category)}</strong></div>
-        <div><span>PreÃ§o</span><strong>${esc(row.price)}</strong></div>
+        <div><span>Preço</span><strong>${esc(row.price)}</strong></div>
       </div>
       <div class="entity-actions">
         <button class="button btn-light compact-button" type="button" data-action="edit-product" data-code="${escAttr(row.code)}" data-store-id="${escAttr(row.storeId || writeStore())}">Editar</button>
@@ -1599,9 +1643,9 @@
       <div class="stock-meter"><header><span>Risco de ruptura</span><strong>${esc(level.label)}</strong></header><div class="progress-track"><span style="width: ${level.width}%"></span></div></div>
       <div class="entity-meta">
         <div><span>Loja</span><strong>${esc(row.store)}</strong></div>
-        <div><span>CÃ³digo</span><strong>${esc(row.code)}</strong></div>
-        <div><span>Estoque mÃ­nimo</span><strong>${esc(String(row.minimumStock))}</strong></div>
-        <div><span>PreÃ§o</span><strong>${esc(row.price)}</strong></div>
+        <div><span>Código</span><strong>${esc(row.code)}</strong></div>
+        <div><span>Estoque mínimo</span><strong>${esc(String(row.minimumStock))}</strong></div>
+        <div><span>Preço</span><strong>${esc(row.price)}</strong></div>
       </div>
     </article>`;
   }
@@ -1612,9 +1656,9 @@
       <div class="entity-head"><span class="avatar info">${esc(initials(row.name))}</span>${tag(row.status || "Cliente")}</div>
       <strong>${esc(row.name || "Cliente")}</strong>
       <div class="entity-meta">
-        <div><span>Ãšltima compra</span><strong>Em anÃ¡lise</strong></div>
+        <div><span>Última compra</span><strong>Em análise</strong></div>
         <div><span>Total gasto</span><strong>PDV</strong></div>
-        <div><span>FrequÃªncia</span><strong>Sincronizada</strong></div>
+        <div><span>Frequência</span><strong>Sincronizada</strong></div>
         <div><span>Telefone</span><strong>${esc(row.phone || "-")}</strong></div>
       </div>
       <div class="entity-actions">
@@ -1634,7 +1678,7 @@
       <strong>${esc(displayName)}</strong>
       <div class="entity-meta">
         <div><span>Cargo</span><strong>${esc(row.role || "Operador")}</strong></div>
-        <div><span>UsuÃ¡rio</span><strong>${esc(row.username)}</strong></div>
+        <div><span>Usuário</span><strong>${esc(row.username)}</strong></div>
         <div><span>Ultimo login</span><strong>${esc(row.lastLoginAt || "-")}</strong></div>
         <div><span>Permissoes configuradas</span><strong>${esc(String(permissions.length))}</strong></div>
       </div>
@@ -1643,7 +1687,7 @@
         <button class="button ${active ? "btn-light" : "btn-primary"} compact-button" type="button" data-action="toggle-employee-status" data-username="${escAttr(row.username)}" data-active="${active ? "true" : "false"}">${active ? "Inativar" : "Reativar"}</button>
       </div>
       <div class="entity-meta" hidden>
-        <div><span>PermissÃµes</span><strong>${esc(role === "danger" ? "Administrador" : role === "warning" ? "Gerente" : "Operador")}</strong></div>
+        <div><span>Permissões</span><strong>${esc(role === "danger" ? "Administrador" : role === "warning" ? "Gerente" : "Operador")}</strong></div>
       </div>
     </article>`;
   }
@@ -1659,7 +1703,7 @@
     ].filter(Boolean).join("");
     return `<article class="entity-card">
       <div class="entity-head"><span class="avatar ${financialEntryTypeTone(type)}">${type === "DESPESA" ? "-" : "+"}</span>${tag(status)}</div>
-      <strong>${esc(row.description || "LanÃ§amento financeiro")}</strong>
+      <strong>${esc(row.description || "Lançamento financeiro")}</strong>
       <div class="entity-meta">
         <div><span>Valor</span><strong>${esc(row.amount || "R$ 0,00")}</strong></div>
         <div><span>Tipo</span><strong>${esc(type)}</strong></div>
@@ -1689,15 +1733,15 @@
     const buttons = formatList.map((format) => `
       <button class="button ${String(format).toUpperCase() === "PDF" ? "btn-primary" : "btn-light"} report-action-button" type="button"
         data-report-type="${esc(row.type || row.title || "report")}"
-        data-report-title="${esc(row.title || "RelatÃ³rio")}"
+        data-report-title="${esc(row.title || "Relatório")}"
         data-report-format="${esc(format)}"
         data-report-endpoint="${esc(row.endpoint || "/reports")}">
         ${esc(String(format).toUpperCase() === "XLS" ? "Excel" : format)}
       </button>`).join("");
     return `<article class="module-card">
-      <div class="module-head"><span class="module-icon info">${esc(initials(row.title || row.type || "RelatÃ³rio"))}</span><span class="tag info">${esc(formats)}</span></div>
-      <div><h3>${esc(row.title || "RelatÃ³rio")}</h3><p>${esc(row.description || "RelatÃ³rio profissional do AppGestÃ£o.")}</p></div>
-      <div class="report-actions" aria-label="Formatos do relatÃ³rio">${buttons}</div>
+      <div class="module-head"><span class="module-icon info">${esc(initials(row.title || row.type || "Relatório"))}</span><span class="tag info">${esc(formats)}</span></div>
+      <div><h3>${esc(row.title || "Relatório")}</h3><p>${esc(row.description || "Relatório profissional do AppGestão.")}</p></div>
+      <div class="report-actions" aria-label="Formatos do relatório">${buttons}</div>
     </article>`;
   }
 
@@ -1710,8 +1754,8 @@
     const diagnostics = report && Array.isArray(report.diagnostics) ? report.diagnostics : [];
     return `<section class="panel"><div class="panel-title"><div><h3>${esc(title)}</h3><span>Resumo profissional</span></div></div>
       <div class="stack-list">
-        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatÃ³rio")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("RelatÃ³rio aguardando dados do PDV.")}
-        ${diagnostics.slice(0, 2).map((item) => `<div class="list-item"><span class="list-icon warning">!</span><div><span class="list-title">DiagnÃ³stico</span><span class="list-subtitle">${esc(item)}</span></div><strong>PDV</strong></div>`).join("")}
+        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatório")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("Relatório aguardando dados do PDV.")}
+        ${diagnostics.slice(0, 2).map((item) => `<div class="list-item"><span class="list-icon warning">!</span><div><span class="list-title">Diagnóstico</span><span class="list-subtitle">${esc(item)}</span></div><strong>PDV</strong></div>`).join("")}
       </div>
     </section>`;
   }
@@ -1724,7 +1768,7 @@
         button.textContent = "Gerando...";
         try {
           const format = String(button.dataset.reportFormat || "PDF").toUpperCase();
-          const title = button.dataset.reportTitle || "RelatÃ³rio";
+          const title = button.dataset.reportTitle || "Relatório";
           const endpoint = normalizeReportEndpoint(button.dataset.reportEndpoint || "/reports");
           const reportData = endpoint === "/reports" && overviewData ? overviewData : await loadReportEndpoint(endpoint, overviewData);
           generateReportFile(format, title, reportData);
@@ -1736,7 +1780,7 @@
         } catch (error) {
           button.textContent = "Erro";
           button.disabled = false;
-          renderToast(error.message || "NÃ£o foi possÃ­vel gerar o relatÃ³rio.", "danger");
+          renderToast(error.message || "Não foi possível gerar o relatório.", "danger");
         }
       });
     });
@@ -1781,7 +1825,7 @@
   function generateReportFile(format, title, reportData) {
     const exporter = window.ZentrixReportExport;
     if (!exporter || typeof exporter.generateReportFile !== "function") {
-      renderToast("Exportador de relatÃ³rios indisponÃ­vel.", "danger");
+      renderToast("Exportador de relatórios indisponível.", "danger");
       return;
     }
     exporter.generateReportFile(format, title, reportData, {
@@ -1805,16 +1849,16 @@
 
   function settingsCard(title, subtitle, value, toneValue) {
     return `<article class="module-card">
-      <div class="module-head"><span class="module-icon ${toneValue}">${esc(initials(title))}</span><span class="tag ${toneValue}">ConfiguraÃ§Ã£o</span></div>
+      <div class="module-head"><span class="module-icon ${toneValue}">${esc(initials(title))}</span><span class="tag ${toneValue}">Configuração</span></div>
       <div><h3>${esc(title)}</h3><p>${esc(subtitle)}</p></div>
       <strong>${esc(value)}</strong>
     </article>`;
   }
 
   function saleReceiptHtml(row) {
-    if (!row) return emptyState("Ainda nÃ£o hÃ¡ venda no perÃ­odo escolhido.");
+    if (!row) return emptyState("Ainda não há venda no período escolhido.");
     return `<ul class="detail-list">
-      <li><span>CÃ³digo</span><strong>${esc(row.code)}</strong></li>
+      <li><span>Código</span><strong>${esc(row.code)}</strong></li>
       <li><span>Loja</span><strong>${esc(row.store)}</strong></li>
       <li><span>Operador</span><strong>${esc(row.operator || "-")}</strong></li>
       <li><span>Pagamento</span><strong>${esc(row.payment || "-")}</strong></li>
@@ -1849,7 +1893,7 @@
   }
 
   function cashTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Ainda nÃ£o hÃ¡ caixa registrado no perÃ­odo escolhido.");
+    if (!rows.length) return emptyState("Ainda não há caixa registrado no período escolhido.");
     return `<div class="timeline">${rows.slice(0, 8).map((row) => `
       <div class="timeline-item">
         <span class="list-icon ${tagTone(row.status)}">${String(row.status || "").toLowerCase().includes("aberto") ? "ON" : "OK"}</span>
@@ -1859,19 +1903,19 @@
   }
 
   function auditTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Nenhuma aÃ§Ã£o importante registrada no perÃ­odo.");
+    if (!rows.length) return emptyState("Nenhuma ação importante registrada no período.");
     return `<div class="timeline">${rows.slice(0, 10).map((row) => {
       const level = auditTone(row);
       return `<div class="timeline-item">
         <span class="list-icon ${level}">${level === "danger" ? "!" : level === "warning" ? "AT" : "IN"}</span>
-        <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.user || "UsuÃ¡rio")} - ${esc(row.description || "-")}</span></div>
+        <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.user || "Usuário")} - ${esc(row.description || "-")}</span></div>
         <strong>${esc(row.time || "-")}</strong>
       </div>`;
     }).join("")}</div>`;
   }
 
   function backupTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Ainda nÃ£o hÃ¡ backup recebido do PDV.");
+    if (!rows.length) return emptyState("Ainda não há backup recebido do PDV.");
     return `<div class="timeline">${rows.slice(0, 8).map((row) => `
       <div class="timeline-item">
         <span class="list-icon ${tagTone(row.status)}">CL</span>
@@ -1882,7 +1926,7 @@
 
   function reportsHistoryHtml(data) {
     const rows = [
-      ["PDF", "RelatÃ³rio financeiro", data.lastSync || "Aguardando geraÃ§Ã£o"],
+      ["PDF", "Relatório financeiro", data.lastSync || "Aguardando geração"],
       ["XLS", "Produtos e estoque", periodLabel()],
       ["CSV", "Vendas detalhadas", activeStoreName()]
     ];
@@ -1890,18 +1934,18 @@
   }
 
   function diagnosticsHtml(rows) {
-    const list = Array.isArray(rows) && rows.length ? rows : ["Dados sincronizados e relatÃ³rios prontos para anÃ¡lise."];
-    return list.map((item, index) => `<div class="list-item"><span class="list-icon ${index ? "info" : "warning"}">${index ? "IN" : "PDV"}</span><div><span class="list-title">${index ? "ObservaÃ§Ã£o" : "DiagnÃ³stico"}</span><span class="list-subtitle">${esc(item)}</span></div><strong>${index ? "OK" : "Sync"}</strong></div>`).join("");
+    const list = Array.isArray(rows) && rows.length ? rows : ["Dados sincronizados e relatórios prontos para análise."];
+    return list.map((item, index) => `<div class="list-item"><span class="list-icon ${index ? "info" : "warning"}">${index ? "IN" : "PDV"}</span><div><span class="list-title">${index ? "Observação" : "Diagnóstico"}</span><span class="list-subtitle">${esc(item)}</span></div><strong>${index ? "OK" : "Sync"}</strong></div>`).join("");
   }
 
   function paymentsHtml(rows) {
-    return rows.map((row) => `<div class="payment-row"><strong>${esc(row.name)}</strong><div class="progress-track"><span style="width: ${percentWidth(row.percent)}%"></span></div><span>${esc(row.total)}</span></div>`).join("") || emptyState("Ainda nÃ£o hÃ¡ pagamentos no perÃ­odo escolhido.");
+    return rows.map((row) => `<div class="payment-row"><strong>${esc(row.name)}</strong><div class="progress-track"><span style="width: ${percentWidth(row.percent)}%"></span></div><span>${esc(row.total)}</span></div>`).join("") || emptyState("Ainda não há pagamentos no período escolhido.");
   }
 
   function barChartHtml(rows) {
     const values = rows.map((row) => Number(row.value) || 0);
     const max = Math.max(0, ...values);
-    if (!rows.length) return emptyState("Ainda nÃ£o hÃ¡ dados para o grÃ¡fico.");
+    if (!rows.length) return emptyState("Ainda não há dados para o gráfico.");
     return `<div class="bar-chart management-chart">
       ${rows.map((row) => {
         const value = Number(row.value) || 0;
@@ -1923,7 +1967,7 @@
         <div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(subtitle)}</span><div class="progress-track"><span style="width: ${width}%"></span></div></div>
         <strong>${esc(rankingDisplay(row))}</strong>
       </div>`;
-    }).join("") || emptyState("Ainda nÃ£o hÃ¡ dados no perÃ­odo escolhido.");
+    }).join("") || emptyState("Ainda não há dados no período escolhido.");
   }
 
   function rankingValue(row) {
@@ -1939,17 +1983,17 @@
   }
 
   function rankingSubtitle(row) {
-    if (!row) return "PerÃ­odo atual";
+    if (!row) return "Período atual";
     if (row.quantity != null) {
       const parts = [];
       if (row.sales != null) parts.push(`${quantityLabel(row.sales)} vendas`);
       if (row.revenueDisplay) parts.push(row.revenueDisplay);
-      if (!parts.length && row.code) parts.push(`CÃ³digo ${row.code}`);
+      if (!parts.length && row.code) parts.push(`Código ${row.code}`);
       return parts.join(" | ") || "Quantidade vendida";
     }
     if (row.sales) return `${row.sales} vendas`;
-    if (row.code) return `CÃ³digo ${row.code}`;
-    return "PerÃ­odo atual";
+    if (row.code) return `Código ${row.code}`;
+    return "Período atual";
   }
 
   function compactSalesList(rows) {
@@ -1957,23 +2001,23 @@
   }
 
   function statusRowsHtml(rows) {
-    return rows.map((row) => `<div class="list-item"><span class="list-icon ${tone(row.tone)}">${esc(row.display)}</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">Status atual dos produtos</span></div><strong>${esc(row.display)}</strong></div>`).join("") || emptyState("Ainda nÃ£o hÃ¡ produtos para acompanhar.");
+    return rows.map((row) => `<div class="list-item"><span class="list-icon ${tone(row.tone)}">${esc(row.display)}</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">Status atual dos produtos</span></div><strong>${esc(row.display)}</strong></div>`).join("") || emptyState("Ainda não há produtos para acompanhar.");
   }
 
   function syncAlertOwnerHtml(data) {
     const synced = data && Number(data.syncProgress || 0) === 100 && data.lastSync;
-    const title = synced ? "PDV conectado" : "AtualizaÃ§Ã£o pendente";
+    const title = synced ? "PDV conectado" : "Atualização pendente";
     const subtitle = data && data.lastSync ? data.lastSync : "Aguardando o primeiro envio do PDV";
     return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(String((data && data.syncProgress) || 0))}%</strong></div>`;
   }
 
   function syncAlertHtml(data) {
     const synced = data && Number(data.syncProgress || 0) === 100 && data.lastSync;
-    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${synced ? "PDV conectado" : "SincronizaÃ§Ã£o pendente"}</span><span class="list-subtitle">${esc(data.lastSync || "Aguardando primeira sincronizaÃ§Ã£o")}</span></div><strong>${esc(String(data.syncProgress || 0))}%</strong></div>`;
+    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${synced ? "PDV conectado" : "Sincronização pendente"}</span><span class="list-subtitle">${esc(data.lastSync || "Aguardando primeira sincronização")}</span></div><strong>${esc(String(data.syncProgress || 0))}%</strong></div>`;
   }
 
   function storesListHtml(rows) {
-    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">Loja conectada ao Zentrix PDV</span></div><strong>${esc(row.lastSync || "Aguardando atualizaÃ§Ã£o")}</strong></div>`).join("") || emptyState("Nenhuma loja conectada ao painel.");
+    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">Loja conectada ao Zentrix PDV</span></div><strong>${esc(row.lastSync || "Aguardando atualização")}</strong></div>`).join("") || emptyState("Nenhuma loja conectada ao painel.");
   }
 
   function storeTabsHtml() {
@@ -2000,8 +2044,8 @@
 
   function tagTone(value) {
     const text = normalizeText(value).toLowerCase();
-    if (text.includes("cancel") || text.includes("baixo") || text.includes("sem estoque") || text.includes("falha") || text.includes("failed") || text.includes("crÃ­tico") || text.includes("diverg")) return "danger";
-    if (text.includes("aberto") || text.includes("pendente") || text.includes("atenÃ§Ã£o")) return "warning";
+    if (text.includes("cancel") || text.includes("baixo") || text.includes("sem estoque") || text.includes("falha") || text.includes("failed") || text.includes("crítico") || text.includes("diverg")) return "danger";
+    if (text.includes("aberto") || text.includes("pendente") || text.includes("atenção")) return "warning";
     if (text.includes("info") || text.includes("fechado")) return "info";
     return "success";
   }
@@ -2011,41 +2055,41 @@
   }
 
   function emptyState(message) {
-    return `<div class="empty-state"><strong>${esc(message || "Ainda nÃ£o hÃ¡ informaÃ§Ãµes para mostrar.")}</strong><span>Quando o PDV enviar novos dados, esta Ã¡rea serÃ¡ atualizada automaticamente.</span></div>`;
+    return `<div class="empty-state"><strong>${esc(message || "Ainda não há informações para mostrar.")}</strong><span>Quando o PDV enviar novos dados, esta área será atualizada automaticamente.</span></div>`;
   }
 
   function friendlyMessage(message) {
     const text = normalizeText(String(message || ""));
-    if (!text) return "Verifique se o Zentrix PDV e o serviÃ§o online estÃ£o abertos.";
+    if (!text) return "Verifique se o Zentrix PDV e o serviço online estão abertos.";
     if (text.toLowerCase().includes("failed to fetch") || text.toLowerCase().includes("network")) {
-      return "NÃ£o foi possÃ­vel conversar com o serviÃ§o online. Confira se o backend do Zentrix estÃ¡ aberto.";
+      return "Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.";
     }
     if (text.includes("401") || text.toLowerCase().includes("unauthorized")) {
       return "A chave de acesso entre PDV e painel precisa ser conferida.";
     }
     if (text.includes("404")) {
-      return "Esta informaÃ§Ã£o ainda nÃ£o est? disponÃ­vel no painel.";
+      return "Esta informação ainda não está disponível no painel.";
     }
     if (text.includes("500") || text.includes("503")) {
-      return "O serviÃ§o online do Zentrix est? iniciando ou encontrou instabilidade. Tente atualizar novamente.";
+      return "O serviço online do Zentrix está iniciando ou encontrou instabilidade. Tente atualizar novamente.";
     }
-    return text.replace(/\bAPI\b/g, "serviÃ§o online").replace(/\bendpoint\b/gi, "recurso");
+    return text.replace(/\bAPI\b/g, "serviço online").replace(/\bendpoint\b/gi, "recurso");
   }
 
   function initChromeSkeleton() {
     setText(".status-pill", "Conectando");
     const statusPill = document.querySelector(".status-pill");
     if (statusPill) statusPill.className = "status-pill warning";
-    setText(".sidebar-sync strong", "AtualizaÃ§Ã£o");
+    setText(".sidebar-sync strong", "Atualização");
     setText(".sidebar-sync span", "Carregando estado real");
     const progress = document.querySelector(".sidebar-sync .progress-track span");
     if (progress) progress.style.width = "0%";
     setText(".sidebar-sync strong", "Preparando painel");
     setText(".sidebar-sync span", "Buscando dados da loja");
-    setText(".sidebar-sync .button", "Ver histÃ³rico");
-    setText(".sidebar-sync .button", "HistÃ³rico");
-    setText(".window-title span:last-child", "Zentrix AppGestÃ£o");
-    setText(".sidebar-sync .button", "Ver histÃ³rico");
+    setText(".sidebar-sync .button", "Ver histórico");
+    setText(".sidebar-sync .button", "Histórico");
+    setText(".window-title span:last-child", "Zentrix AppGestão");
+    setText(".sidebar-sync .button", "Ver histórico");
     populateStoreSelect([{ id: "all", name: "Geral", label: "Todas as lojas", isAll: true }]);
   }
 
@@ -2125,7 +2169,7 @@
     const apiOnline = Boolean(data);
     const progress = Math.max(0, Math.min(100, Number((data && data.syncProgress) || (lastSync ? 100 : 0))));
     const pdvConnected = Boolean(lastSync);
-    const title = "Zentrix AppGestÃ£o - " + companyName;
+    const title = "Zentrix AppGestão - " + companyName;
 
     setText(".window-title span:last-child", title);
     const statusPill = document.querySelector(".status-pill");
@@ -2135,22 +2179,22 @@
     }
 
     setText(".sidebar-sync strong", pdvConnected ? "PDV conectado" : companyName);
-    setText(".sidebar-sync span", lastSync ? "Ãšltima sincronizaÃ§Ã£o: " + lastSync : "Aguardando primeira sincronizaÃ§Ã£o");
-    setText(".sidebar-sync .button", "HistÃ³rico");
+    setText(".sidebar-sync span", lastSync ? "Última sincronização: " + lastSync : "Aguardando primeira sincronização");
+    setText(".sidebar-sync .button", "Histórico");
     const progressBar = document.querySelector(".sidebar-sync .progress-track span");
     if (progressBar) progressBar.style.width = progress + "%";
     setText(".sidebar-sync strong", pdvConnected ? "Loja atualizada" : "Aguardando dados");
-    setText(".sidebar-sync span", lastSync ? "Ãšltima atualizaÃ§Ã£o: " + lastSync : "Aguardando o primeiro envio do PDV");
-    setText(".sidebar-sync .button", "Ver histÃ³rico");
+    setText(".sidebar-sync span", lastSync ? "Última atualização: " + lastSync : "Aguardando o primeiro envio do PDV");
+    setText(".sidebar-sync .button", "Ver histórico");
     setText(".topbar-connection", apiOnline ? "Online" : "Atualizando");
     setText(".topbar-pdv", pdvConnected ? "PDV conectado" : "PDV aguardando");
     setText(".topbar-pdv", pdvConnected ? "PDV conectado" : "Aguardando PDV");
   }
 
   function enhanceChrome() {
-    document.title = normalizeText(document.title).replace("Zentrix Web", "Zentrix AppGestÃ£o");
-    setText(".window-title span:last-child", "Zentrix AppGestÃ£o");
-    setText(".sidebar-brand span", "GestÃ£o online conectada ao Zentrix PDV");
+    document.title = normalizeText(document.title).replace("Zentrix Web", "Zentrix AppGestão");
+    setText(".window-title span:last-child", "Zentrix AppGestão");
+    setText(".sidebar-brand span", "Gestão online conectada ao Zentrix PDV");
     if (themeButton) {
       themeButton.textContent = "Tema";
       themeButton.classList.add("theme-toggle");
@@ -2166,7 +2210,7 @@
       const notification = document.createElement("button");
       notification.className = "icon-button notification-button";
       notification.type = "button";
-      notification.setAttribute("aria-label", "NotificaÃ§Ãµes");
+      notification.setAttribute("aria-label", "Notificações");
       notification.textContent = "!";
       toolbar.insertBefore(notification, toolbar.querySelector(".button"));
     }
@@ -2182,24 +2226,24 @@
     if (!nav) return;
     const currentPage = location.pathname.split("/").pop();
     const groups = [
-      ["OperaÃ§Ã£o", [
+      ["Operação", [
         ["dashboard.html", "Dashboard", "dashboard.png"],
         ["vendas.html", "Vendas", "vendas.png"],
         ["caixa.html", "Caixa", "caixa.png"]
       ]],
-      ["GestÃ£o", [
+      ["Gestão", [
         ["financeiro.html", "Financeiro", "financeiro.png"],
         ["produtos.html", "Produtos", "produtos.png"],
         ["estoque.html", "Estoque", "estoque.png"],
         ["clientes.html", "Clientes", "clientes.png"],
-        ["funcionarios.html", "FuncionÃ¡rios", "funcionarios.png"]
+        ["funcionarios.html", "Funcionários", "funcionarios.png"]
       ]],
-      ["SeguranÃ§a e Sistema", [
+      ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "auditoria.png"],
-        ["relatorios.html", "RelatÃ³rios", "relatorios.png"],
+        ["relatorios.html", "Relatórios", "relatorios.png"],
         ["sincronizacao.html", "Sincronizacao", "auditoria.png"],
         ["backups.html", "Backups", "backups.png"],
-        ["configuracoes.html", "ConfiguraÃ§Ãµes", "configuracoes.png"]
+        ["configuracoes.html", "Configurações", "configuracoes.png"]
       ]]
     ];
     nav.innerHTML = groups.map(([group, links]) => `
@@ -2217,24 +2261,24 @@
     if (!nav) return;
     const currentPage = location.pathname.split("/").pop();
     const groups = [
-      ["OperaÃ§Ã£o", [
+      ["Operação", [
         ["dashboard.html", "Dashboard", "?"],
         ["vendas.html", "Vendas", "$"],
         ["caixa.html", "Caixa", "?"]
       ]],
-      ["GestÃ£o", [
+      ["Gestão", [
         ["financeiro.html", "Financeiro", "R$"],
         ["produtos.html", "Produtos", "?"],
         ["estoque.html", "Estoque", "?"],
         ["clientes.html", "Clientes", "?"],
-        ["funcionarios.html", "FuncionÃ¡rios", "OP"]
+        ["funcionarios.html", "Funcionários", "OP"]
       ]],
-      ["SeguranÃ§a e Sistema", [
+      ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "!"],
-        ["relatorios.html", "RelatÃ³rios", "?"],
+        ["relatorios.html", "Relatórios", "?"],
         ["sincronizacao.html", "Sincronizacao", "SYNC"],
         ["backups.html", "Backups", "CL"],
-        ["configuracoes.html", "ConfiguraÃ§Ãµes", "?"]
+        ["configuracoes.html", "Configurações", "?"]
       ]]
     ];
     nav.innerHTML = groups.map(([group, links]) => `
@@ -2256,7 +2300,7 @@
       "7 dias": "7d",
       "30 dias": "month",
       "mes": "month",
-      "mÃªs": "month",
+      "mês": "month",
       "1 ano": "year",
       "ano": "year"
     };
@@ -2398,7 +2442,7 @@
     const ratio = minimum <= 0 ? (current > 0 ? 100 : 0) : Math.round((current / minimum) * 100);
     const width = Math.max(4, Math.min(100, ratio));
     const toneValue = current <= 0 ? "danger" : current <= minimum ? "warning" : "success";
-    const label = current <= 0 ? "CrÃ­tico" : current <= minimum ? "Baixo" : "SaudÃ¡vel";
+    const label = current <= 0 ? "Crítico" : current <= minimum ? "Baixo" : "Saudável";
     return { width, tone: toneValue, label };
   }
 
@@ -2440,18 +2484,18 @@
     if (type === "product") {
       setFormValue(form, "originalCode", "");
       setFormValue(form, "unit", "UN");
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo produto", "Cadastro direto no AppGestÃ£o para sincronizaÃ§Ã£o administrativa");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo produto", "Cadastro direto no AppGestão para sincronização administrativa");
       setFormSubmitText(form, "Salvar produto");
       setFieldReadOnly(form, "code", false);
       setFieldReadOnly(form, "stock", false);
     }
     if (type === "client") {
       setFormValue(form, "id", "");
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo cliente", "Cadastro direto no AppGestÃ£o");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo cliente", "Cadastro direto no AppGestão");
       setFormSubmitText(form, "Salvar cliente");
     }
     if (type === "stock") {
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Movimentar estoque", "Registre entrada, saÃ­da ou ajuste manual com motivo");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Movimentar estoque", "Registre entrada, saída ou ajuste manual com motivo");
       setFormSubmitText(form, "Registrar movimento");
     }
     if (type === "employee") {
@@ -2468,8 +2512,8 @@
       setFormValue(form, "type", "RECEITA");
       setFormValue(form, "status", "PAGO");
       setFormValue(form, "entryDate", todayDateValue());
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo lanÃ§amento", "Receita ou despesa manual com auditoria");
-      setFormSubmitText(form, "Salvar lanÃ§amento");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo lançamento", "Receita ou despesa manual com auditoria");
+      setFormSubmitText(form, "Salvar lançamento");
     }
   }
 
