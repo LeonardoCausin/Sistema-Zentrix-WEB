@@ -48,4 +48,18 @@ class SecurityHeadersFilterTest {
         assertTrue(csp.contains("http://painel.local:8080"));
         assertTrue(csp.contains("https://extra.zentrix.test"));
     }
+
+    @Test
+    void disablesCacheForHtmlShell() throws Exception {
+        SecurityHeadersFilter filter = new SecurityHeadersFilter();
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/index.html");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = (servletRequest, servletResponse) -> {
+        };
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals("no-store", response.getHeader("Cache-Control"));
+        assertEquals("no-cache", response.getHeader("Pragma"));
+    }
 }

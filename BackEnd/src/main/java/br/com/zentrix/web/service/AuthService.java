@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.mindrot.jbcrypt.BCrypt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final int MAX_LOGIN_ATTEMPTS = 5;
     private static final Duration LOCK_DURATION = Duration.ofMinutes(5);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -96,6 +99,7 @@ public class AuthService {
 
         recordFailure(loginName);
         if (passwordMatchedNonAdmin) {
+            log.warn("Login bloqueado: usuario={} senha confere, mas papeis ativos nao autorizam painel. roles={}", loginName, loginRoles(users));
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuário sem permissão de acesso ao painel");
         }
         auditService.info("LOGIN_FAILED", "users", loginName, "Falha de login para usuário informado.");
@@ -184,6 +188,14 @@ public class AuthService {
             return BCrypt.checkpw(plainPassword, storedPassword);
         }
         return false;
+    }
+
+    private List<String> loginRoles(List<Map<String, Object>> users) {
+        return users.stream()
+                .map(user -> "tenant=" + stringValue(user.get("tenant_id"))
+                        + ", store=" + stringValue(user.get("store_id"))
+                        + ", role=" + stringValue(user.get("role")))
+                .toList();
     }
 
     private boolean isWebAdminRole(String role) {

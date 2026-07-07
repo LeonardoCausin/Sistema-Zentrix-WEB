@@ -77,7 +77,7 @@
         }, LOGIN_TIMEOUT_MS);
 
         if (!response.ok) {
-          throw new LoginHttpError(loginErrorMessage(response.status));
+          throw new LoginHttpError(await loginErrorMessage(response));
         }
 
         rememberApiBase(base);
@@ -97,7 +97,12 @@
 
   class LoginHttpError extends Error {}
 
-  function loginErrorMessage(status) {
+  async function loginErrorMessage(response) {
+    const status = response.status;
+    const serverMessage = await responseMessage(response);
+    if (serverMessage && status !== 401) {
+      return serverMessage;
+    }
     if (status === 401) {
       return 'Usuário ou senha inválidos.';
     }
@@ -105,12 +110,26 @@
       return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
     }
     if (status === 403) {
-      return 'Acesso restrito a usuários administradores.';
+      return 'Acesso negado pelo servidor. Verifique se este usuário tem permissão para acessar o painel.';
     }
     if (status >= 500) {
       return 'Não foi possível entrar agora. O servidor está iniciando ou indisponível.';
     }
     return 'Não foi possível entrar agora. Confira os dados informados.';
+  }
+
+  async function responseMessage(response) {
+    try {
+      const contentType = response.headers.get('Content-Type') || '';
+      if (contentType.toLowerCase().includes('application/json')) {
+        const body = await response.json();
+        return body.message || body.error || body.detail || '';
+      }
+      const text = await response.text();
+      return text && text.length < 180 ? text : '';
+    } catch (error) {
+      return '';
+    }
   }
 
   async function refreshPreview() {

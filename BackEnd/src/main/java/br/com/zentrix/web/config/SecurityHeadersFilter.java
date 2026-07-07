@@ -41,11 +41,21 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         if (request.isSecure()) {
             response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
         }
-        if (request.getRequestURI() != null && request.getRequestURI().startsWith("/api/")) {
+        if (shouldDisableCache(request.getRequestURI())) {
             response.setHeader("Cache-Control", "no-store");
             response.setHeader("Pragma", "no-cache");
         }
         filterChain.doFilter(request, response);
+    }
+
+    private static boolean shouldDisableCache(String uri) {
+        if (uri == null) {
+            return false;
+        }
+        return uri.startsWith("/api/")
+                || "/".equals(uri)
+                || "/index.html".equals(uri)
+                || uri.endsWith(".html");
     }
 
     private static String buildCsp(Environment environment) {
