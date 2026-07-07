@@ -605,7 +605,7 @@
         ${settingsCard("Empresa", "Dados principais da loja", tenantName, "info")}
         ${settingsCard("Usuários", "Equipe com acesso ao painel", `${users} usuários`, "success")}
         ${settingsCard("Permissões", "Perfis de acesso", "Administrador, gerente e operador", "warning")}
-        ${settingsCard("Aparência", "Tema claro e escuro", "Preferência salva neste computador", "info")}
+        ${settingsCard("Aparência", "Visual do painel", "Claro ou escuro", "info")}
         ${settingsCard("Segurança", "Acesso protegido", "Conta protegida para clientes Zentrix", "success")}
         ${settingsCard("Integração com PDV", "Loja conectada", activeStoreName(), "info")}
       </div>
@@ -616,6 +616,13 @@
           <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Serviço online</span><span class="list-subtitle">Conectado com segurança</span></div><strong>Online</strong></div>
           <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última atualização</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(lastUpdate)}</strong></div>
         </div></section>
+        <section class="panel">
+          <div class="panel-title"><div><h3>Aparência</h3><span>Escolha como prefere usar</span></div></div>
+          <div class="theme-choice">
+            <button class="button btn-light" type="button" data-action="set-theme" data-theme="light">Claro</button>
+            <button class="button btn-dark" type="button" data-action="set-theme" data-theme="dark">Escuro</button>
+          </div>
+        </section>
         <section class="panel">
           <div class="panel-title"><div><h3>Lojas cadastradas</h3><span>Lojas conectadas ao painel</span></div></div>
           <div class="stack-list">${storesListHtml(data.stores || [])}</div>
@@ -632,7 +639,7 @@
         ${settingsCard("Empresa", "Dados do cliente", data.tenant && data.tenant.name ? data.tenant.name : "Cliente Zentrix", "info")}
         ${settingsCard("Usuários", "Acessos administrativos", `${data.users || 0} usuários`, "success")}
         ${settingsCard("Permissões", "Perfis e níveis de acesso", "Administrador, gerente e operador", "warning")}
-        ${settingsCard("Aparência", "Tema claro e escuro", "Preferência salva no navegador", "info")}
+        ${settingsCard("Aparência", "Visual do painel", "Claro ou escuro", "info")}
         ${settingsCard("Segurança", "Sessão e autenticação", "Acesso seguro para clientes Zentrix", "success")}
         ${settingsCard("Integração com PDV", "Origem selecionada", data.sourceId || "Todas as lojas", "info")}
       </div>
@@ -643,6 +650,13 @@
           <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Acesso online</span><span class="list-subtitle">${esc(data.api)}</span></div><strong>Online</strong></div>
           <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última sincronização</span><span class="list-subtitle">${esc(data.sourceId || "Todas as lojas")}</span></div><strong>${esc(data.lastSync || "-")}</strong></div>
         </div></section>
+        <section class="panel">
+          <div class="panel-title"><div><h3>Aparência</h3><span>Escolha como prefere usar</span></div></div>
+          <div class="theme-choice">
+            <button class="button btn-light" type="button" data-action="set-theme" data-theme="light">Claro</button>
+            <button class="button btn-dark" type="button" data-action="set-theme" data-theme="dark">Escuro</button>
+          </div>
+        </section>
         <section class="panel">
           <div class="panel-title"><div><h3>Lojas cadastradas</h3><span>Origem da sincronização</span></div></div>
           <div class="stack-list">${storesListHtml(data.stores || [])}</div>

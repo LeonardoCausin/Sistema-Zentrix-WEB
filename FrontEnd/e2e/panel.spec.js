@@ -74,6 +74,29 @@ test("dashboard loads an authenticated management flow", async ({ page }) => {
   await expect(page.getByText("Produtos mais vendidos")).toBeVisible();
 });
 
+test("authenticated top bar shows notifications and account menu", async ({ page }) => {
+  await mockPanelApi(page);
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await expect(page.locator("#themeButton")).toHaveCount(0);
+  await expect(page.locator("[data-action='toggle-notifications']")).toBeVisible();
+  await expect(page.locator("[data-action='toggle-user-menu']")).toContainText("Administrador");
+
+  await page.locator("[data-action='toggle-user-menu']").click();
+  await expect(page.locator("[data-action='logout']")).toBeVisible();
+});
+
+test("theme preference lives in settings", async ({ page }) => {
+  await mockPanelApi(page);
+  await page.goto("/FrontEnd/pages/configuracoes.html");
+
+  await page.locator("[data-action='set-theme'][data-theme='dark']").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.locator("[data-action='set-theme'][data-theme='light']").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
 test("audit page shows the sync outbox monitor", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/auditoria.html");
@@ -102,6 +125,9 @@ async function mockPanelApi(page) {
   });
   await page.route("**/api/stores", async (route) => {
     await route.fulfill({ json: [{ id: "all", name: "Todas as lojas", isAll: true }, { id: "WEB", name: "Loja Web" }] });
+  });
+  await page.route("**/api/settings**", async (route) => {
+    await route.fulfill({ json: settingsPayload() });
   });
   await page.route("**/api/dashboard**", async (route) => {
     await route.fulfill({ json: dashboardPayload() });
@@ -171,5 +197,16 @@ function observabilityPayload() {
     uptime: "5 min",
     memory: { used: "128 MB" },
     database: { status: "UP" }
+  };
+}
+
+function settingsPayload() {
+  return {
+    tenant: { id: "tenant-e2e", name: "Loja Web" },
+    users: 2,
+    stores: [{ id: "all", name: "Todas as lojas", isAll: true }, { id: "WEB", name: "Loja Web" }],
+    api: "http://localhost:8080/api",
+    sourceId: "PDV-01",
+    lastSync: "2026-07-02 18:00"
   };
 }

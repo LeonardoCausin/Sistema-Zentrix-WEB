@@ -7,6 +7,7 @@ import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ReportService {
     private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
     private static final Duration REPORT_CACHE_TTL = Duration.ofSeconds(20);
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Sao_Paulo");
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -566,7 +568,7 @@ public class ReportService {
 
     private Filter periodCondition(String column, String period, LocalDate anchor) {
         String normalizedPeriod = normalizePeriod(period);
-        LocalDate safeAnchor = "today".equals(normalizedPeriod) || anchor == null ? LocalDate.now() : anchor;
+        LocalDate safeAnchor = "today".equals(normalizedPeriod) || anchor == null ? today() : anchor;
         LocalDate start = switch (normalizePeriod(period)) {
             case "7d" -> safeAnchor.minusDays(6);
             case "month" -> safeAnchor.minusDays(29);
@@ -594,7 +596,11 @@ public class ReportService {
             args.add(store);
         }
         java.sql.Date value = jdbcTemplate.queryForObject(sql.toString(), java.sql.Date.class, args.toArray());
-        return value == null ? LocalDate.now() : value.toLocalDate();
+        return value == null ? today() : value.toLocalDate();
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(BUSINESS_ZONE);
     }
 
     private String bucketLabelExpression(String column, String period) {

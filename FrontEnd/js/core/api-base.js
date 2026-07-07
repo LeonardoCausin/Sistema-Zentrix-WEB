@@ -18,6 +18,10 @@
     return /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(value || "");
   }
 
+  function isDevFrontendLocation() {
+    return location && isLocalHost(location.hostname) && DEV_FRONTEND_PORTS.has(location.port || "");
+  }
+
   function readStoredApiBase() {
     try {
       return normalizeApiBase(localStorage.getItem(STORAGE_KEY));
@@ -30,7 +34,7 @@
     if (!location || !location.hostname || !/^https?:$/.test(location.protocol)) {
       return PUBLIC_API_BASE;
     }
-    if (isLocalHost(location.hostname) && DEV_FRONTEND_PORTS.has(location.port || "")) {
+    if (isDevFrontendLocation()) {
       return (location.protocol === "https:" ? "https:" : "http:") + "//" + location.hostname + ":8080/api";
     }
     return location.origin.replace(/\/+$/, "") + "/api";
@@ -41,17 +45,23 @@
     if (configured) {
       return configured;
     }
+    const inferred = normalizeApiBase(inferApiBaseFromLocation());
     const stored = readStoredApiBase();
-    if (stored && (isLocalHost(location.hostname) || !isLocalApiBase(stored))) {
+    if (stored && isDevFrontendLocation()) {
       return stored;
     }
-    return normalizeApiBase(inferApiBaseFromLocation());
+    if (stored && (!location || !location.hostname) && !isLocalApiBase(stored)) {
+      return stored;
+    }
+    return inferred;
   }
 
   function getFallbackBases() {
+    const stored = readStoredApiBase();
     return Array.from(new Set([
       getApiBase(),
       inferApiBaseFromLocation(),
+      isDevFrontendLocation() ? "" : stored,
       PUBLIC_API_BASE,
       LOCAL_FALLBACK,
       "http://127.0.0.1:8080/api"

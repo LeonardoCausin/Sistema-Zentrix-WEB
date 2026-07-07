@@ -148,6 +148,10 @@
     display: none;
   }
 
+  .user-card {
+    max-width: 160px;
+  }
+
   .window-bar {
     padding: 0 10px;
   }
@@ -227,12 +231,8 @@
     --window-bar-height: 50px;
   }
 
-  .window-toolbar .button {
-    display: none;
-  }
-
-  .theme-toggle {
-    min-width: 58px;
+  .user-name {
+    max-width: 92px;
   }
 
   .login-window {

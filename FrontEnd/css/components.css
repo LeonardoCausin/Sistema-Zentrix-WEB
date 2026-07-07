@@ -23,7 +23,41 @@
   position: relative;
 }
 
-.notification-button::after {
+.notification-icon {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 17px;
+  border: 2px solid currentColor;
+  border-bottom: 0;
+  border-radius: 10px 10px 5px 5px;
+}
+
+.notification-icon::before {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 20px;
+  height: 2px;
+  content: "";
+  border-radius: 999px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.notification-icon::after {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 5px;
+  height: 5px;
+  content: "";
+  border-radius: 999px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.notification-button.has-alert::after {
   position: absolute;
   top: 9px;
   right: 9px;
@@ -33,6 +67,98 @@
   border: 2px solid var(--bg-card);
   border-radius: 999px;
   background: var(--accent-cyan);
+}
+
+.notification-wrap,
+.user-menu-wrap {
+  position: relative;
+}
+
+.user-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  max-width: 220px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  padding: 0 11px 0 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.user-avatar {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  font-size: 11px;
+}
+
+.user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  min-width: 190px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-strong);
+  padding: 10px;
+}
+
+.toolbar-popover strong,
+.toolbar-popover span {
+  display: block;
+}
+
+.toolbar-popover strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.toolbar-popover span {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.toolbar-popover button {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  background: var(--soft-red);
+  font-weight: 900;
+}
+
+.theme-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.theme-choice .button.active {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue), transparent 45%);
+  outline-offset: 2px;
 }
 
 .mobile-menu {

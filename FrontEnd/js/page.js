@@ -71,13 +71,7 @@
 
   enhanceChrome();
 
-  if (themeButton) {
-    themeButton.addEventListener("click", () => {
-      const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
-      root.dataset.theme = nextTheme;
-      localStorage.setItem("zentrix-theme", nextTheme);
-    });
-  }
+  document.addEventListener("click", handleGlobalClick);
 
   if (menuButton) {
     menuButton.addEventListener("click", () => body.classList.add("sidebar-open"));
@@ -220,9 +214,10 @@
     }
     try {
       const stored = localStorage.getItem("zentrix-api-base");
-      const localPage = location && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
-      const localApi = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(stored || "");
-      if (stored && (localPage || !localApi)) {
+      const devPage = location
+        && (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+        && ["5500", "5501", "5502", "5173", "3000"].includes(location.port || "");
+      if (stored && devPage) {
         return stored.replace(/\/+$/, "");
       }
     } catch (error) {
@@ -396,6 +391,13 @@
   }
 
   function wirePageActions(page) {
+    viewHost.querySelectorAll('[data-action="set-theme"]').forEach((button) => {
+      if (button.dataset.ready === "true") return;
+      button.dataset.ready = "true";
+      button.addEventListener("click", () => setTheme(button.dataset.theme || "light"));
+    });
+    syncThemeControls();
+
     const productButton = viewHost.querySelector('[data-action="new-product"]');
     if (productButton && productButton.dataset.ready !== "true") {
       productButton.dataset.ready = "true";
@@ -555,6 +557,82 @@
 
     ensurePageSearchPanel(page || currentPageName());
     wireListFilters();
+  }
+
+  function handleGlobalClick(event) {
+    const notificationButton = event.target.closest("[data-action='toggle-notifications']");
+    const userButton = event.target.closest("[data-action='toggle-user-menu']");
+    const logoutButton = event.target.closest("[data-action='logout']");
+    const themeAction = event.target.closest("[data-action='set-theme']");
+
+    if (notificationButton) {
+      event.preventDefault();
+      togglePopover(".notification-menu", notificationButton);
+      return;
+    }
+
+    if (userButton) {
+      event.preventDefault();
+      togglePopover(".user-menu", userButton);
+      return;
+    }
+
+    if (logoutButton) {
+      event.preventDefault();
+      clearApiCache();
+      clearStoredSession();
+      window.location.href = location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html";
+      return;
+    }
+
+    if (themeAction && !themeAction.closest(".view-host")) {
+      event.preventDefault();
+      setTheme(themeAction.dataset.theme || "light");
+      return;
+    }
+
+    if (!event.target.closest(".toolbar-popover, .user-card, .notification-button")) {
+      closeTopbarMenus();
+    }
+  }
+
+  function togglePopover(selector, trigger) {
+    const menu = document.querySelector(selector);
+    if (!menu) return;
+    const willOpen = menu.hidden;
+    closeTopbarMenus();
+    menu.hidden = !willOpen;
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", String(willOpen));
+    }
+  }
+
+  function closeTopbarMenus() {
+    document.querySelectorAll(".toolbar-popover").forEach((menu) => {
+      menu.hidden = true;
+    });
+    document.querySelectorAll("[aria-expanded='true']").forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function setTheme(theme) {
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    root.dataset.theme = nextTheme;
+    try {
+      localStorage.setItem("zentrix-theme", nextTheme);
+    } catch (error) {
+      // Mantem o tema aplicado mesmo se o navegador bloquear storage.
+    }
+    syncThemeControls();
+  }
+
+  function syncThemeControls() {
+    const currentTheme = root.dataset.theme === "dark" ? "dark" : "light";
+    document.querySelectorAll("[data-action='set-theme']").forEach((button) => {
+      button.classList.toggle("active", button.dataset.theme === currentTheme);
+      button.setAttribute("aria-pressed", String(button.dataset.theme === currentTheme));
+    });
   }
 
   async function runButtonTask(button, task, busyText) {
@@ -2221,11 +2299,12 @@
     const title = "Zentrix AppGestão - " + companyName;
 
     setText(".window-title span:last-child", title);
-    const statusPill = document.querySelector(".status-pill");
+    const statusPill = document.querySelector(".sidebar-sync .status-pill");
     if (statusPill) {
       statusPill.className = "status-pill " + (apiOnline ? "success" : "warning");
       statusPill.textContent = apiOnline ? "Online" : "Atualizando";
     }
+    updateNotifications(apiOnline, pdvConnected, lastSync);
 
     setText(".sidebar-sync strong", pdvConnected ? "PDV conectado" : companyName);
     setText(".sidebar-sync span", lastSync ? "Última sincronização: " + lastSync : "Aguardando primeira sincronização");
@@ -2235,39 +2314,65 @@
     setText(".sidebar-sync strong", pdvConnected ? "Loja atualizada" : "Aguardando dados");
     setText(".sidebar-sync span", lastSync ? "Última atualização: " + lastSync : "Aguardando o primeiro envio do PDV");
     setText(".sidebar-sync .button", "Ver histórico");
-    setText(".topbar-connection", apiOnline ? "Online" : "Atualizando");
-    setText(".topbar-pdv", pdvConnected ? "PDV conectado" : "PDV aguardando");
-    setText(".topbar-pdv", pdvConnected ? "PDV conectado" : "Aguardando PDV");
   }
 
   function enhanceChrome() {
     document.title = normalizeText(document.title).replace("Zentrix Web", "Zentrix AppGestão");
     setText(".window-title span:last-child", "Zentrix AppGestão");
     setText(".sidebar-brand span", "Gestão online conectada ao Zentrix PDV");
-    if (themeButton) {
-      themeButton.textContent = "Tema";
-      themeButton.classList.add("theme-toggle");
-      themeButton.setAttribute("aria-label", "Alternar tema claro ou escuro");
-    }
     if (menuButton) menuButton.setAttribute("aria-label", "Abrir menu");
     if (closeSidebarButton) {
       closeSidebarButton.textContent = "x";
       closeSidebarButton.setAttribute("aria-label", "Fechar menu");
     }
-    const toolbar = document.querySelector(".window-toolbar");
-    if (toolbar && !toolbar.querySelector(".notification-button")) {
-      const notification = document.createElement("button");
-      notification.className = "icon-button notification-button";
-      notification.type = "button";
-      notification.setAttribute("aria-label", "Notificações");
-      notification.textContent = "!";
-      toolbar.insertBefore(notification, toolbar.querySelector(".button"));
-    }
-    const topbarTools = document.querySelector(".topbar-tools");
-    if (topbarTools && !topbarTools.querySelector(".topbar-connection")) {
-      topbarTools.insertAdjacentHTML("afterbegin", '<span class="chip success topbar-connection">Online</span><span class="chip info topbar-pdv">PDV conectado</span>');
-    }
+    renderAccountToolbar();
     rebuildNavigationWithAssets();
+  }
+
+  function renderAccountToolbar() {
+    const toolbar = document.querySelector(".window-toolbar");
+    if (!toolbar || toolbar.dataset.accountReady === "true") {
+      return;
+    }
+    const user = currentUserName();
+    toolbar.dataset.accountReady = "true";
+    toolbar.innerHTML = `
+      <div class="notification-wrap">
+        <button class="icon-button notification-button" type="button" aria-label="Notificações" aria-expanded="false" data-action="toggle-notifications">
+          <span class="notification-icon" aria-hidden="true"></span>
+        </button>
+        <div class="toolbar-popover notification-menu" hidden>
+          <strong>Tudo certo</strong>
+          <span>Sistema acompanhando a loja.</span>
+        </div>
+      </div>
+      <div class="user-menu-wrap">
+        <button class="user-card" type="button" aria-label="Menu do usuário" aria-expanded="false" data-action="toggle-user-menu">
+          <span class="user-avatar">${esc(initials(user))}</span>
+          <span class="user-name">${esc(user)}</span>
+        </button>
+        <div class="toolbar-popover user-menu" hidden>
+          <button type="button" data-action="logout">Sair da conta</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function updateNotifications(apiOnline, pdvConnected, lastSync) {
+    const button = document.querySelector(".notification-button");
+    const menu = document.querySelector(".notification-menu");
+    if (!button || !menu) return;
+    const hasAttention = !apiOnline || !pdvConnected;
+    button.classList.toggle("has-alert", hasAttention);
+    button.setAttribute("aria-label", hasAttention ? "Notificações com atenção" : "Notificações");
+    menu.innerHTML = hasAttention
+      ? `<strong>Atenção</strong><span>${esc(apiOnline ? "Aguardando atualização do PDV." : "Conexão instável no momento.")}</span>`
+      : `<strong>Tudo certo</strong><span>${esc(lastSync ? "Última atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
+  }
+
+  function currentUserName() {
+    const stored = readStoredSession();
+    return (stored && (stored.displayName || stored.username || stored.name)) || "Usuário";
   }
 
   function rebuildNavigationWithAssets() {

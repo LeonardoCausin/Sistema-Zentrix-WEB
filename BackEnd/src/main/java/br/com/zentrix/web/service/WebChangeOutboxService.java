@@ -189,6 +189,7 @@ public class WebChangeOutboxService {
         String safeDevice = optional(deviceId, null);
         validateKnownSyncScope(safeTenant, safeStore, safeSource, safeDevice);
         int safeLimit = safeLimit(limit);
+        long effectiveAfterId = effectiveAfterId(safeTenant, safeStore, safeSource, safeDevice, afterId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT id, tenant_id, store_id, source_id, target_source_id, target_device_id, entity_type, entity_id,
                        operation, contract_version, payload_json, status, attempts, error_count, last_error,
@@ -205,7 +206,7 @@ public class WebChangeOutboxService {
                   AND (target_device_id IS NULL OR ? IS NULL OR target_device_id = ?)
                 ORDER BY id
                 LIMIT ?
-                """, safeTenant, safeStore, Math.max(0L, afterId),
+                """, safeTenant, safeStore, effectiveAfterId,
                 safeSource, safeSource, safeDevice, safeDevice, safeLimit + 1);
         boolean hasMore = rows.size() > safeLimit;
         List<Map<String, Object>> page = hasMore ? rows.subList(0, safeLimit) : rows;
@@ -245,6 +246,7 @@ public class WebChangeOutboxService {
         response.put("sourceId", safeSource);
         response.put("deviceId", safeDevice);
         response.put("afterId", Math.max(0L, afterId));
+        response.put("effectiveAfterId", effectiveAfterId);
         response.put("nextCursor", nextCursor);
         response.put("hasMore", hasMore);
         response.put("count", changes.size());
@@ -254,6 +256,43 @@ public class WebChangeOutboxService {
         response.put("statusPolicy", statusPolicy());
         response.put("serverTime", OffsetDateTime.now().toString());
         return response;
+    }
+
+    private long effectiveAfterId(String tenantId, String storeId, String sourceId, String deviceId, long afterId) {
+        long requested = Math.max(0L, afterId);
+        if (requested == 0L) {
+            return 0L;
+        }
+        Integer newerCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM web_change_outbox
+                WHERE tenant_id = ?
+                  AND store_id = ?
+                  AND id > ?
+                  AND (
+                        status IN ('PENDING', 'DELIVERED')
+                        OR (status = 'ERROR' AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP))
+                  )
+                  AND (target_source_id IS NULL OR ? IS NULL OR target_source_id = ?)
+                  AND (target_device_id IS NULL OR ? IS NULL OR target_device_id = ?)
+                """, Integer.class, tenantId, storeId, requested, sourceId, sourceId, deviceId, deviceId);
+        if (newerCount != null && newerCount > 0) {
+            return requested;
+        }
+        Integer strandedCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM web_change_outbox
+                WHERE tenant_id = ?
+                  AND store_id = ?
+                  AND id <= ?
+                  AND (
+                        status IN ('PENDING', 'DELIVERED')
+                        OR (status = 'ERROR' AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP))
+                  )
+                  AND (target_source_id IS NULL OR ? IS NULL OR target_source_id = ?)
+                  AND (target_device_id IS NULL OR ? IS NULL OR target_device_id = ?)
+                """, Integer.class, tenantId, storeId, requested, sourceId, sourceId, deviceId, deviceId);
+        return strandedCount != null && strandedCount > 0 ? 0L : requested;
     }
 
     public Map<String, Object> ack(String tenantId, String storeId, SyncAckRequest request) {
