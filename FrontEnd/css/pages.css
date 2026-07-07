@@ -487,6 +487,33 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
   grid-template-columns: repeat(3, minmax(220px, 1fr));
 }
 
+.settings-form {
+  display: block;
+}
+
+.settings-section {
+  min-height: 100%;
+}
+
+.settings-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-actions {
+  position: sticky;
+  bottom: 14px;
+  z-index: 5;
+  justify-content: flex-end;
+  margin-top: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-card), transparent 4%);
+  padding: 12px;
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

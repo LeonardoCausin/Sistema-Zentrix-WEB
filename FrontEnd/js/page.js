@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-topbar-pro-4";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-settings-pro";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -386,6 +386,12 @@
       button.addEventListener("click", () => setTheme(button.dataset.theme || "light"));
     });
     syncThemeControls();
+
+    const settingsForm = viewHost.querySelector("[data-settings-form]");
+    if (settingsForm && settingsForm.dataset.ready !== "true") {
+      settingsForm.dataset.ready = "true";
+      settingsForm.addEventListener("submit", (event) => submitSettings(event, settingsForm));
+    }
 
     const productButton = viewHost.querySelector('[data-action="new-product"]');
     if (productButton && productButton.dataset.ready !== "true") {
@@ -1244,6 +1250,47 @@
     }
   }
 
+  async function submitSettings(event, form) {
+    event.preventDefault();
+    const submitButton = form.querySelector('button[type="submit"]');
+    const payload = settingsPayload(form);
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Salvando...";
+    }
+    try {
+      await window.zentrixApi("/settings?store=" + encodeURIComponent(currentStore || "all"), {
+        method: "PUT",
+        cache: "no-store",
+        body: JSON.stringify(payload)
+      });
+      clearApiCache();
+      renderToast("Configurações salvas com sucesso.", "success");
+      loadPageData({ fresh: true, userInitiated: true });
+    } catch (error) {
+      renderToast(error.message || "Não foi possível salvar as configurações.", "danger");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Salvar configurações";
+      }
+    }
+  }
+
+  function settingsPayload(form) {
+    const payload = {};
+    Array.from(form.elements).forEach((field) => {
+      if (!field.name || field.disabled || field.type === "submit") return;
+      if (field.type === "checkbox") {
+        payload[field.name] = field.checked;
+        return;
+      }
+      payload[field.name] = field.value;
+    });
+    payload.reason = "Alteração feita em Configurações";
+    return payload;
+  }
+
   function schedulePrefetch(page) {
     cancelPrefetch();
     prefetchTimer = window.setTimeout(() => {
@@ -1429,6 +1476,7 @@
       clientFormHtml,
       compactSalesList,
       currentPageName,
+      currentUserFirstName,
       dashboardMetrics,
       dataTableHtml,
       diagnosticsHtml,
@@ -1436,6 +1484,7 @@
       employeeCardHtml,
       employeeFormHtml,
       esc,
+      escAttr,
       filterStrip,
       financialEntryCardHtml,
       financialEntryFormHtml,
@@ -2447,10 +2496,27 @@
       if (subtitle) subtitle.textContent = role;
     }
     document.querySelectorAll(".user-avatar-fallback").forEach((item) => { item.textContent = initials(user); });
+    updateDashboardGreeting(account);
   }
 
   function currentUserName() {
     return accountDisplayName(readStoredSession());
+  }
+
+  function currentUserFirstName() {
+    return firstNameFromAccount(readStoredSession());
+  }
+
+  function updateDashboardGreeting(account) {
+    const title = document.querySelector("[data-account-greeting]");
+    if (title) {
+      title.textContent = greeting() + ", " + firstNameFromAccount(account) + ".";
+    }
+  }
+
+  function firstNameFromAccount(account) {
+    const name = accountDisplayName(account);
+    return normalizeText(String(name).trim().split(/\s+/).filter(Boolean)[0] || "Tudo bem");
   }
 
   function currentUserRoleLabel() {

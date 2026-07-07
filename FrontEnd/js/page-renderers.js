@@ -15,6 +15,7 @@
         clientFormHtml,
         compactSalesList,
         currentPageName,
+        currentUserFirstName,
         dashboardMetrics,
         dataTableHtml,
         diagnosticsHtml,
@@ -22,6 +23,7 @@
         employeeCardHtml,
         employeeFormHtml,
         esc,
+        escAttr,
         filterStrip,
         financialEntryCardHtml,
         financialEntryFormHtml,
@@ -94,7 +96,7 @@
       <section class="dashboard-hero">
         <div>
           <span class="hero-eyebrow">Zentrix PDV + AppGestão</span>
-          <h1>${esc(greeting())}, Leonardo.</h1>
+          <h1 data-account-greeting>${esc(greeting())}, ${esc(currentUserFirstName())}.</h1>
           <p>Aqui está o resumo da sua loja hoje. Controle vendas, estoque, caixa e financeiro de qualquer lugar.</p>
         </div>
         <div class="hero-status">
@@ -602,12 +604,12 @@
     const lastUpdate = data.lastSync || "Aguardando o primeiro envio do PDV";
     renderShell("Configurações", "Dados da loja, equipe, segurança e integração com o Zentrix PDV.", `
       <div class="module-grid settings-grid">
-        ${settingsCard("Empresa", "Dados principais da loja", tenantName, "info")}
-        ${settingsCard("Usuários", "Equipe com acesso ao painel", `${users} usuários`, "success")}
-        ${settingsCard("Permissões", "Perfis de acesso", "Administrador, gerente e operador", "warning")}
-        ${settingsCard("Aparência", "Visual do painel", "Claro ou escuro", "info")}
-        ${settingsCard("Segurança", "Acesso protegido", "Conta protegida para clientes Zentrix", "success")}
-        ${settingsCard("Integração com PDV", "Loja conectada", activeStoreName(), "info")}
+        ${settingsCard("Preferências", "Como o painel abre", settingsLabel(data.settings && data.settings.dashboardPeriodoPadrao, "today"), "info")}
+        ${settingsCard("Segurança", "Sessão e senha", `${settingValue(data, "sessaoExpiraMinutos", 480)} min`, "success")}
+        ${settingsCard("Regras", "Operação protegida", settingValue(data, "permitirEstoqueNegativo", false) ? "Estoque negativo liberado" : "Estoque negativo bloqueado", "warning")}
+        ${settingsCard("Alertas", "Avisos importantes", "Estoque, PDV, sync e backup", "info")}
+        ${settingsCard("Backup", "Rotina automática", `${settingValue(data, "backupHorario", "23:30")} | ${settingValue(data, "backupRetencao", 14)} dias`, "success")}
+        ${settingsCard("Integração PDV", "Conexão da loja", activeStoreName(), "info")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
         <section class="panel"><div class="panel-title"><div><h3>Resumo do painel</h3><span>Zentrix AppGestão</span></div></div><div class="stack-list">
@@ -623,46 +625,97 @@
             <button class="button btn-dark" type="button" data-action="set-theme" data-theme="dark">Escuro</button>
           </div>
         </section>
-        <section class="panel">
-          <div class="panel-title"><div><h3>Lojas cadastradas</h3><span>Lojas conectadas ao painel</span></div></div>
-          <div class="stack-list">${storesListHtml(data.stores || [])}</div>
-        </section>
       </div>
+      ${settingsFormHtml(data)}
     `);
   }
 
   async function renderSettings() {
-    const data = await safeApi("/settings" + storeQuery(), {});
-    setStores(data.stores);
-    renderShell("Configurações", "Empresa, usuários, permissões, aparência, segurança e integração com PDV.", `
-      <div class="module-grid settings-grid">
-        ${settingsCard("Empresa", "Dados do cliente", data.tenant && data.tenant.name ? data.tenant.name : "Cliente Zentrix", "info")}
-        ${settingsCard("Usuários", "Acessos administrativos", `${data.users || 0} usuários`, "success")}
-        ${settingsCard("Permissões", "Perfis e níveis de acesso", "Administrador, gerente e operador", "warning")}
-        ${settingsCard("Aparência", "Visual do painel", "Claro ou escuro", "info")}
-        ${settingsCard("Segurança", "Sessão e autenticação", "Acesso seguro para clientes Zentrix", "success")}
-        ${settingsCard("Integração com PDV", "Origem selecionada", data.sourceId || "Todas as lojas", "info")}
+    return renderOwnerSettings();
+  }
+
+  function settingsFormHtml(data) {
+    const settings = data.settings || {};
+    return `<form class="settings-form" data-settings-form style="margin-top: 16px">
+      <div class="grid two-column">
+        ${settingsPanel("Preferências gerais", "Como o painel deve abrir para a equipe.", [
+          selectField("dashboard_periodo_padrao", "Período padrão do dashboard", settings.dashboardPeriodoPadrao || "today", [["today", "Hoje"], ["7d", "7 dias"], ["month", "30 dias"], ["year", "1 ano"]]),
+          selectField("loja_padrao", "Loja padrão ao entrar", settings.lojaPadrao || "all", storeOptions(data.stores || [])),
+          selectField("pagina_inicial", "Página inicial", settings.paginaInicial || "dashboard.html", [["dashboard.html", "Dashboard"], ["vendas.html", "Vendas"], ["financeiro.html", "Financeiro"], ["sincronizacao.html", "Sincronização"]]),
+          selectField("tema_padrao", "Tema padrão", settings.temaPadrao || "system", [["system", "Seguir navegador"], ["light", "Claro"], ["dark", "Escuro"]])
+        ])}
+        ${settingsPanel("Políticas de segurança", "Controle básico para proteger acesso e sessões.", [
+          numberField("sessao_expira_minutos", "Sessão expira em minutos", settings.sessaoExpiraMinutos || 480, 15, 1440),
+          numberField("bloqueio_tentativas_login", "Bloquear após tentativas", settings.bloqueioTentativasLogin || 5, 3, 20),
+          switchField("senha_forte_obrigatoria", "Exigir senha forte", settings.senhaForteObrigatoria !== false)
+        ])}
+        ${settingsPanel("Regras operacionais", "Padrões que evitam erros em vendas e estoque.", [
+          switchField("permitir_estoque_negativo", "Permitir estoque negativo", settings.permitirEstoqueNegativo === true),
+          switchField("exigir_motivo_cancelamento", "Exigir motivo ao cancelar venda", settings.exigirMotivoCancelamento !== false),
+          switchField("exigir_motivo_desconto", "Exigir motivo para desconto alto", settings.exigirMotivoDesconto !== false),
+          numberField("desconto_maximo_padrao", "Desconto máximo padrão (%)", settings.descontoMaximoPadrao || 10, 0, 100)
+        ])}
+        ${settingsPanel("Alertas configuráveis", "Escolha quais avisos aparecem no sino e no painel.", [
+          switchField("alerta_estoque_baixo", "Estoque baixo", settings.alertaEstoqueBaixo !== false),
+          switchField("alerta_pdv_offline", "PDV offline", settings.alertaPdvOffline !== false),
+          switchField("alerta_sync_falha", "Falha de sincronização", settings.alertaSyncFalha !== false),
+          switchField("alerta_caixa_divergente", "Caixa divergente", settings.alertaCaixaDivergente !== false),
+          switchField("alerta_backup_atrasado", "Backup atrasado", settings.alertaBackupAtrasado !== false)
+        ])}
+        ${settingsPanel("Backup automático", "Padrão de acompanhamento e retenção dos backups.", [
+          inputField("backup_horario", "Horário preferido", settings.backupHorario || "23:30", "time"),
+          numberField("backup_retencao", "Manter backups por dias", settings.backupRetencao || 14, 1, 365),
+          numberField("backup_alertar_dias", "Alertar se atrasar dias", settings.backupAlertarDias || 1, 1, 30)
+        ])}
+        ${settingsPanel("Integração com PDV", "Identificação e expectativa de comunicação com a loja.", [
+          numberField("sync_intervalo_segundos", "Intervalo esperado de sincronização", settings.syncIntervaloSegundos || 30, 10, 3600),
+          selectField("ambiente_nome", "Ambiente", settings.ambienteNome || "Produção", [["Produção", "Produção"], ["Local", "Local"], ["Teste", "Teste"]]),
+          inputField("pdv_integration_token", settings.pdvIntegrationTokenConfigured ? "Nova chave do PDV" : "Chave do PDV", "", "password", "Preencha apenas para trocar")
+        ])}
+        ${settingsPanel("Manutenção do sistema", "Ferramentas simples para suporte e operação.", [
+          inputField("maintenance_cache_version", "Versão de cache do painel", settings.maintenanceCacheVersion || "", "text", "Ex.: 20260707"),
+          `<div class="list-item"><span class="list-icon info">API</span><div><span class="list-title">API</span><span class="list-subtitle">${esc(data.api || "Painel online Zentrix")}</span></div><strong>Online</strong></div>`,
+          `<div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última atualização</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(data.lastSync || "-")}</strong></div>`
+        ])}
       </div>
-      <div class="grid two-column" style="margin-top: 16px">
-        <section class="panel"><div class="panel-title"><div><h3>Resumo do painel</h3><span>Zentrix AppGestão</span></div></div><div class="stack-list">
-          <div class="list-item"><span class="list-icon success">OK</span><div><span class="list-title">Dados do painel</span><span class="list-subtitle">Armazenamento ativo</span></div><strong>Ativo</strong></div>
-          <div class="list-item"><span class="list-icon info">ID</span><div><span class="list-title">Cliente</span><span class="list-subtitle">${esc(data.tenant && data.tenant.id ? data.tenant.id : "legacy")}</span></div><strong>${esc(data.tenant && data.tenant.name ? data.tenant.name : "Cliente")}</strong></div>
-          <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Acesso online</span><span class="list-subtitle">${esc(data.api)}</span></div><strong>Online</strong></div>
-          <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última sincronização</span><span class="list-subtitle">${esc(data.sourceId || "Todas as lojas")}</span></div><strong>${esc(data.lastSync || "-")}</strong></div>
-        </div></section>
-        <section class="panel">
-          <div class="panel-title"><div><h3>Aparência</h3><span>Escolha como prefere usar</span></div></div>
-          <div class="theme-choice">
-            <button class="button btn-light" type="button" data-action="set-theme" data-theme="light">Claro</button>
-            <button class="button btn-dark" type="button" data-action="set-theme" data-theme="dark">Escuro</button>
-          </div>
-        </section>
-        <section class="panel">
-          <div class="panel-title"><div><h3>Lojas cadastradas</h3><span>Origem da sincronização</span></div></div>
-          <div class="stack-list">${storesListHtml(data.stores || [])}</div>
-        </section>
+      <div class="page-actions settings-actions">
+        <button class="button btn-primary" type="submit">Salvar configurações</button>
+        <span class="chip info">Aplicado para ${esc(activeStoreName())}</span>
       </div>
-    `);
+    </form>`;
+  }
+
+  function settingsPanel(title, subtitle, content) {
+    return `<section class="panel settings-section"><div class="panel-title"><div><h3>${esc(title)}</h3><span>${esc(subtitle)}</span></div></div><div class="settings-fields">${content.join("")}</div></section>`;
+  }
+
+  function settingValue(data, key, fallback) {
+    return data.settings && data.settings[key] != null ? data.settings[key] : fallback;
+  }
+
+  function settingsLabel(value, fallback) {
+    return ({ today: "Hoje", "7d": "7 dias", month: "30 dias", year: "1 ano" })[value || fallback] || value || fallback;
+  }
+
+  function storeOptions(stores) {
+    const rows = stores.length ? stores : [{ id: "all", name: "Todas as lojas" }];
+    return rows.map((store) => [store.id || "all", store.name || store.label || "Loja"]);
+  }
+
+  function inputField(name, label, value, type, placeholder) {
+    return `<label class="field"><span>${esc(label)}</span><input class="text-field" type="${escAttr(type || "text")}" name="${escAttr(name)}" value="${escAttr(value)}" placeholder="${escAttr(placeholder || "")}" /></label>`;
+  }
+
+  function numberField(name, label, value, min, max) {
+    return `<label class="field"><span>${esc(label)}</span><input class="text-field" type="number" name="${escAttr(name)}" value="${escAttr(value)}" min="${escAttr(min)}" max="${escAttr(max)}" /></label>`;
+  }
+
+  function selectField(name, label, value, options) {
+    return `<label class="field"><span>${esc(label)}</span><select class="select-field" name="${escAttr(name)}">${options.map(([optionValue, optionLabel]) => `<option value="${escAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${esc(optionLabel)}</option>`).join("")}</select></label>`;
+  }
+
+  function switchField(name, label, checked) {
+    return `<label class="permission-row"><span>${esc(label)}</span><span class="switch"><input type="checkbox" name="${escAttr(name)}" data-setting-checkbox ${checked ? "checked" : ""} /><span></span></span></label>`;
   }
 
 

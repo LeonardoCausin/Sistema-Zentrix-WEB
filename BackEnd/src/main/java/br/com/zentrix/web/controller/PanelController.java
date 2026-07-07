@@ -2,15 +2,18 @@ package br.com.zentrix.web.controller;
 
 import br.com.zentrix.web.service.WebDataService;
 import br.com.zentrix.web.service.AuthContext;
+import br.com.zentrix.web.service.AuditService;
 import br.com.zentrix.web.service.PermissionService;
 import br.com.zentrix.web.service.PermissionService.Permission;
 import br.com.zentrix.web.service.ReportService;
+import br.com.zentrix.web.service.SettingsService;
 import br.com.zentrix.web.service.WebChangeOutboxService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,17 +27,23 @@ public class PanelController {
     private final ReportService reportService;
     private final PermissionService permissionService;
     private final WebChangeOutboxService webChangeOutboxService;
+    private final SettingsService settingsService;
+    private final AuditService auditService;
 
     public PanelController(
             WebDataService dataService,
             ReportService reportService,
             PermissionService permissionService,
-            WebChangeOutboxService webChangeOutboxService
+            WebChangeOutboxService webChangeOutboxService,
+            SettingsService settingsService,
+            AuditService auditService
     ) {
         this.dataService = dataService;
         this.reportService = reportService;
         this.permissionService = permissionService;
         this.webChangeOutboxService = webChangeOutboxService;
+        this.settingsService = settingsService;
+        this.auditService = auditService;
     }
 
     @GetMapping("/dashboard")
@@ -151,6 +160,17 @@ public class PanelController {
     public Map<String, Object> settings(@RequestParam(defaultValue = "all") String store) {
         permissionService.require(Permission.MANAGE_SETTINGS);
         return dataService.settings(AuthContext.tenantId(), store);
+    }
+
+    @PutMapping("/settings")
+    public Map<String, Object> updateSettings(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestBody Map<String, Object> request
+    ) {
+        permissionService.require(Permission.MANAGE_SETTINGS);
+        Map<String, Object> updated = settingsService.updateSettings(AuthContext.tenantId(), store, request);
+        auditService.recordCurrent("SETTINGS_UPDATED", "app_settings", store, "Configurações do sistema atualizadas.", "ALERTA", reason(request));
+        return Map.of("settings", updated, "store", store);
     }
 
     @GetMapping("/stores")
