@@ -76,7 +76,7 @@
       const data = await window.zentrixApi(path, options);
       return data == null ? fallback : data;
     } catch (error) {
-      console.warn("Zentrix AppGestao: falha ao carregar", path, error);
+      console.warn("Zentrix AppGestão: falha ao carregar", path, error);
       if (!options || options.optional !== true) {
         throw error;
       }
@@ -186,7 +186,7 @@
     renderShell("Financeiro", "Entradas, saldo, previsão e recebimentos por forma de pagamento.", `
       <div class="grid metrics-grid">
         ${metricCard("Entradas", data.periodTotal || data.todayTotal, periodLabel(), "success", "+", "Recebido")}
-        ${metricCard("Saídas", data.manualExpenses || "R$ 0,00", "Despesas manuais pagas", moneyValue(data.manualExpenses) ? "warning" : "success", "-", "AppGestao")}
+        ${metricCard("Saídas", data.manualExpenses || "R$ 0,00", "Despesas manuais pagas", moneyValue(data.manualExpenses) ? "warning" : "success", "-", "AppGestão")}
         ${metricCard("Saldo", data.netTotal || data.periodTotal || data.todayTotal, "Vendas + receitas - despesas", "info", "$", "Atual")}
         ${metricCard("Previsão", data.monthTotal, "Faturamento do mês", "info", ">", "Mês")}
       </div>
@@ -364,8 +364,8 @@
         ${metricCard("Administradores", String(rows.filter((row) => roleTone(row.role) === "danger").length), "Acesso elevado", "warning", "AD", "Segurança")}
         ${metricCard("Operadores", String(rows.filter((row) => roleTone(row.role) !== "danger").length), "Atendimento e vendas", "info", "OP", "Equipe")}
       </div>
-      ${searchPanelHtml("employees", "Buscar funcionario por nome, login, cargo ou permissao", [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["admin", "Administradores"]])}
-      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="new-employee">Novo funcionario</button><span class="chip info">Permissoes por perfil e area</span></div>
+      ${searchPanelHtml("employees", "Buscar funcionário por nome, login, cargo ou permissão", [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["admin", "Administradores"]])}
+      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="new-employee">Novo funcionário</button><span class="chip info">Permissões por perfil e área</span></div>
       ${employeeFormHtml()}
       <div style="margin-bottom: 16px">
         ${dataTableHtml("Funcionarios", ["Nome", "Login", "Cargo", "Status", "Ultimo login", "Permissoes"], rows, (row) => [
@@ -396,18 +396,18 @@
     const retryable = Number(monitor.retryableErrorCount || 0);
     const dead = Number(monitor.deadLetterCount || 0);
     const syncTone = dead ? "danger" : retryable ? "warning" : "success";
-    const syncLabel = dead ? "Ação" : retryable ? "Retry" : "OK";
+    const syncLabel = dead ? "Ação" : retryable ? "Reenvio" : "OK";
     const exportId = "export-auditoria";
     renderShell("Auditoria", "Ações sensíveis, falhas de sincronização e alterações manuais.", `
       <div class="grid metrics-grid">
         ${metricCard("Eventos", String(rows.length), "Registros no período", "info", "#", periodLabel())}
         ${metricCard("Alertas", String(risky), "Cancelamentos, exclusões e falhas", risky ? "warning" : "success", "!", "Risco")}
-        ${metricCard("Fila Web → PDV", String(pending), "Alterações aguardando envio", pending ? "warning" : "success", "PDV", "Outbox")}
-        ${metricCard("Sincronização", dead ? String(dead) : String(retryable), dead ? "Dead-letter exige ação" : retryable ? "Erros aguardando retry" : "Fila saudável", syncTone, syncLabel, "Monitor")}
+        ${metricCard("Envios ao PDV", String(pending), "Alterações aguardando envio", pending ? "warning" : "success", "PDV", "Fila")}
+        ${metricCard("Sincronização", dead ? String(dead) : String(retryable), dead ? "Itens pausados pedem atenção" : retryable ? "Erros aguardando novo envio" : "Fila saudável", syncTone, syncLabel, "Monitor")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
         <section class="panel"><div class="panel-title"><div><h3>Timeline de auditoria</h3><span>Eventos mais recentes</span></div></div>${auditTimelineHtml(rows)}</section>
-        <section class="panel"><div class="panel-title"><div><h3>Monitor de sincronização</h3><span>Outbox, ACKs e últimos pushes do PDV</span></div></div>${syncMonitorHtml(monitor)}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Monitor de sincronização</h3><span>Envios, confirmações e últimos recebimentos do PDV</span></div></div>${syncMonitorHtml(monitor)}</section>
       </div>
       <div style="margin-top: 16px">
         ${dataTableHtml("Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows, (row) => [
@@ -425,10 +425,10 @@
       return emptyState("Monitor de sincronização indisponível no momento.");
     }
     const rows = [
-      ["PENDING", monitor.pendingCount || 0, "Aguardando o PDV puxar"],
-      ["DELIVERED", monitor.deliveredCount || 0, "Entregue e aguardando ACK"],
-      ["ERROR", monitor.retryableErrorCount || 0, "Com retry agendado"],
-      ["DEAD", monitor.deadLetterCount || 0, "Exige ação manual"]
+      ["PENDING", monitor.pendingCount || 0, "Aguardando envio ao PDV"],
+      ["DELIVERED", monitor.deliveredCount || 0, "Enviado e aguardando confirmação"],
+      ["ERROR", monitor.retryableErrorCount || 0, "Aguardando novo envio"],
+      ["DEAD", monitor.deadLetterCount || 0, "Pausado para análise"]
     ];
     const summary = rows.map(([status, count, subtitle]) => `<div class="list-item"><span class="list-icon ${syncMonitorTone(status, count)}">${esc(status)}</span><div><span class="list-title">${esc(status)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(String(count))}</strong></div>`).join("");
     const oldest = monitor.oldestPending && Object.keys(monitor.oldestPending).length
@@ -436,7 +436,7 @@
       : "";
     const recentRuns = Array.isArray(monitor.recentSyncRuns) ? monitor.recentSyncRuns.slice(0, 3) : [];
     const runs = recentRuns.map((row) => `<div class="list-item"><span class="list-icon ${row.status === "SUCCESS" ? "success" : "warning"}">IN</span><div><span class="list-title">${esc(row.sourceId || "PDV")}</span><span class="list-subtitle">${esc(row.receivedAt || "-")} · ${esc(String(row.recordCount || 0))} registros</span></div><strong>${esc(row.status || "-")}</strong></div>`).join("");
-    return `<div class="stack-list">${summary}${oldest}${runs || emptyState("Ainda não há pushes recentes do PDV.")}</div>`;
+    return `<div class="stack-list">${summary}${oldest}${runs || emptyState("Ainda não há recebimentos recentes do PDV.")}</div>`;
   }
 
   function syncMonitorTone(status, count) {
@@ -456,35 +456,35 @@
     const retryable = Number(monitor.retryableErrorCount || 0);
     const dead = Number(monitor.deadLetterCount || 0);
     const healthTone = dead ? "danger" : retryable ? "warning" : "success";
-    renderShell("Sincronizacao", "Fila Web -> PDV, diagnostico tecnico e acoes seguras.", `
+    renderShell("Sincronização", "Envios do painel para o PDV, status da loja e ações seguras.", `
       ${filterStrip([
         ["Loja", activeStoreName()],
         ["Contrato", monitor.contractVersion || "-"],
-        ["Servidor", observability.status || "Monitorando"]
+        ["Sistema", observability.status || "Monitorando"]
       ])}
       <div class="grid metrics-grid">
-        ${metricCard("Pendente", String(pending), "Aguardando o PDV puxar", pending ? "warning" : "success", "PDV", "PENDING")}
-        ${metricCard("Entregue", String(delivered), "Aguardando ACK do PDV", delivered ? "warning" : "success", "ACK", "DELIVERED")}
-        ${metricCard("Retry", String(retryable), "Erros com tentativa agendada", retryable ? "warning" : "success", "RT", "ERROR")}
-        ${metricCard("Dead-letter", String(dead), "Nao bloqueia a fila", dead ? "danger" : "success", "DL", "DEAD")}
+        ${metricCard("Aguardando envio", String(pending), "Alterações feitas no painel", pending ? "warning" : "success", "PDV", "PENDING")}
+        ${metricCard("Enviados", String(delivered), "Aguardando confirmação do PDV", delivered ? "info" : "success", "OK", "DELIVERED")}
+        ${metricCard("Novo envio", String(retryable), "Erros com tentativa agendada", retryable ? "warning" : "success", "RE", "ERROR")}
+        ${metricCard("Pausados", String(dead), "Não bloqueia os próximos envios", dead ? "danger" : "success", "PA", "DEAD")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
-        <section class="panel"><div class="panel-title"><div><h3>Resumo da fila</h3><span>Status por tipo de entrega</span></div>${tag(dead ? "Acao manual" : retryable ? "Retry ativo" : "Saudavel")}</div>${syncCenterSummaryHtml(monitor)}</section>
-        <section class="panel"><div class="panel-title"><div><h3>Diagnostico do servidor</h3><span>Local agora e Ubuntu por IP em producao</span></div>${tag(observability.status || "UP")}</div>${observabilityHtml(observability)}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Resumo dos envios</h3><span>Status por etapa de entrega</span></div>${tag(dead ? "Atenção" : retryable ? "Reenvio ativo" : "Saudável")}</div>${syncCenterSummaryHtml(monitor)}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Monitoramento</h3><span>Saúde do Zentrix Web</span></div>${tag(observability.status || "UP")}</div>${observabilityHtml(observability)}</section>
       </div>
       <div class="grid two-column" style="margin-top: 16px">
-        <section class="panel"><div class="panel-title"><div><h3>Erros recentes</h3><span>Reenvie ou isole sem travar a fila</span></div></div>${syncErrorsHtml(monitor.recentErrors || [])}</section>
-        <section class="panel"><div class="panel-title"><div><h3>Entradas do PDV</h3><span>Ultimos pushes recebidos no Web</span></div></div>${syncRunsHtml(monitor.recentSyncRuns || [])}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Erros recentes</h3><span>Reenvie ou pause sem travar os próximos envios</span></div></div>${syncErrorsHtml(monitor.recentErrors || [])}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Recebimentos do PDV</h3><span>Últimas cargas recebidas pelo painel</span></div></div>${syncRunsHtml(monitor.recentSyncRuns || [])}</section>
       </div>
     `);
   }
 
   function syncCenterSummaryHtml(monitor) {
     if (!monitor || !Object.keys(monitor).length) {
-      return emptyState("Monitor de sincronizacao indisponivel no momento.");
+      return emptyState("Monitor de sincronização indisponível no momento.");
     }
     const summary = Array.isArray(monitor.summary) ? monitor.summary : [];
-    const rows = summary.map((row) => `<div class="list-item"><span class="list-icon ${syncMonitorTone(row.status, row.count)}">${esc(row.status || "-")}</span><div><span class="list-title">${esc(row.status || "-")}</span><span class="list-subtitle">Ultimo ID ${esc(String(row.lastId || 0))}</span></div><strong>${esc(String(row.count || 0))}</strong></div>`).join("");
+    const rows = summary.map((row) => `<div class="list-item"><span class="list-icon ${syncMonitorTone(row.status, row.count)}">${esc(row.status || "-")}</span><div><span class="list-title">${esc(row.status || "-")}</span><span class="list-subtitle">Último registro ${esc(String(row.lastId || 0))}</span></div><strong>${esc(String(row.count || 0))}</strong></div>`).join("");
     const oldest = monitor.oldestPending && Object.keys(monitor.oldestPending).length
       ? `<div class="list-item"><span class="list-icon warning">OLD</span><div><span class="list-title">Mais antigo ativo</span><span class="list-subtitle">${esc(monitor.oldestPending.entityType || "-")} ${esc(monitor.oldestPending.entityId || "-")} | ${esc(monitor.oldestPending.operation || "-")}</span></div><strong>${esc(monitor.oldestPending.status || "-")}</strong></div>`
       : "";
@@ -493,37 +493,37 @@
 
   function syncErrorsHtml(rows) {
     if (!Array.isArray(rows) || !rows.length) {
-      return emptyState("Nao ha erros recentes na fila Web -> PDV.");
+      return emptyState("Não há erros recentes nos envios ao PDV.");
     }
     return `<div class="stack-list">${rows.map((row) => `
       <div class="list-item">
         <span class="list-icon ${syncMonitorTone(row.status, 1)}">${esc(row.status || "-")}</span>
         <div><span class="list-title">#${esc(String(row.id || "-"))} ${esc(row.entityType || "-")} ${esc(row.entityId || "")}</span><span class="list-subtitle">${esc(row.lastError || row.operation || "Sem detalhe")} | tentativas ${esc(String(row.errorCount || 0))}</span></div>
         <div class="inline-actions">
-          <button class="button btn-light compact-button" type="button" data-action="sync-retry" data-id="${esc(String(row.id || ""))}" data-store-id="${esc(row.storeId || "")}">Retry</button>
-          <button class="button btn-dark compact-button" type="button" data-action="sync-dead-letter" data-id="${esc(String(row.id || ""))}" data-store-id="${esc(row.storeId || "")}">Dead</button>
+          <button class="button btn-light compact-button" type="button" data-action="sync-retry" data-id="${esc(String(row.id || ""))}" data-store-id="${esc(row.storeId || "")}">Reenviar</button>
+          <button class="button btn-dark compact-button" type="button" data-action="sync-dead-letter" data-id="${esc(String(row.id || ""))}" data-store-id="${esc(row.storeId || "")}">Pausar</button>
         </div>
       </div>`).join("")}</div>`;
   }
 
   function syncRunsHtml(rows) {
     if (!Array.isArray(rows) || !rows.length) {
-      return emptyState("Ainda nao ha pushes recentes do PDV.");
+      return emptyState("Ainda não há recebimentos recentes do PDV.");
     }
     return `<div class="stack-list">${rows.map((row) => `<div class="list-item"><span class="list-icon ${String(row.status || "").toUpperCase() === "SUCCESS" ? "success" : "warning"}">IN</span><div><span class="list-title">${esc(row.sourceId || row.deviceId || "PDV")}</span><span class="list-subtitle">${esc(row.receivedAt || "-")} | loja ${esc(row.storeId || "-")}</span></div><strong>${esc(String(row.recordCount || 0))}</strong></div>`).join("")}</div>`;
   }
 
   function observabilityHtml(data) {
     if (!data || !Object.keys(data).length) {
-      return emptyState("Diagnostico tecnico indisponivel para esta sessao.");
+      return emptyState("Monitoramento indisponível para esta sessão.");
     }
     const memory = data.memory || {};
     const database = data.database || {};
     const rows = [
-      ["Uptime", data.uptime || data.uptimeMs || "-", "Tempo desde a inicializacao"],
-      ["Memoria usada", memory.used || memory.usedMb || "-", "Uso atual do processo Java"],
-      ["Banco", database.status || data.databaseStatus || "OK", "Conexao com MySQL"],
-      ["Request ID", "Ativo", "Cada resposta da API recebe X-Request-Id"]
+      ["Tempo online", data.uptime || data.uptimeMs || "-", "Tempo desde a última inicialização"],
+      ["Memória usada", memory.used || memory.usedMb || "-", "Uso atual do sistema"],
+      ["Banco de dados", database.status || data.databaseStatus || "OK", "Conexão com os dados"],
+      ["Rastreamento", "Ativo", "Ajuda o suporte a localizar atendimentos"]
     ];
     return `<div class="stack-list">${rows.map(([title, value, subtitle]) => `<div class="list-item"><span class="list-icon info">OK</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(String(value))}</strong></div>`).join("")}</div>`;
   }

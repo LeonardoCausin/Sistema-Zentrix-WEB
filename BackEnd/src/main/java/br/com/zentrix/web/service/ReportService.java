@@ -643,7 +643,7 @@ public class ReportService {
             return session == null || canAccessAllStores(session) ? null : session.storeId();
         }
         if (session != null && !canAccessAllStores(session) && !value.equals(session.storeId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuario nao autorizado para esta loja.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não tem permissão para acessar esta loja.");
         }
         return value;
     }

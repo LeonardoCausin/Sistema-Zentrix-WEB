@@ -50,7 +50,7 @@ public class SyncController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível para sincronização", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Sincronização temporariamente indisponível. Tente novamente em instantes.", e);
         }
     }
 
@@ -65,7 +65,7 @@ public class SyncController {
         try {
             return syncIngestService.lastStatus(tenantId, storeId, sourceId);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Sincronização temporariamente indisponível. Tente novamente em instantes.", e);
         }
     }
 
@@ -85,11 +85,11 @@ public class SyncController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponivel para entregar mudancas", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível enviar as alterações ao PDV agora. Tente novamente em instantes.", e);
         } catch (RuntimeException e) {
             log.error("Falha inesperada no pull Web -> PDV tenant={} store={} source={} device={} afterId={}",
                     tenantId, storeId, sourceId, deviceId, afterId, e);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Servico de sincronizacao temporariamente indisponivel", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Sincronização temporariamente indisponível. Tente novamente em instantes.", e);
         }
     }
 
@@ -108,7 +108,7 @@ public class SyncController {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponivel para confirmar mudancas", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível confirmar as alterações do PDV agora. Tente novamente em instantes.", e);
         }
     }
 

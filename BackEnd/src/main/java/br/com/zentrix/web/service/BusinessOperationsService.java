@@ -314,7 +314,7 @@ public class BusinessOperationsService {
                 quantity(request.idealStock()),
                 request.active() == null || request.active()
         );
-        auditService.recordCurrent("PRODUCT_CREATED", "products", code, "Produto criado pelo AppGestao.", "ALERTA", null);
+        auditService.recordCurrent("PRODUCT_CREATED", "products", code, "Produto criado pelo AppGestão.", "ALERTA", null);
         enqueueProductChange(tenantId, store, code, "PRODUCT_UPSERT");
         return adminProduct(tenantId, store, code);
     }
@@ -349,7 +349,7 @@ public class BusinessOperationsService {
                 store,
                 code
         );
-        auditService.recordCurrent("PRODUCT_UPDATED", "products", code, "Produto atualizado pelo AppGestao.", "ALERTA", null);
+        auditService.recordCurrent("PRODUCT_UPDATED", "products", code, "Produto atualizado pelo AppGestão.", "ALERTA", null);
         if (previousPrice.compareTo(nextPrice) != 0) {
             auditService.recordCurrent("PRODUCT_PRICE_CHANGED", "products", code, "Preco de venda alterado.", "CRITICO", null);
         }
@@ -485,7 +485,7 @@ public class BusinessOperationsService {
                 clean(request.notes()),
                 request.loyaltyPoints() == null ? 0 : Math.max(0, request.loyaltyPoints())
         );
-        auditService.recordCurrent("CLIENT_CREATED", "clients", String.valueOf(id), "Cliente criado pelo AppGestao.", "INFO", null);
+        auditService.recordCurrent("CLIENT_CREATED", "clients", String.valueOf(id), "Cliente criado pelo AppGestão.", "INFO", null);
         enqueueClientChange(tenantId, store, id, "CLIENT_UPSERT");
         return adminClient(tenantId, store, id);
     }
@@ -515,7 +515,7 @@ public class BusinessOperationsService {
                 store,
                 id
         );
-        auditService.recordCurrent("CLIENT_UPDATED", "clients", String.valueOf(id), "Cliente atualizado pelo AppGestao.", "INFO", null);
+        auditService.recordCurrent("CLIENT_UPDATED", "clients", String.valueOf(id), "Cliente atualizado pelo AppGestão.", "INFO", null);
         enqueueClientChange(tenantId, store, id, "CLIENT_UPSERT");
         return adminClient(tenantId, store, id);
     }
@@ -1105,7 +1105,7 @@ public class BusinessOperationsService {
                 """, tenantId, storeId, table, safeBaseline);
         Long nextValue = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         if (nextValue == null || nextValue <= 1 || nextValue - 1 > Integer.MAX_VALUE) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Nao foi possivel reservar o proximo identificador.");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível preparar o próximo cadastro. Tente novamente em instantes.");
         }
         return Math.toIntExact(nextValue - 1);
     }
@@ -1509,7 +1509,7 @@ public class BusinessOperationsService {
                 WHERE tenant_id = ? AND active = TRUE AND UPPER(role) IN ('DONO', 'OWNER', 'ADMIN', 'ADMINISTRADOR', 'ADMINISTRATOR')
                 """, Integer.class, tenantId);
         if (activeAdmins != null && activeAdmins <= 1) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nao e permitido inativar o ultimo ADMIN ativo.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não é permitido inativar o último administrador ativo.");
         }
     }
 
@@ -1559,7 +1559,7 @@ public class BusinessOperationsService {
 
     private String cleanRequired(String value) {
         if (value == null || value.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campo obrigatorio nao informado.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Preencha todos os campos obrigatórios.");
         }
         return value.trim();
     }
@@ -1593,7 +1593,7 @@ public class BusinessOperationsService {
     private String normalizeWritableStore(String tenantId, String storeId) {
         AuthContext.current().ifPresent(session -> {
             if (!tenantId.equals(session.tenantId())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tenant da sessão não corresponde à operação.");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Sua sessão não tem permissão para alterar esta loja.");
             }
         });
         return normalizeStore(storeId);
@@ -1610,7 +1610,7 @@ public class BusinessOperationsService {
             return store;
         }
         if (!store.equals(session.storeId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuario nao autorizado para esta loja.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não tem permissão para acessar esta loja.");
         }
         return store;
     }

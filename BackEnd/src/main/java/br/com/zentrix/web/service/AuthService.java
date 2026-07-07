@@ -54,7 +54,7 @@ public class AuthService {
                 """, loginName);
         if (users.isEmpty()) {
             recordFailure(loginName);
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciais inválidas");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuário ou senha inválidos.");
         }
 
         boolean passwordMatchedNonAdmin = false;
@@ -100,10 +100,10 @@ public class AuthService {
         recordFailure(loginName);
         if (passwordMatchedNonAdmin) {
             log.warn("Login bloqueado: usuario={} senha confere, mas papeis ativos nao autorizam painel. roles={}", loginName, loginRoles(users));
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Usuário sem permissão de acesso ao painel");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Este usuário não tem permissão para acessar o painel. Peça liberação ao responsável.");
         }
         auditService.info("LOGIN_FAILED", "users", loginName, "Falha de login para usuário informado.");
-        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Credenciais inválidas");
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuário ou senha inválidos.");
     }
 
     private Map<String, Object> resolveSessionScope(Map<String, Object> user) {
@@ -167,7 +167,7 @@ public class AuthService {
             return;
         }
         if (attempt.lastFailure().plus(LOCK_DURATION).isAfter(Instant.now())) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Muitas tentativas de acesso");
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente.");
         }
         attempts.remove(loginName.toLowerCase());
     }

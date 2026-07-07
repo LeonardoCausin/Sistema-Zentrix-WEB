@@ -37,7 +37,7 @@ public class ProvisioningController {
         try {
             return provisioningService.bootstrap(request);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível para ativação", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível ativar agora. Tente novamente em instantes.", e);
         }
     }
 
@@ -50,7 +50,7 @@ public class ProvisioningController {
         try {
             return provisioningService.addStore(request);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível para ativação", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível ativar agora. Tente novamente em instantes.", e);
         }
     }
 
@@ -63,7 +63,7 @@ public class ProvisioningController {
         try {
             return provisioningService.createActivationCode(request);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível para ativação", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível ativar agora. Tente novamente em instantes.", e);
         }
     }
 
@@ -72,7 +72,7 @@ public class ProvisioningController {
         try {
             return provisioningService.activateCode(request);
         } catch (DataAccessException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Banco web indisponível para ativação", e);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível ativar agora. Tente novamente em instantes.", e);
         }
     }
 }

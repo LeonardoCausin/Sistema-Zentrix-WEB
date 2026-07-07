@@ -70,11 +70,11 @@
     if (response.status === 401) {
       clearSession();
       window.location.replace((context && context.loginPath) || loginPath());
-      throw new Error("Sessão expirada");
+      throw new Error("Sua sessão expirou. Entre novamente.");
     }
     if (!response.ok) {
       const message = await errorMessage(response);
-      throw new Error(message || "Não foi possível carregar os dados.");
+      throw new Error(message || "Não conseguimos carregar as informações agora. Tente novamente.");
     }
     if (response.status === 204) {
       return null;
@@ -101,9 +101,9 @@
 
   function friendlyConnectionError(error) {
     if (error && error.name === "AbortError") {
-      return new Error("Tempo limite ao conversar com o servidor. Confira a conexão e tente novamente.");
+      return new Error("A resposta demorou mais que o esperado. Confira a conexão e tente novamente.");
     }
-    return new Error("Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.");
+    return new Error("Não conseguimos conectar ao Zentrix agora. Verifique a internet ou se o servidor está ligado.");
   }
 
   async function errorMessage(response) {

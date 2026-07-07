@@ -38,7 +38,7 @@ public class WebChangeOutboxService {
             "FINANCIAL_ENTRY"
     );
     private static final List<Map<String, Object>> UNSUPPORTED_ENTITY_TYPES = List.of(
-            Map.of("entityType", "SUPPLIER", "reason", "Nao ha operacao Web que mantenha fornecedores no PDV nesta versao."),
+            Map.of("entityType", "SUPPLIER", "reason", "Fornecedores ainda não são enviados do painel para o PDV nesta versão."),
             Map.of("entityType", "COMANDA", "reason", "Comandas continuam originadas no PDV e entram no Web via push."),
             Map.of("entityType", "AUDIT_LOG", "reason", "Auditoria e historico operacional nao sao reenviados ao PDV.")
     );
@@ -110,7 +110,7 @@ public class WebChangeOutboxService {
         response.put("unsupportedEntityTypes", UNSUPPORTED_ENTITY_TYPES);
         response.put("statusPolicy", statusPolicy());
         response.put("requiredScope", List.of("tenantId", "storeId"));
-        response.put("deviceScopePolicy", "sourceId ou deviceId e obrigatorio quando a loja ja possui device cadastrado.");
+        response.put("deviceScopePolicy", "O PDV precisa estar identificado quando a loja já possui equipamento cadastrado.");
         response.put("optionalScope", List.of("sourceId", "deviceId"));
         response.put("payloadShape", Map.of(
                 "table", "Nome da tabela destino em snake_case",
@@ -146,7 +146,7 @@ public class WebChangeOutboxService {
         String safeTenant = required(tenantId, "tenantId");
         String safeStore = optional(storeId, null);
         List<Object> args = new ArrayList<>();
-        args.add(cleanError(reason == null || reason.isBlank() ? "Retry manual solicitado no AppGestao" : reason));
+        args.add(cleanError(reason == null || reason.isBlank() ? "Reenvio solicitado pelo painel" : reason));
         args.add(safeTenant);
         String scope = storePredicate(safeStore, args);
         args.add(id);
@@ -170,7 +170,7 @@ public class WebChangeOutboxService {
         String safeTenant = required(tenantId, "tenantId");
         String safeStore = optional(storeId, null);
         List<Object> args = new ArrayList<>();
-        args.add(cleanError(reason == null || reason.isBlank() ? "Dead-letter manual solicitado no AppGestao" : reason));
+        args.add(cleanError(reason == null || reason.isBlank() ? "Item pausado pelo painel para não travar os próximos envios" : reason));
         args.add(safeTenant);
         String scope = storePredicate(safeStore, args);
         args.add(id);
@@ -525,10 +525,10 @@ public class WebChangeOutboxService {
     private Map<String, Object> statusPolicy() {
         Map<String, Object> policy = new LinkedHashMap<>();
         policy.put("PENDING", "Aguardando entrega ao PDV.");
-        policy.put("DELIVERED", "Entregue ao PDV e aguardando ACK.");
-        policy.put("ACKED", "Confirmado pelo PDV; nao volta ao pull.");
-        policy.put("ERROR", "Falha informada pelo PDV; volta ao pull somente apos nextAttemptAt.");
-        policy.put("DEAD", "Falha excedeu retries; nao bloqueia a fila e exige acao manual.");
+        policy.put("DELIVERED", "Enviado ao PDV e aguardando confirmação.");
+        policy.put("ACKED", "Confirmado pelo PDV; não será enviado novamente.");
+        policy.put("ERROR", "Falha informada pelo PDV; será reenviado no próximo horário permitido.");
+        policy.put("DEAD", "Falha repetida; item pausado para não bloquear os próximos envios.");
         policy.put("maxErrorRetries", MAX_ERROR_RETRIES);
         return policy;
     }
@@ -562,7 +562,7 @@ public class WebChangeOutboxService {
                           AND store_id = ?
                         """, Integer.class, tenantId, storeId);
                 if (knownDevices != null && knownDevices > 0) {
-                    throw new IllegalArgumentException("Informe sourceId ou deviceId para sincronizar esta loja");
+                    throw new IllegalArgumentException("Não foi possível identificar qual PDV deve receber esta sincronização.");
                 }
                 return;
             }
@@ -575,7 +575,7 @@ public class WebChangeOutboxService {
                       AND (? IS NULL OR id = ?)
                     """, Integer.class, tenantId, storeId, sourceId, sourceId, deviceId, deviceId);
             if (matches == null || matches == 0) {
-                throw new IllegalArgumentException("Escopo de sincronizacao nao autorizado para tenant/store/source/device informados");
+                throw new IllegalArgumentException("Este PDV não está autorizado para sincronizar esta loja.");
             }
         } catch (DataAccessException ignored) {
             // Bancos legados podem ainda nao ter metadados de devices no primeiro pull.
@@ -627,7 +627,7 @@ public class WebChangeOutboxService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Payload de sincronizacao invalido", e);
+            throw new IllegalArgumentException("Os dados de sincronização recebidos estão inválidos.", e);
         }
     }
 
@@ -644,7 +644,7 @@ public class WebChangeOutboxService {
 
     private String required(String value, String field) {
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(field + " e obrigatorio");
+            throw new IllegalArgumentException(field + " é obrigatório");
         }
         return value.trim();
     }

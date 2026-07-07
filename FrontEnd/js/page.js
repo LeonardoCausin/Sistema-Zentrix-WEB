@@ -171,10 +171,10 @@
       clearApiCache();
       clearStoredSession();
       window.location.replace(location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html");
-      throw new Error("Sessão expirada");
+      throw new Error("Sua sessão expirou. Entre novamente.");
     }
     if (!response.ok) {
-      throw new Error("Não foi possível carregar os dados.");
+      throw new Error("Não conseguimos carregar as informações agora. Tente novamente.");
     }
     return response.json();
   }
@@ -194,9 +194,9 @@
 
   function apiConnectionError(error) {
     if (error && error.name === "AbortError") {
-      return new Error("Tempo limite ao conversar com o servidor. Confira a conexão e tente novamente.");
+      return new Error("A resposta demorou mais que o esperado. Confira a conexão e tente novamente.");
     }
-    return new Error("Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.");
+    return new Error("Não conseguimos conectar ao Zentrix agora. Verifique a internet ou se o servidor está ligado.");
   }
 
   function apiCacheKey(apiBase, path, token) {
@@ -597,7 +597,7 @@
         timeoutMs: 3000
       });
     } catch (error) {
-      // Mesmo offline, a saida local deve acontecer.
+      // Mesmo sem conexão, a saída local deve acontecer.
     } finally {
       clearApiCache();
       clearStoredSession();
@@ -674,7 +674,7 @@
       },
       funcionarios: {
         scope: "employees",
-        placeholder: "Buscar funcionario por nome, login, cargo ou permissao",
+        placeholder: "Buscar funcionário por nome, login, cargo ou permissão",
         filters: [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["admin", "Administradores"]],
         container: ".entity-grid"
       }
@@ -947,7 +947,7 @@
       if (panel) panel.hidden = true;
       releaseAdminFormLock();
       clearApiCache();
-      renderToast(mode === "edit" ? "Funcionario atualizado." : "Funcionario cadastrado.", "success");
+      renderToast(mode === "edit" ? "Funcionário atualizado." : "Funcionário cadastrado.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
       renderToast(error.message || "Não foi possível salvar o funcionário.", "danger");
@@ -984,23 +984,23 @@
     const action = button.dataset.action === "sync-dead-letter" ? "dead-letter" : "retry";
     const store = button.dataset.storeId || currentStore || "all";
     if (!id) {
-      renderToast("Item da fila nao encontrado.", "warning");
+      renderToast("Não encontramos esse item de sincronização. Atualize a tela e tente novamente.", "warning");
       return;
     }
     const previousText = button.textContent;
     button.disabled = true;
-    button.textContent = action === "retry" ? "Reenviando..." : "Isolando...";
+    button.textContent = action === "retry" ? "Enviando novamente..." : "Pausando...";
     try {
       await window.zentrixApi("/sync/outbox/" + encodeURIComponent(id) + "/" + action + "?store=" + encodeURIComponent(store), {
         method: "POST",
         cache: "no-store",
-        body: JSON.stringify({ reason: action === "retry" ? "Retry manual pelo AppGestao" : "Dead-letter manual pelo AppGestao" })
+        body: JSON.stringify({ reason: action === "retry" ? "Reenvio solicitado pelo painel" : "Item pausado pelo painel para não travar os próximos envios" })
       });
       clearApiCache();
-      renderToast(action === "retry" ? "Item reenfileirado para o PDV." : "Item isolado em dead-letter.", "success");
+      renderToast(action === "retry" ? "Item colocado novamente para envio ao PDV." : "Item pausado para não travar os próximos envios.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "Nao foi possivel atualizar a fila.", "danger");
+      renderToast(error.message || "Não conseguimos atualizar a sincronização agora. Tente novamente.", "danger");
     } finally {
       button.disabled = false;
       button.textContent = previousText;
@@ -1108,7 +1108,7 @@
       const form = panel && panel.querySelector("form");
       if (!panel || !form) return;
       panel.hidden = false;
-      setAdminFormTitle(panel, "Editar funcionario", "Atualize cadastro, senha e permissoes");
+      setAdminFormTitle(panel, "Editar funcionário", "Atualize cadastro, senha e permissões");
       setFormValue(form, "mode", "edit");
       setFormValue(form, "originalUsername", row.username || username);
       setFormValue(form, "storeId", row.storeId || writeStore());
@@ -1133,14 +1133,14 @@
     const username = button.dataset.username || "";
     const active = button.dataset.active === "true";
     const nextActive = !active;
-    if (!username || !window.confirm(nextActive ? "Reativar este funcionario" : "Inativar este funcionario")) return;
+    if (!username || !window.confirm(nextActive ? "Reativar este funcionário?" : "Inativar este funcionário?")) return;
     try {
       await window.zentrixApi("/employees/" + encodeURIComponent(username) + "/status?active=" + encodeURIComponent(String(nextActive)), {
         method: "PATCH",
         cache: "no-store"
       });
       clearApiCache();
-      renderToast(nextActive ? "Funcionario reativado." : "Funcionario inativado.", "success");
+      renderToast(nextActive ? "Funcionário reativado." : "Funcionário inativado.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
       renderToast(error.message || "Não foi possível alterar o funcionário.", "danger");
@@ -1498,13 +1498,13 @@
 
   function renderPageFallback(page, message) {
     if (page === "sincronizacao") {
-      renderShell("Sincronizacao", "Fila Web -> PDV e diagnostico tecnico", `
+      renderShell("Sincronização", "Envios do painel para o PDV e monitoramento da loja", `
         <section class="panel">
           <div class="panel-title">
-            <div><h3>Dados temporariamente indisponiveis</h3><span>${esc(friendlyMessage(message))}</span></div>
+            <div><h3>Dados temporariamente indisponíveis</h3><span>${esc(friendlyMessage(message))}</span></div>
             <button class="button btn-primary compact-button" type="button" data-action="retry-page-load">Atualizar</button>
           </div>
-          ${emptyState("Aguardando uma resposta valida do servico online.")}
+          ${emptyState("Aguardando uma resposta válida do Zentrix.")}
         </section>
       `);
       const retryButton = viewHost.querySelector('[data-action="retry-page-load"]');
@@ -1534,7 +1534,7 @@
           <div><h3>Dados temporariamente indisponíveis</h3><span>${esc(friendlyMessage(message))}</span></div>
           <button class="button btn-primary compact-button" type="button" data-action="retry-page-load">Atualizar</button>
         </div>
-        ${emptyState("Aguardando uma resposta válida do serviço online.")}
+        ${emptyState("Aguardando uma resposta válida do Zentrix.")}
       </section>
     `);
     const retryButton = viewHost.querySelector('[data-action="retry-page-load"]');
@@ -1565,7 +1565,7 @@
     return `<section class="table-panel">
       <div class="table-title"><h3>${esc(title)}</h3><div class="table-actions"><span>${esc(String(rows.length))} registros</span><button class="button btn-light compact-button" id="${esc(exportId)}" type="button">Exportar CSV</button></div></div>
       <div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>
-        ${rows.map((row) => `<tr ${typeof rowAttrs === "function" ? rowAttrs(row) : ""}>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Ainda nao ha informacoes para este periodo.")}</td></tr>`}
+        ${rows.map((row) => `<tr ${typeof rowAttrs === "function" ? rowAttrs(row) : ""}>${mapper(row).map((value) => `<td>${isTrustedTag(value) ? value : esc(value)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${headers.length}">${emptyState("Ainda não há informações para este período.")}</td></tr>`}
       </tbody></table></div>
     </section>`;
   }
@@ -1577,7 +1577,7 @@
       <label class="search-field"><span>Buscar</span><input class="text-field" type="search" placeholder="${escAttr(placeholder)}" data-search-input="${safeScope}" autocomplete="off" /></label>
       <label class="search-filter"><span>Filtro</span><select class="select-field" data-search-filter="${safeScope}">${options}</select></label>
       <button class="button btn-light compact-button" type="button" data-action="clear-list-filter" data-filter-scope="${safeScope}">Limpar</button>
-      <span class="chip info"><strong data-search-count="${safeScope}">0</strong>&nbsp;itens visiveis</span>
+      <span class="chip info"><strong data-search-count="${safeScope}">0</strong>&nbsp;itens visíveis</span>
     </section>`;
   }
 
@@ -1665,7 +1665,7 @@
 
   function employeeFormHtml() {
     return `<section class="panel" hidden data-admin-form="employee" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Novo funcionario</h3><span>Cadastro administrativo com senha e permissoes</span></div></div>
+      <div class="panel-title"><div><h3>Novo funcionário</h3><span>Cadastro administrativo com senha e permissões</span></div></div>
       <form class="form-grid">
         <input type="hidden" name="mode" value="create" />
         <input type="hidden" name="originalUsername" />
@@ -1684,7 +1684,7 @@
         </select></label>
         <label class="field"><span>Status</span><select class="select-field" name="activeSelect"><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
         <div class="permission-grid full">${employeePermissionsHtml()}</div>
-        <div class="form-line full"><button class="button btn-primary" type="submit">Salvar funcionario</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
+        <div class="form-line full"><button class="button btn-primary" type="submit">Salvar funcionário</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
       </form>
     </section>`;
   }
@@ -2185,20 +2185,20 @@
 
   function friendlyMessage(message) {
     const text = normalizeText(String(message || ""));
-    if (!text) return "Verifique se o Zentrix PDV e o serviço online estão abertos.";
+    if (!text) return "Verifique se o Zentrix PDV e o painel online estão abertos.";
     if (text.toLowerCase().includes("failed to fetch") || text.toLowerCase().includes("network")) {
-      return "Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.";
+      return "Não conseguimos conectar ao Zentrix agora. Verifique a internet ou se o servidor está ligado.";
     }
     if (text.includes("401") || text.toLowerCase().includes("unauthorized")) {
-      return "A chave de acesso entre PDV e painel precisa ser conferida.";
+      return "Sua sessão expirou. Entre novamente.";
     }
     if (text.includes("404")) {
       return "Esta informação ainda não está disponível no painel.";
     }
     if (text.includes("500") || text.includes("503")) {
-      return "O serviço online do Zentrix está iniciando ou encontrou instabilidade. Tente atualizar novamente.";
+      return "O Zentrix está iniciando ou encontrou uma instabilidade. Tente atualizar novamente.";
     }
-    return text.replace(/\bAPI\b/g, "serviço online").replace(/\bendpoint\b/gi, "recurso");
+    return text.replace(/\bAPI\b/g, "Zentrix").replace(/\bendpoint\b/gi, "recurso");
   }
 
   function initChromeSkeleton() {
@@ -2393,7 +2393,7 @@
       ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "auditoria.png"],
         ["relatorios.html", "Relatórios", "relatorios.png"],
-        ["sincronizacao.html", "Sincronizacao", "auditoria.png"],
+        ["sincronizacao.html", "Sincronização", "auditoria.png"],
         ["backups.html", "Backups", "backups.png"],
         ["configuracoes.html", "Configurações", "configuracoes.png"]
       ]]
@@ -2440,7 +2440,7 @@
       ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "!"],
         ["relatorios.html", "Relatórios", "?"],
-        ["sincronizacao.html", "Sincronizacao", "SYNC"],
+        ["sincronizacao.html", "Sincronização", "SYNC"],
         ["backups.html", "Backups", "CL"],
         ["configuracoes.html", "Configurações", "?"]
       ]]
@@ -2665,8 +2665,8 @@
     if (type === "employee") {
       setFormValue(form, "originalUsername", "");
       setFormValue(form, "role", "CONSULTA");
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo funcionario", "Cadastro administrativo com senha e permissoes");
-      setFormSubmitText(form, "Salvar funcionario");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo funcionário", "Cadastro administrativo com senha e permissões");
+      setFormSubmitText(form, "Salvar funcionário");
       setFieldReadOnly(form, "username", false);
       setEmployeePasswordRequired(form, true);
       applyRolePermissions(form, "CONSULTA");

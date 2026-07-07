@@ -19,24 +19,33 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final ApiAuthInterceptor apiAuthInterceptor;
     private final RateLimitInterceptor rateLimitInterceptor;
-    private final String[] allowedOrigins;
+    private final String[] allowedOriginPatterns;
 
     public WebConfig(ApiAuthInterceptor apiAuthInterceptor, RateLimitInterceptor rateLimitInterceptor, Environment environment) {
         this.apiAuthInterceptor = apiAuthInterceptor;
         this.rateLimitInterceptor = rateLimitInterceptor;
         boolean allowNullOrigin = Boolean.parseBoolean(environment.getProperty("zentrix.cors.allow-null-origin", "false"));
-        List<String> configuredOrigins = Binder.get(environment)
-                .bind("zentrix.cors.allowed-origins", Bindable.listOf(String.class))
-                .orElse(List.of("https://pdv.zentrixsystems.com.br", "http://localhost:5500", "http://127.0.0.1:5500"));
-        List<String> origins = new ArrayList<>(configuredOrigins);
-        addCsvValues(origins, environment.getProperty("zentrix.cors.allowed-origins-csv", ""));
-        this.allowedOrigins = distinctNonBlank(origins, allowNullOrigin).toArray(String[]::new);
+        List<String> configuredPatterns = Binder.get(environment)
+                .bind("zentrix.cors.allowed-origin-patterns", Bindable.listOf(String.class))
+                .orElse(List.of(
+                        "https://pdv.zentrixsystems.com.br",
+                        "https://www.pdv.zentrixsystems.com.br",
+                        "http://localhost:*",
+                        "http://127.0.0.1:*",
+                        "https://*.trycloudflare.com",
+                        "https://*.ngrok-free.app",
+                        "https://*.ngrok.io"
+                ));
+        List<String> patterns = new ArrayList<>(configuredPatterns);
+        addCsvValues(patterns, environment.getProperty("zentrix.cors.allowed-origins-csv", ""));
+        addCsvValues(patterns, environment.getProperty("zentrix.cors.allowed-origin-patterns-csv", ""));
+        this.allowedOriginPatterns = distinctNonBlank(patterns, allowNullOrigin).toArray(String[]::new);
     }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins(allowedOrigins)
+                .allowedOriginPatterns(allowedOriginPatterns)
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("Content-Type", "Authorization", "X-Zentrix-Sync-Key", "X-Request-Id")
                 .exposedHeaders("Authorization", "X-Request-Id")

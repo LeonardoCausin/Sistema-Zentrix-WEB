@@ -51,11 +51,12 @@ zentrix:
   cors:
     allow-null-origin: ${ZENTRIX_CORS_ALLOW_NULL_ORIGIN:false}
     allowed-origins-csv: ${ZENTRIX_CORS_ALLOWED_ORIGINS:}
-    allowed-origins:
+    allowed-origin-patterns-csv: ${ZENTRIX_CORS_ALLOWED_ORIGIN_PATTERNS:}
+    allowed-origin-patterns:
       - "https://pdv.zentrixsystems.com.br"
-      - "http://localhost:5500"
-      - "http://localhost:5501"
-      - "http://localhost:5502"
-      - "http://127.0.0.1:5500"
-      - "http://127.0.0.1:5501"
-      - "http://127.0.0.1:5502"
+      - "https://www.pdv.zentrixsystems.com.br"
+      - "http://localhost:*"
+      - "http://127.0.0.1:*"
+      - "https://*.trycloudflare.com"
+      - "https://*.ngrok-free.app"
+      - "https://*.ngrok.io"

@@ -85,7 +85,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         response.setHeader("X-RateLimit-Remaining", String.valueOf(remaining));
         response.setHeader("X-RateLimit-Reset", String.valueOf(window.resetAt()));
         if (window.count() > policy.limit()) {
-            response.sendError(HttpStatus.TOO_MANY_REQUESTS.value(), "Muitas requisicoes. Tente novamente em instantes.");
+            response.sendError(HttpStatus.TOO_MANY_REQUESTS.value(), "Muitas tentativas em pouco tempo. Aguarde um instante e tente novamente.");
             return false;
         }
         prune(now);

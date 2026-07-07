@@ -29,13 +29,13 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
 
         String token = tokenFromRequest(request);
         if (token == null || token.isBlank()) {
-            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso ausente");
+            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Sua sessão expirou. Entre novamente.");
             return false;
         }
 
         var session = authTokenService.validate(token);
         if (session.isEmpty()) {
-            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso inválido ou expirado");
+            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Sua sessão expirou. Entre novamente.");
             return false;
         }
         AuthContext.set(session.get());

@@ -40,7 +40,7 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, Object>> unavailable(HttpServletRequest request) {
         return ResponseEntity
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(error(HttpStatus.SERVICE_UNAVAILABLE.value(), HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), "Sistema temporariamente indisponível.", request));
+                .body(error(HttpStatus.SERVICE_UNAVAILABLE.value(), HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), "O sistema não conseguiu acessar os dados agora. Tente novamente em instantes.", request));
     }
 
     @ExceptionHandler(Exception.class)
@@ -48,7 +48,7 @@ public class ApiExceptionHandler {
         log.error("Erro inesperado na API Zentrix AppGestão", exception);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(error(HttpStatus.INTERNAL_SERVER_ERROR.value(), HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(), "Não foi possível concluir a operação.", request));
+                .body(error(HttpStatus.INTERNAL_SERVER_ERROR.value(), HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(), "Não conseguimos concluir sua solicitação agora. Tente novamente em instantes.", request));
     }
 
     private String publicMessage(ResponseStatusException exception) {
@@ -59,13 +59,13 @@ public class ApiExceptionHandler {
             return "Muitas tentativas. Aguarde alguns minutos e tente novamente.";
         }
         if (exception.getStatusCode().value() == HttpStatus.FORBIDDEN.value()) {
-            return exception.getReason() == null ? "Acesso não autorizado." : exception.getReason();
+            return exception.getReason() == null ? "Você não tem permissão para fazer isso." : exception.getReason();
         }
         if (exception.getStatusCode().value() == HttpStatus.BAD_REQUEST.value()
                 || exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
             return exception.getReason() == null ? "Confira os dados informados." : exception.getReason();
         }
-        return "Não foi possível concluir a operação.";
+        return "Não conseguimos concluir sua solicitação agora. Tente novamente em instantes.";
     }
 
     private Map<String, Object> error(int status, String error, String message, HttpServletRequest request) {

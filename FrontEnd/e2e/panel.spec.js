@@ -130,7 +130,7 @@ test("audit page shows the sync outbox monitor", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/auditoria.html");
   await expect(page.getByText("Monitor de sincronização")).toBeVisible();
-  await expect(page.getByText("Fila Web → PDV")).toBeVisible();
+  await expect(page.getByText("Envios ao PDV")).toBeVisible();
   await expect(page.locator(".list-title", { hasText: "DELIVERED" })).toBeVisible();
 });
 
@@ -140,7 +140,7 @@ test("sync center shows diagnostics and retries a failed outbox item", async ({ 
   await expect(page.getByText("Erros recentes")).toBeVisible();
   await expect(page.getByText("Tipo não suportado")).toBeVisible();
   await page.locator('[data-action="sync-retry"]').first().click();
-  await expect(page.getByText("Item reenfileirado para o PDV.")).toBeVisible();
+  await expect(page.getByText("Item colocado novamente para envio ao PDV.")).toBeVisible();
 });
 
 async function mockPanelApi(page) {

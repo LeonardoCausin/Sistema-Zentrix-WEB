@@ -91,7 +91,7 @@
     }
 
     throw new Error(
-      'Não foi possível conectar ao sistema. Abra o endereço oficial do Zentrix e confira se o backend está iniciado.'
+      'Não conseguimos conectar ao Zentrix agora. Verifique se o servidor está ligado e tente novamente.'
     );
   }
 
@@ -110,10 +110,10 @@
       return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
     }
     if (status === 403) {
-      return 'Acesso negado pelo servidor. Verifique se este usuário tem permissão para acessar o painel.';
+      return 'Este usuário não tem permissão para acessar o painel. Entre com uma conta autorizada ou peça liberação ao responsável.';
     }
     if (status >= 500) {
-      return 'Não foi possível entrar agora. O servidor está iniciando ou indisponível.';
+      return 'O sistema está iniciando ou passou por uma instabilidade. Tente novamente em instantes.';
     }
     return 'Não foi possível entrar agora. Confira os dados informados.';
   }
@@ -126,6 +126,9 @@
         return body.message || body.error || body.detail || '';
       }
       const text = await response.text();
+      if (text && text.toLowerCase().includes('invalid cors request')) {
+        return 'Este endereço ainda não foi liberado para acessar o sistema. Peça ao responsável para liberar o domínio no Zentrix Web.';
+      }
       return text && text.length < 180 ? text : '';
     } catch (error) {
       return '';

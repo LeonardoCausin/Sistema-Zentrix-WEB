@@ -2,9 +2,9 @@
   "use strict";
 
   const permissions = Object.freeze([
-    ["Operacao", "dashboard.visualizar", "Dashboard"],
-    ["Operacao", "vendas.visualizar", "Ver vendas"],
-    ["Operacao", "vendas.cancelar", "Cancelar vendas"],
+    ["Operação", "dashboard.visualizar", "Dashboard"],
+    ["Operação", "vendas.visualizar", "Ver vendas"],
+    ["Operação", "vendas.cancelar", "Cancelar vendas"],
     ["Caixa", "caixa.visualizar", "Ver caixa"],
     ["Caixa", "caixa.abrir", "Abrir caixa"],
     ["Caixa", "caixa.fechar", "Fechar caixa"],
@@ -19,18 +19,18 @@
     ["Clientes", "clientes.visualizar", "Ver clientes"],
     ["Clientes", "clientes.criar", "Criar clientes"],
     ["Clientes", "clientes.editar", "Editar clientes"],
-    ["Equipe", "funcionarios.visualizar", "Ver funcionarios"],
-    ["Equipe", "funcionarios.criar", "Criar funcionarios"],
-    ["Equipe", "funcionarios.editar", "Editar funcionarios"],
-    ["Equipe", "funcionarios.permissoes", "Alterar permissoes"],
+    ["Equipe", "funcionarios.visualizar", "Ver funcionários"],
+    ["Equipe", "funcionarios.criar", "Criar funcionários"],
+    ["Equipe", "funcionarios.editar", "Editar funcionários"],
+    ["Equipe", "funcionarios.permissoes", "Alterar permissões"],
     ["Financeiro", "financeiro.visualizar", "Ver financeiro"],
     ["Financeiro", "financeiro.editar", "Editar financeiro"],
-    ["Relatorios", "relatorios.visualizar", "Ver relatorios"],
-    ["Seguranca", "auditoria.visualizar", "Ver auditoria"],
-    ["Seguranca", "backups.gerar", "Gerar backups"],
-    ["Seguranca", "backups.restaurar", "Restaurar backups"],
-    ["Seguranca", "configuracoes.visualizar", "Ver configuracoes"],
-    ["Seguranca", "configuracoes.editar", "Editar configuracoes"]
+    ["Relatórios", "relatorios.visualizar", "Ver relatórios"],
+    ["Segurança", "auditoria.visualizar", "Ver auditoria"],
+    ["Segurança", "backups.gerar", "Gerar backups"],
+    ["Segurança", "backups.restaurar", "Restaurar backups"],
+    ["Segurança", "configuracoes.visualizar", "Ver configurações"],
+    ["Segurança", "configuracoes.editar", "Editar configurações"]
   ]);
   const rolePresets = Object.freeze({
     ADMIN: EMPLOYEE_PERMISSIONS.map((item) => item[1]),
