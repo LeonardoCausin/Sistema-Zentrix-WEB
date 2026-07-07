@@ -46,6 +46,26 @@ Abra pelo IP do servidor, por exemplo:
 
 Se o painel for acessado por outro dominio/IP, configure `ZENTRIX_CORS_ALLOWED_ORIGINS` no `.env`.
 
+Para producao com Nginx, use os modelos em:
+
+- `deploy/nginx/zentrix-web.conf`: proxy reverso para `/`, `/FrontEnd` e `/api`.
+- `deploy/systemd/zentrix-web.service`: servico Linux com restart automatico.
+
+Fluxo recomendado no Ubuntu:
+
+```bash
+sudo cp deploy/systemd/zentrix-web.service /etc/systemd/system/zentrix-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now zentrix-web
+
+sudo cp deploy/nginx/zentrix-web.conf /etc/nginx/sites-available/zentrix-web
+sudo ln -sf /etc/nginx/sites-available/zentrix-web /etc/nginx/sites-enabled/zentrix-web
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Com Nginx, o frontend usa a API no mesmo dominio em `/api`, sem depender de porta `8080` publica.
+
 ## Backups e restauracao
 
 A restauracao agora exige preview e frase de confirmacao. Antes de qualquer tentativa destrutiva, o backend registra um snapshot de seguranca. Como o backup fisico ainda nao esta implementado, a restauracao real fica bloqueada com mensagem clara em vez de apagar dados sem arquivo validado.

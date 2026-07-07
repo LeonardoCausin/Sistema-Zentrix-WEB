@@ -4,6 +4,7 @@
   const STORAGE_KEY = "zentrix-api-base";
   const PUBLIC_API_BASE = "https://api.zentrixsystems.com.br/api";
   const LOCAL_FALLBACK = "http://localhost:8080/api";
+  const DEV_FRONTEND_PORTS = new Set(["5500", "5501", "5502", "5173", "3000"]);
 
   function normalizeApiBase(value) {
     return String(value || "").trim().replace(/\/+$/, "");
@@ -29,10 +30,10 @@
     if (!location || !location.hostname || !/^https?:$/.test(location.protocol)) {
       return PUBLIC_API_BASE;
     }
-    if (isLocalHost(location.hostname)) {
-      return location.origin.replace(/\/+$/, "") + "/api";
+    if (isLocalHost(location.hostname) && DEV_FRONTEND_PORTS.has(location.port || "")) {
+      return (location.protocol === "https:" ? "https:" : "http:") + "//" + location.hostname + ":8080/api";
     }
-    return PUBLIC_API_BASE;
+    return location.origin.replace(/\/+$/, "") + "/api";
   }
 
   function getApiBase() {

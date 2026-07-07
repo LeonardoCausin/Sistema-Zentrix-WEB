@@ -16,9 +16,40 @@ test("login page loads the Zentrix AppGestao shell", async ({ page }) => {
   await expect(page.locator("#loginPassword")).toBeVisible();
 });
 
+test("api base is compatible with same-origin nginx and local dev", async ({ page }) => {
+  await page.goto("/");
+  const result = await page.evaluate(() => ({
+    origin: window.location.origin,
+    port: window.location.port,
+    hostname: window.location.hostname,
+    apiBase: window.ZentrixApiBase.getApiBase(),
+    fallbacks: window.ZentrixApiBase.getFallbackBases()
+  }));
+
+  const devPorts = new Set(["5500", "5501", "5502", "5173", "3000"]);
+  const localHost = result.hostname === "localhost" || result.hostname === "127.0.0.1";
+  const expected = localHost && devPorts.has(result.port)
+    ? `http://${result.hostname}:8080/api`
+    : `${result.origin}/api`;
+
+  expect(result.apiBase).toBe(expected);
+  expect(result.fallbacks).toContain(expected);
+});
+
 test("login falls back from a stale api base without showing fetch failure", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("zentrix-api-base", "http://127.0.0.1:9999/api");
+  });
+  await page.route("**/api/auth/login", async (route) => {
+    if (route.request().url().includes("127.0.0.1:9999")) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Usuário ou senha inválidos." })
+    });
   });
 
   await page.goto("/");

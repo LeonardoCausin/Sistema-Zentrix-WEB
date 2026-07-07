@@ -148,8 +148,10 @@
 
   async function fetchApiJson(apiBase, path, options, storedSession) {
     const fetchOptions = { ...(options || {}) };
+    const timeoutMs = Number(fetchOptions.timeoutMs || 15000);
     delete fetchOptions.cache;
     delete fetchOptions.prefetch;
+    delete fetchOptions.timeoutMs;
     if (window.ZentrixApi && typeof window.ZentrixApi.request === "function") {
       return window.ZentrixApi.request(path, fetchOptions, {
         apiBase,
@@ -157,14 +159,19 @@
         loginPath: location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html"
       });
     }
-    const response = await fetch(apiBase + path, {
-      ...fetchOptions,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: storedSession ? "Bearer " + storedSession.token : "",
-        ...((options && options.headers) || {})
-      }
-    });
+    let response;
+    try {
+      response = await fetchWithTimeout(apiBase + path, {
+        ...fetchOptions,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: storedSession ? "Bearer " + storedSession.token : "",
+          ...((options && options.headers) || {})
+        }
+      }, timeoutMs);
+    } catch (error) {
+      throw apiConnectionError(error);
+    }
     if (response.status === 401) {
       clearApiCache();
       clearStoredSession();
@@ -175,6 +182,26 @@
       throw new Error("Não foi possível carregar os dados.");
     }
     return response.json();
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    if (!window.AbortController || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return fetch(url, options);
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function apiConnectionError(error) {
+    if (error && error.name === "AbortError") {
+      return new Error("Tempo limite ao conversar com o servidor. Confira a conexão e tente novamente.");
+    }
+    return new Error("Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.");
   }
 
   function apiCacheKey(apiBase, path, token) {
@@ -201,7 +228,10 @@
     } catch (error) {
       // Continua com inferencia pela URL atual.
     }
-    if (location && location.hostname && /^https?:$/.test(location.protocol) && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    if (location && location.hostname && /^https?:$/.test(location.protocol)) {
+      if ((location.hostname === "localhost" || location.hostname === "127.0.0.1") && ["5500", "5501", "5502", "5173", "3000"].includes(location.port || "")) {
+        return (location.protocol === "https:" ? "https:" : "http:") + "//" + location.hostname + ":8080/api";
+      }
       return location.origin.replace(/\/+$/, "") + "/api";
     }
     return "https://api.zentrixsystems.com.br/api";
@@ -453,43 +483,43 @@
     viewHost.querySelectorAll('[data-action="edit-product"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => openProductEditor(button));
+      button.addEventListener("click", () => runButtonTask(button, () => openProductEditor(button), "Abrindo..."));
     });
 
     viewHost.querySelectorAll('[data-action="toggle-product-status"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => toggleProductStatus(button));
+      button.addEventListener("click", () => runButtonTask(button, () => toggleProductStatus(button), "Salvando..."));
     });
 
     viewHost.querySelectorAll('[data-action="edit-client"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => openClientEditor(button));
+      button.addEventListener("click", () => runButtonTask(button, () => openClientEditor(button), "Abrindo..."));
     });
 
     viewHost.querySelectorAll('[data-action="toggle-client-status"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => toggleClientStatus(button));
+      button.addEventListener("click", () => runButtonTask(button, () => toggleClientStatus(button), "Salvando..."));
     });
 
     viewHost.querySelectorAll('[data-action="edit-employee"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => openEmployeeEditor(button));
+      button.addEventListener("click", () => runButtonTask(button, () => openEmployeeEditor(button), "Abrindo..."));
     });
 
     viewHost.querySelectorAll('[data-action="toggle-employee-status"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => toggleEmployeeStatus(button));
+      button.addEventListener("click", () => runButtonTask(button, () => toggleEmployeeStatus(button), "Salvando..."));
     });
 
     viewHost.querySelectorAll('[data-action="edit-finance-entry"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
-      button.addEventListener("click", () => openFinancialEntryEditor(button));
+      button.addEventListener("click", () => runButtonTask(button, () => openFinancialEntryEditor(button), "Abrindo..."));
     });
 
     viewHost.querySelectorAll('[data-action="set-finance-status"]').forEach((button) => {
@@ -525,6 +555,25 @@
 
     ensurePageSearchPanel(page || currentPageName());
     wireListFilters();
+  }
+
+  async function runButtonTask(button, task, busyText) {
+    if (!button || button.disabled || button.dataset.busy === "true") {
+      return;
+    }
+    const previousText = button.textContent;
+    button.dataset.busy = "true";
+    button.disabled = true;
+    if (busyText) {
+      button.textContent = busyText;
+    }
+    try {
+      await task();
+    } finally {
+      button.disabled = false;
+      button.dataset.busy = "false";
+      button.textContent = previousText;
+    }
   }
 
   function ensurePageSearchPanel(page) {

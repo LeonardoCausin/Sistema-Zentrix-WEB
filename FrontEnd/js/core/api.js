@@ -2,6 +2,7 @@
   "use strict";
 
   const SESSION_KEY = "zentrix-session";
+  const DEFAULT_TIMEOUT_MS = 15000;
 
   function readSessionRaw() {
     try {
@@ -50,6 +51,8 @@
 
   async function request(path, options, context) {
     const requestOptions = { ...(options || {}) };
+    const timeoutMs = Number(requestOptions.timeoutMs || DEFAULT_TIMEOUT_MS);
+    delete requestOptions.timeoutMs;
     const session = context && context.session ? context.session : readSession();
     const base = context && context.apiBase ? context.apiBase : apiBase();
     const headers = {
@@ -57,10 +60,15 @@
       Authorization: session ? "Bearer " + session.token : "",
       ...(requestOptions.headers || {})
     };
-    const response = await fetch(base + path, {
-      ...requestOptions,
-      headers
-    });
+    let response;
+    try {
+      response = await fetchWithTimeout(base + path, {
+        ...requestOptions,
+        headers
+      }, timeoutMs);
+    } catch (error) {
+      throw friendlyConnectionError(error);
+    }
 
     if (response.status === 401) {
       clearSession();
@@ -79,6 +87,26 @@
       return response.text();
     }
     return response.json();
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    if (!window.AbortController || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return fetch(url, options);
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function friendlyConnectionError(error) {
+    if (error && error.name === "AbortError") {
+      return new Error("Tempo limite ao conversar com o servidor. Confira a conexão e tente novamente.");
+    }
+    return new Error("Não foi possível conversar com o serviço online. Confira se o backend do Zentrix está aberto.");
   }
 
   async function errorMessage(response) {

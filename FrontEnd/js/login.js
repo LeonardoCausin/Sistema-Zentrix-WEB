@@ -2,6 +2,8 @@
   const form = document.getElementById('loginForm');
   if (!form) return;
 
+  const LOGIN_TIMEOUT_MS = 5000;
+  const HEALTH_TIMEOUT_MS = 2500;
   const userField = document.getElementById('loginUser');
   const passwordField = document.getElementById('loginPassword');
   const togglePasswordButton = document.getElementById('togglePasswordButton');
@@ -67,11 +69,11 @@
 
     for (const base of bases) {
       try {
-        const response = await fetch(base + '/auth/login', {
+        const response = await fetchWithTimeout(base + '/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(credentials)
-        });
+        }, LOGIN_TIMEOUT_MS);
 
         if (!response.ok) {
           throw new LoginHttpError(loginErrorMessage(response.status));
@@ -130,7 +132,7 @@
     let lastError = null;
     for (const base of apiBases()) {
       try {
-        const response = await fetch(base + '/health');
+        const response = await fetchWithTimeout(base + '/health', {}, HEALTH_TIMEOUT_MS);
         if (response.ok) {
           rememberApiBase(base);
           return response;
@@ -155,6 +157,19 @@
       return;
     }
     localStorage.setItem('zentrix-api-base', base);
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    if (!window.AbortController || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return fetch(url, options);
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...(options || {}), signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   function writeSession(session) {
