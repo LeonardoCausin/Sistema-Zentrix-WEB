@@ -6,7 +6,7 @@
     viewCacheMaxAge: 10 * 60 * 1000,
     viewCachePrefix: "zentrix-view-cache:",
     viewStatePrefix: "zentrix-view-state:",
-    clientCacheVersion: "20260707-topbar-pro-3-3",
+    clientCacheVersion: "20260707-topbar-pro-4",
     prefetchPeriods: Object.freeze(["today", "7d", "month", "year"])
   });
 })();

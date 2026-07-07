@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-topbar-pro-3-3";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-topbar-pro-4";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -132,6 +132,10 @@
     }
     return request;
   };
+
+  if (body.classList.contains("is-authenticated")) {
+    refreshAccountToolbar().catch(() => null);
+  }
 
   const viewHost = document.querySelector(".view-host");
   if (body.classList.contains("is-authenticated") && viewHost) {
@@ -2413,14 +2417,65 @@
       : `<strong>Tudo certo</strong><span>${esc(lastSync ? "Última atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
   }
 
+  async function refreshAccountToolbar() {
+    if (!window.zentrixApi) return;
+    const account = await window.zentrixApi("/auth/me", {
+      cache: "no-store",
+      timeoutMs: 5000
+    });
+    if (!account || typeof account !== "object") return;
+    const stored = readStoredSession() || {};
+    const nextSession = { ...stored, ...account };
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+    } catch (error) {
+      // Mantem a barra funcionando mesmo quando o navegador limita storage.
+    }
+    updateAccountToolbar(nextSession);
+  }
+
+  function updateAccountToolbar(account) {
+    const user = accountDisplayName(account);
+    const role = accountRoleLabel(account);
+    document.querySelectorAll(".user-name").forEach((item) => { item.textContent = user; });
+    document.querySelectorAll(".user-role").forEach((item) => { item.textContent = role; });
+    const menu = document.querySelector(".user-menu");
+    if (menu) {
+      const title = menu.querySelector("strong");
+      const subtitle = menu.querySelector("span");
+      if (title) title.textContent = user;
+      if (subtitle) subtitle.textContent = role;
+    }
+    document.querySelectorAll(".user-avatar-fallback").forEach((item) => { item.textContent = initials(user); });
+  }
+
   function currentUserName() {
-    const stored = readStoredSession();
-    return (stored && (stored.displayName || stored.username || stored.name)) || "Usuário";
+    return accountDisplayName(readStoredSession());
   }
 
   function currentUserRoleLabel() {
-    const stored = readStoredSession();
-    const role = stored && (stored.role || stored.cargo || stored.profile);
+    return accountRoleLabel(readStoredSession());
+  }
+
+  function accountDisplayName(account) {
+    const candidates = [
+      account && account.displayName,
+      account && account.name,
+      account && account.fullName,
+      account && account.username,
+      account && account.login,
+      account && account.email
+    ];
+    const selected = candidates.find((value) => {
+      const text = String(value || "").trim();
+      const key = normalizeKey(text).toLowerCase();
+      return text && key !== "usuario" && key !== "user";
+    });
+    return normalizeText(String(selected || "Conta"));
+  }
+
+  function accountRoleLabel(account) {
+    const role = account && (account.role || account.cargo || account.profile);
     const key = normalizeKey(role || "").toUpperCase();
     const labels = {
       ADMIN: "Administrador",
@@ -2437,7 +2492,7 @@
       FINANCEIRO: "Financeiro",
       CONSULTA: "Consulta"
     };
-    return labels[key] || normalizeText(String(role || "Usuário"));
+    return labels[key] || normalizeText(String(role || "Equipe"));
   }
 
   function notificationItemHtml(item) {
