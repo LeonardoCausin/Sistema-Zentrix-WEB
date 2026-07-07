@@ -1,5 +1,6 @@
 package br.com.zentrix.web.config;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.zentrix.web.service.AuthCookieService;
@@ -12,7 +13,7 @@ import org.springframework.mock.env.MockEnvironment;
 class WebConfigTest {
 
     @Test
-    void includesProductionDomainAndTunnelPatternsInCors() throws Exception {
+    void includesOnlyOfficialProductionAndLocalDevelopmentPatternsInCors() throws Exception {
         WebConfig config = new WebConfig(
                 new ApiAuthInterceptor(new AuthTokenService(), new AuthCookieService()),
                 new RateLimitInterceptor(),
@@ -21,11 +22,16 @@ class WebConfigTest {
 
         String[] patterns = allowedOriginPatterns(config);
 
-        assertTrue(Arrays.asList(patterns).contains("https://pdv.zentrixsystems.com.br"));
-        assertTrue(Arrays.asList(patterns).contains("https://www.pdv.zentrixsystems.com.br"));
-        assertTrue(Arrays.asList(patterns).contains("https://*.zentrixsystems.com.br"));
-        assertTrue(Arrays.asList(patterns).contains("http://localhost:*"));
-        assertTrue(Arrays.asList(patterns).contains("https://*.trycloudflare.com"));
+        var allowed = Arrays.asList(patterns);
+
+        assertTrue(allowed.contains("https://pdv.zentrixsystems.com.br"));
+        assertTrue(allowed.contains("https://www.pdv.zentrixsystems.com.br"));
+        assertTrue(allowed.contains("http://localhost:*"));
+        assertTrue(allowed.contains("http://127.0.0.1:*"));
+        assertFalse(allowed.contains("https://*.zentrixsystems.com.br"));
+        assertFalse(allowed.contains("https://*.trycloudflare.com"));
+        assertFalse(allowed.contains("https://*.ngrok-free.app"));
+        assertFalse(allowed.contains("https://*.ngrok.io"));
     }
 
     private String[] allowedOriginPatterns(WebConfig config) throws Exception {

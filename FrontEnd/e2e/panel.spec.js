@@ -6,7 +6,7 @@ const apiBaseScript = readFileSync(join(process.cwd(), "js", "core", "api-base.j
 
 const session = {
   token: "e2e-token",
-  displayName: "Administrador",
+  displayName: "Usuário Teste",
   role: "ADMIN",
   tenantId: "tenant-e2e",
   storeId: "WEB",
@@ -109,7 +109,12 @@ test("authenticated top bar shows notifications and account menu", async ({ page
 
   await expect(page.locator("#themeButton")).toHaveCount(0);
   await expect(page.locator("[data-action='toggle-notifications']")).toBeVisible();
+  await expect(page.locator("[data-action='toggle-user-menu']")).toContainText("Usuário Teste");
   await expect(page.locator("[data-action='toggle-user-menu']")).toContainText("Administrador");
+
+  await page.locator("[data-action='toggle-notifications']").click();
+  await expect(page.locator(".notification-menu").getByText("Estoque baixo")).toBeVisible();
+  await expect(page.locator(".notification-menu").getByText("Repor estoque")).toBeVisible();
 
   await page.locator("[data-action='toggle-user-menu']").click();
   await expect(page.locator("[data-action='logout']")).toBeVisible();
@@ -157,6 +162,9 @@ async function mockPanelApi(page) {
   await page.route("**/api/settings**", async (route) => {
     await route.fulfill({ json: settingsPayload() });
   });
+  await page.route("**/api/alerts**", async (route) => {
+    await route.fulfill({ json: alertsPayload() });
+  });
   await page.route("**/api/dashboard**", async (route) => {
     await route.fulfill({ json: dashboardPayload() });
   });
@@ -192,6 +200,19 @@ function dashboardPayload() {
     salesByStore: [{ label: "Loja Web", sales: 5, display: "R$ 1.250,00" }],
     stockHealth: [{ label: "Estoque baixo", display: "1", tone: "warning" }]
   };
+}
+
+function alertsPayload() {
+  return [
+    {
+      id: "stock-low-e2e",
+      level: "warning",
+      title: "Estoque baixo",
+      message: "1 produto abaixo do mínimo.",
+      actionLabel: "Repor estoque",
+      actionUrl: "/estoque.html"
+    }
+  ];
 }
 
 function auditPayload() {

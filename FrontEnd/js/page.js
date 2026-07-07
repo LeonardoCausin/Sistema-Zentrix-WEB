@@ -22,6 +22,7 @@
   let forceFreshData = false;
   let adminFormLockUntil = 0;
   let renderingSilentLoad = false;
+  let topbarAlerts = [];
   const pageConfig = window.ZentrixPageConfig || {};
   const API_CACHE_MAX_AGE = pageConfig.apiCacheMaxAge || 15 * 60 * 1000;
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
@@ -2269,6 +2270,7 @@
     try {
       const data = await window.zentrixApi("/dashboard" + periodQuery());
       updateChrome(data);
+      refreshTopbarAlerts().catch(() => null);
     } catch (error) {
       try {
         const health = await window.zentrixApi("/health", { cache: "refresh" });
@@ -2314,6 +2316,16 @@
     setText(".sidebar-sync .button", "Ver histórico");
   }
 
+  async function refreshTopbarAlerts() {
+    const alerts = await window.zentrixApi("/alerts?store=" + encodeURIComponent(currentStore || "all"), {
+      cache: "refresh",
+      timeoutMs: 6000
+    });
+    topbarAlerts = Array.isArray(alerts) ? alerts : [];
+    const lastSync = document.querySelector(".sidebar-sync span") ? document.querySelector(".sidebar-sync span").textContent.replace("Última atualização: ", "") : "";
+    updateNotifications(true, Boolean(lastSync && !lastSync.includes("Aguardando")), lastSync, topbarAlerts);
+  }
+
   function enhanceChrome() {
     document.title = normalizeText(document.title).replace("Zentrix Web", "Zentrix AppGestão");
     setText(".window-title span:last-child", "Zentrix AppGestão");
@@ -2333,11 +2345,14 @@
       return;
     }
     const user = currentUserName();
+    const role = currentUserRoleLabel();
     toolbar.dataset.accountReady = "true";
     toolbar.innerHTML = `
       <div class="notification-wrap">
         <button class="icon-button notification-button" type="button" aria-label="Notificações" aria-expanded="false" data-action="toggle-notifications">
+          <img class="topbar-icon-img notification-img" src="../assets/Icons/topbar-bell.png" alt="" data-icon-fallback />
           <span class="notification-icon" aria-hidden="true"></span>
+          <span class="notification-count" hidden>0</span>
         </button>
         <div class="toolbar-popover notification-menu" hidden>
           <strong>Tudo certo</strong>
@@ -2346,23 +2361,53 @@
       </div>
       <div class="user-menu-wrap">
         <button class="user-card" type="button" aria-label="Menu do usuário" aria-expanded="false" data-action="toggle-user-menu">
-          <span class="user-avatar">${esc(initials(user))}</span>
-          <span class="user-name">${esc(user)}</span>
+          <span class="user-info">
+            <span class="user-name">${esc(user)}</span>
+            <span class="user-role">${esc(role)}</span>
+          </span>
+          <span class="user-avatar">
+            <img class="topbar-icon-img user-avatar-img" src="../assets/Icons/topbar-user.png" alt="" data-icon-fallback />
+            <span class="user-avatar-fallback">${esc(initials(user))}</span>
+          </span>
         </button>
         <div class="toolbar-popover user-menu" hidden>
+          <strong>${esc(user)}</strong>
+          <span>${esc(role)}</span>
           <button type="button" data-action="logout">Sair da conta</button>
         </div>
       </div>
     `;
+    wireTopbarIconFallbacks(toolbar);
   }
 
-  function updateNotifications(apiOnline, pdvConnected, lastSync) {
+  function updateNotifications(apiOnline, pdvConnected, lastSync, alerts) {
     const button = document.querySelector(".notification-button");
     const menu = document.querySelector(".notification-menu");
     if (!button || !menu) return;
-    const hasAttention = !apiOnline || !pdvConnected;
+    const items = Array.isArray(alerts) ? alerts : topbarAlerts;
+    const importantAlerts = items.filter((item) => {
+      const level = String(item.level || "").toLowerCase();
+      return level === "danger" || level === "warning";
+    });
+    const visibleAlerts = items.slice(0, 5);
+    const hasAttention = !apiOnline || !pdvConnected || importantAlerts.length > 0;
+    const badge = button.querySelector(".notification-count");
     button.classList.toggle("has-alert", hasAttention);
     button.setAttribute("aria-label", hasAttention ? "Notificações com atenção" : "Notificações");
+    if (badge) {
+      const count = importantAlerts.length || (!apiOnline || !pdvConnected ? 1 : 0);
+      badge.hidden = count <= 0;
+      badge.textContent = String(Math.min(count, 9));
+    }
+    if (visibleAlerts.length) {
+      menu.innerHTML = `
+        <strong>Notificações</strong>
+        <div class="notification-list">
+          ${visibleAlerts.map(notificationItemHtml).join("")}
+        </div>
+      `;
+      return;
+    }
     menu.innerHTML = hasAttention
       ? `<strong>Atenção</strong><span>${esc(apiOnline ? "Aguardando atualização do PDV." : "Conexão instável no momento.")}</span>`
       : `<strong>Tudo certo</strong><span>${esc(lastSync ? "Última atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
@@ -2371,6 +2416,62 @@
   function currentUserName() {
     const stored = readStoredSession();
     return (stored && (stored.displayName || stored.username || stored.name)) || "Usuário";
+  }
+
+  function currentUserRoleLabel() {
+    const stored = readStoredSession();
+    const role = stored && (stored.role || stored.cargo || stored.profile);
+    const key = normalizeKey(role || "").toUpperCase();
+    const labels = {
+      ADMIN: "Administrador",
+      ADMINISTRADOR: "Administrador",
+      ADMINISTRATOR: "Administrador",
+      DONO: "Administrador",
+      OWNER: "Administrador",
+      GERENTE: "Gerente",
+      MANAGER: "Gerente",
+      CAIXA: "Caixa",
+      OPERADOR: "Operador",
+      OPERATOR: "Operador",
+      ESTOQUISTA: "Estoquista",
+      FINANCEIRO: "Financeiro",
+      CONSULTA: "Consulta"
+    };
+    return labels[key] || normalizeText(String(role || "Usuário"));
+  }
+
+  function notificationItemHtml(item) {
+    const title = item.title || "Notificação";
+    const message = item.message || "Veja os detalhes no painel.";
+    const level = String(item.level || "info").toLowerCase();
+    const actionLabel = item.actionLabel || "Abrir";
+    const actionUrl = normalizeNotificationUrl(item.actionUrl);
+    return `
+      <a class="notification-item ${esc(level)}" href="${escAttr(actionUrl)}">
+        <span class="notification-dot ${esc(level)}"></span>
+        <span class="notification-copy">
+          <strong>${esc(title)}</strong>
+          <span>${esc(message)}</span>
+          <em>${esc(actionLabel)}</em>
+        </span>
+      </a>
+    `;
+  }
+
+  function normalizeNotificationUrl(url) {
+    const value = String(url || "/dashboard.html").trim();
+    const file = value.split("/").pop() || "dashboard.html";
+    return file.includes(".html") ? file : "dashboard.html";
+  }
+
+  function wireTopbarIconFallbacks(container) {
+    container.querySelectorAll("img[data-icon-fallback]").forEach((image) => {
+      image.addEventListener("error", () => {
+        image.hidden = true;
+        const parent = image.parentElement;
+        if (parent) parent.classList.add("is-fallback");
+      }, { once: true });
+    });
   }
 
   function rebuildNavigationWithAssets() {

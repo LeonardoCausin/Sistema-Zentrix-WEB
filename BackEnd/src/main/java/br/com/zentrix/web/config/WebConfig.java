@@ -30,12 +30,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .orElse(List.of(
                         "https://pdv.zentrixsystems.com.br",
                         "https://www.pdv.zentrixsystems.com.br",
-                        "https://*.zentrixsystems.com.br",
                         "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "https://*.trycloudflare.com",
-                        "https://*.ngrok-free.app",
-                        "https://*.ngrok.io"
+                        "http://127.0.0.1:*"
                 ));
         List<String> patterns = new ArrayList<>(configuredPatterns);
         addCsvValues(patterns, environment.getProperty("zentrix.cors.allowed-origins-csv", ""));

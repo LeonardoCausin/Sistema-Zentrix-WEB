@@ -21,11 +21,17 @@
 
 .notification-button {
   position: relative;
+  width: 58px;
+  height: 52px;
+  border: 0;
+  border-radius: 0;
+  color: #717891;
+  background: transparent;
 }
 
 .notification-icon {
   position: relative;
-  display: block;
+  display: none;
   width: 16px;
   height: 17px;
   border: 2px solid currentColor;
@@ -58,15 +64,36 @@
 }
 
 .notification-button.has-alert::after {
+  display: none;
+}
+
+.topbar-icon-img {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.notification-button.is-fallback .notification-icon,
+.notification-button:has(.notification-img[hidden]) .notification-icon {
+  display: block;
+}
+
+.notification-count {
   position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 8px;
-  height: 8px;
-  content: "";
-  border: 2px solid var(--bg-card);
+  top: 7px;
+  right: 10px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 2px solid var(--bg-elevated);
   border-radius: 999px;
-  background: var(--accent-cyan);
+  color: #ffffff;
+  background: var(--accent-red);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .notification-wrap,
@@ -74,39 +101,88 @@
   position: relative;
 }
 
+.notification-wrap {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  border-right: 1px solid var(--border-strong);
+  padding-right: 12px;
+}
+
 .user-card {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  max-width: 220px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  max-width: 310px;
+  border: 0;
+  border-radius: 0;
   color: var(--text-primary);
-  background: var(--bg-card);
-  padding: 0 11px 0 7px;
+  background: transparent;
+  padding: 0 0 0 8px;
   font: inherit;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .user-avatar {
   display: grid;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border-radius: 999px;
   color: #ffffff;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
-  font-size: 11px;
+  background: linear-gradient(135deg, #5037ff, #3216df);
+  box-shadow: 0 10px 24px rgba(50, 22, 223, 0.24);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar:not(.is-fallback) .user-avatar-fallback,
+.user-avatar-img:not([hidden]) + .user-avatar-fallback {
+  display: none;
+}
+
+.user-avatar.is-fallback .user-avatar-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.user-info {
+  display: grid;
+  min-width: 0;
+  text-align: center;
+  line-height: 1.15;
 }
 
 .user-name {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.user-role {
+  display: block;
+  margin-top: 4px;
+  color: #31343d;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .toolbar-popover {
@@ -114,7 +190,7 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 80;
-  min-width: 190px;
+  min-width: 250px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -142,11 +218,75 @@
 .toolbar-popover button {
   width: 100%;
   min-height: 36px;
+  margin-top: 10px;
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--accent-red);
   background: var(--soft-red);
   font-weight: 900;
+}
+
+.notification-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.notification-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  background: var(--bg-secondary);
+  padding: 10px;
+  text-decoration: none;
+}
+
+.notification-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--accent-blue);
+}
+
+.notification-dot.warning {
+  background: var(--accent-yellow);
+}
+
+.notification-dot.danger {
+  background: var(--accent-red);
+}
+
+.notification-dot.info {
+  background: var(--accent-blue);
+}
+
+.notification-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.notification-copy em {
+  color: var(--accent-blue);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+[data-theme="dark"] .notification-button {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .user-name {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .user-role {
+  color: var(--text-secondary);
 }
 
 .theme-choice {
