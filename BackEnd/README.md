@@ -177,13 +177,13 @@ ZENTRIX_RATE_LIMIT_ENABLED=true
 ZENTRIX_RATE_LIMIT_DEFAULT_LIMIT=240
 ZENTRIX_RATE_LIMIT_AUTH_LIMIT=30
 ZENTRIX_RATE_LIMIT_SYNC_LIMIT=120
-ZENTRIX_CORS_ALLOWED_ORIGINS=http://192.168.1.240,http://192.168.1.240:5500
+ZENTRIX_CORS_ALLOWED_ORIGINS=https://pdv.zentrixsystems.com.br
 ZENTRIX_CSP_CONNECT_SRC=
 ```
 
 `ZENTRIX_SYNC_KEY` e obrigatoria. O PDV deve enviar o mesmo valor no header `X-Zentrix-Sync-Key`.
 
-Quando o painel for aberto por IP ou dominio em outro servidor, configure `ZENTRIX_CORS_ALLOWED_ORIGINS` com as origens exatas do frontend. O frontend oficial e servido pelo proprio backend em `http://<ip-do-servidor>:8080/`, e a API fica em `http://<ip-do-servidor>:8080/api`.
+Quando o painel for aberto pelo dominio oficial, frontend e API devem usar a mesma origem: `https://pdv.zentrixsystems.com.br/` e `https://pdv.zentrixsystems.com.br/api`. O frontend usa caminho relativo `/api`, sem dominio fixo no codigo.
 
 Em Ubuntu:
 

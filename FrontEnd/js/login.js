@@ -91,7 +91,7 @@
     }
 
     throw new Error(
-      'Não foi possível conectar ao sistema. Abra pelo http://localhost:8080/ e confira se o backend está iniciado.'
+      'Não foi possível conectar ao sistema. Abra o endereço oficial do Zentrix e confira se o backend está iniciado.'
     );
   }
 
@@ -149,7 +149,7 @@
     if (window.ZentrixApiBase && typeof window.ZentrixApiBase.getFallbackBases === 'function') {
       return window.ZentrixApiBase.getFallbackBases();
     }
-    return ['https://api.zentrixsystems.com.br/api', 'http://localhost:8080/api', 'http://127.0.0.1:8080/api'];
+    return ['/api'];
   }
 
   function rememberApiBase(base) {
@@ -157,7 +157,11 @@
       window.ZentrixApiBase.rememberApiBase(base);
       return;
     }
-    localStorage.setItem('zentrix-api-base', base);
+    try {
+      localStorage.removeItem('zentrix-api-base');
+    } catch (error) {
+      // Mantem o login funcionando quando storage estiver restrito.
+    }
   }
 
   async function fetchWithTimeout(url, options, timeoutMs) {

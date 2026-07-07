@@ -30,32 +30,26 @@ test("api base is compatible with same-origin nginx and local dev", async ({ pag
     fallbacks: window.ZentrixApiBase.getFallbackBases()
   }));
 
-  const devPorts = new Set(["5500", "5501", "5502", "5173", "3000"]);
-  const localHost = result.hostname === "localhost" || result.hostname === "127.0.0.1";
-  const expected = localHost && devPorts.has(result.port)
-    ? `http://${result.hostname}:8080/api`
-    : `${result.origin}/api`;
-
-  expect(result.apiBase).toBe(expected);
-  expect(result.fallbacks).toContain(expected);
+  expect(result.apiBase).toBe("/api");
+  expect(result.fallbacks).toEqual(["/api"]);
 });
 
 test("same-origin app ignores stale stored api base", async ({ page }) => {
-  await page.route("https://gestao.zentrixsystems.com.br/**", async (route) => {
+  await page.route("https://pdv.zentrixsystems.com.br/**", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "text/html",
-      body: `<!doctype html><meta charset="UTF-8"><script>localStorage.setItem("zentrix-api-base","https://api.zentrixsystems.com.br/api");</script><script>${apiBaseScript}</script>`
+      body: `<!doctype html><meta charset="UTF-8"><script>localStorage.setItem("zentrix-api-base","https://old.example/api");</script><script>${apiBaseScript}</script>`
     });
   });
 
-  await page.goto("https://gestao.zentrixsystems.com.br/__api_base_test.html");
+  await page.goto("https://pdv.zentrixsystems.com.br/__api_base_test.html");
 
   const apiBase = await page.evaluate(() => window.ZentrixApiBase.getApiBase());
-  expect(apiBase).toBe("https://gestao.zentrixsystems.com.br/api");
+  expect(apiBase).toBe("/api");
 });
 
-test("split frontend tunnel points to the public backend api", async ({ page }) => {
+test("production domain uses same-origin api path", async ({ page }) => {
   await page.route("https://pdv.zentrixsystems.com.br/**", async (route) => {
     await route.fulfill({
       status: 200,
@@ -71,19 +65,15 @@ test("split frontend tunnel points to the public backend api", async ({ page }) 
     fallbacks: window.ZentrixApiBase.getFallbackBases()
   }));
 
-  expect(result.apiBase).toBe("https://api.zentrixsystems.com.br/api");
-  expect(result.fallbacks[0]).toBe("https://api.zentrixsystems.com.br/api");
+  expect(result.apiBase).toBe("/api");
+  expect(result.fallbacks).toEqual(["/api"]);
 });
 
-test("login falls back from a stale api base without showing fetch failure", async ({ page }) => {
+test("login ignores a stale stored api base without showing fetch failure", async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem("zentrix-api-base", "http://127.0.0.1:9999/api");
+    localStorage.setItem("zentrix-api-base", "https://old.example/api");
   });
   await page.route("**/api/auth/login", async (route) => {
-    if (route.request().url().includes("127.0.0.1:9999")) {
-      await route.abort();
-      return;
-    }
     await route.fulfill({
       status: 401,
       contentType: "application/json",
@@ -156,7 +146,6 @@ test("sync center shows diagnostics and retries a failed outbox item", async ({ 
 async function mockPanelApi(page) {
   await page.addInitScript((value) => {
     sessionStorage.setItem("zentrix-session", JSON.stringify(value));
-    localStorage.setItem("zentrix-api-base", "http://127.0.0.1:8080/api");
   }, session);
 
   await page.route("**/api/auth/me", async (route) => {
@@ -244,7 +233,7 @@ function settingsPayload() {
     tenant: { id: "tenant-e2e", name: "Loja Web" },
     users: 2,
     stores: [{ id: "all", name: "Todas as lojas", isAll: true }, { id: "WEB", name: "Loja Web" }],
-    api: "http://localhost:8080/api",
+    api: "/api",
     sourceId: "PDV-01",
     lastSync: "2026-07-02 18:00"
   };

@@ -27,7 +27,7 @@ public class WebConfig implements WebMvcConfigurer {
         boolean allowNullOrigin = Boolean.parseBoolean(environment.getProperty("zentrix.cors.allow-null-origin", "false"));
         List<String> configuredOrigins = Binder.get(environment)
                 .bind("zentrix.cors.allowed-origins", Bindable.listOf(String.class))
-                .orElse(List.of("http://localhost:5500", "http://127.0.0.1:5500"));
+                .orElse(List.of("https://pdv.zentrixsystems.com.br", "http://localhost:5500", "http://127.0.0.1:5500"));
         List<String> origins = new ArrayList<>(configuredOrigins);
         addCsvValues(origins, environment.getProperty("zentrix.cors.allowed-origins-csv", ""));
         this.allowedOrigins = distinctNonBlank(origins, allowNullOrigin).toArray(String[]::new);

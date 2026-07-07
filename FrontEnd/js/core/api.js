@@ -42,7 +42,7 @@
     if (window.ZentrixApiBase && typeof window.ZentrixApiBase.getApiBase === "function") {
       return window.ZentrixApiBase.getApiBase();
     }
-    return "https://api.zentrixsystems.com.br/api";
+    return "/api";
   }
 
   async function request(path, options, context) {

@@ -40,9 +40,9 @@ chmod +x iniciar-zentrix-web-ubuntu.sh
 ./iniciar-zentrix-web-ubuntu.sh
 ```
 
-Abra pelo IP do servidor, por exemplo:
+Abra pelo dominio de producao:
 
-`http://192.168.1.240:8080/`
+`https://pdv.zentrixsystems.com.br/`
 
 Se o painel for acessado por outro dominio/IP, configure `ZENTRIX_CORS_ALLOWED_ORIGINS` no `.env`.
 
@@ -82,19 +82,16 @@ cd BackEnd
 mvnw.cmd test
 ```
 
-## Frontend em tunnel separado
+## Dominio de producao
 
-Se o frontend for publicado sozinho em um tunnel ou dominio separado do backend, o painel precisa chamar a API publica. Para o dominio `pdv.zentrixsystems.com.br`, o frontend ja aponta automaticamente para:
+O frontend e a API rodam na mesma origem. Em producao:
 
-`https://api.zentrixsystems.com.br/api`
+- painel: `https://pdv.zentrixsystems.com.br/`
+- API: `https://pdv.zentrixsystems.com.br/api/...`
 
-Para outro dominio separado, configure no `<head>` antes de carregar `FrontEnd/js/core/api-base.js`:
+O frontend usa sempre o caminho relativo `/api`, entao tambem funciona em desenvolvimento pelo `http://localhost:8080/` sem alterar codigo.
 
-```html
-<meta name="zentrix-api-base" content="https://api.seu-dominio.com.br/api" />
-```
-
-No backend, inclua o dominio do frontend em `ZENTRIX_CORS_ALLOWED_ORIGINS` para o navegador aceitar login e consultas.
+Se o frontend for servido separado do backend durante diagnostico, inclua a origem exata em `ZENTRIX_CORS_ALLOWED_ORIGINS`. Para uso normal e producao, prefira sempre mesma origem pelo Nginx.
 
 ## Seguranca em producao
 

@@ -64,9 +64,6 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
     private static Set<String> connectSources(Environment environment) {
         Set<String> sources = new LinkedHashSet<>();
         sources.add("'self'");
-        sources.add("http://localhost:8080");
-        sources.add("http://127.0.0.1:8080");
-        sources.add("https://api.zentrixsystems.com.br");
 
         if (environment == null) {
             return sources;

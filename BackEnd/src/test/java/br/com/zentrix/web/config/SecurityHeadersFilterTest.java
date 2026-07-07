@@ -33,8 +33,8 @@ class SecurityHeadersFilterTest {
     @Test
     void includesConfiguredOriginsInConnectSrc() throws Exception {
         MockEnvironment environment = new MockEnvironment()
-                .withProperty("zentrix.cors.allowed-origins-csv", "http://192.168.1.240,http://painel.local:5500")
-                .withProperty("zentrix.security.csp-connect-src", "https://api.zentrix.test");
+                .withProperty("zentrix.cors.allowed-origins-csv", "https://pdv.zentrixsystems.com.br,http://painel.local:5500")
+                .withProperty("zentrix.security.csp-connect-src", "https://extra.zentrix.test");
         SecurityHeadersFilter filter = new SecurityHeadersFilter(environment);
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/dashboard");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -44,8 +44,8 @@ class SecurityHeadersFilterTest {
         filter.doFilter(request, response, chain);
 
         String csp = response.getHeader("Content-Security-Policy");
-        assertTrue(csp.contains("http://192.168.1.240:8080"));
+        assertTrue(csp.contains("https://pdv.zentrixsystems.com.br"));
         assertTrue(csp.contains("http://painel.local:8080"));
-        assertTrue(csp.contains("https://api.zentrix.test"));
+        assertTrue(csp.contains("https://extra.zentrix.test"));
     }
 }
