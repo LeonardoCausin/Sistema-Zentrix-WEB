@@ -109,10 +109,19 @@
   async function errorMessage(response) {
     try {
       const body = await response.json();
-      return body.message || body.error || body.detail || "";
+      return friendlyServerMessage(body.message || body.error || body.detail || "");
     } catch (error) {
       return "";
     }
+  }
+
+  function friendlyServerMessage(message) {
+    const text = String(message || "").trim();
+    if (!text) return "";
+    if (text.toLowerCase().includes("invalid cors request")) {
+      return "Este endereço ainda não foi liberado para acessar o sistema. Peça ao responsável para liberar o domínio no Zentrix Web.";
+    }
+    return text;
   }
 
   function withJson(method, path, data, options) {

@@ -123,16 +123,23 @@
       const contentType = response.headers.get('Content-Type') || '';
       if (contentType.toLowerCase().includes('application/json')) {
         const body = await response.json();
-        return body.message || body.error || body.detail || '';
+        return friendlyServerMessage(body.message || body.error || body.detail || '');
       }
       const text = await response.text();
-      if (text && text.toLowerCase().includes('invalid cors request')) {
-        return 'Este endereço ainda não foi liberado para acessar o sistema. Peça ao responsável para liberar o domínio no Zentrix Web.';
-      }
-      return text && text.length < 180 ? text : '';
+      const friendly = friendlyServerMessage(text);
+      return friendly && friendly.length < 180 ? friendly : '';
     } catch (error) {
       return '';
     }
+  }
+
+  function friendlyServerMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+    if (text.toLowerCase().includes('invalid cors request')) {
+      return 'Este endereço ainda não foi liberado para acessar o sistema. Peça ao responsável para liberar o domínio no Zentrix Web.';
+    }
+    return text;
   }
 
   async function refreshPreview() {

@@ -30,6 +30,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .orElse(List.of(
                         "https://pdv.zentrixsystems.com.br",
                         "https://www.pdv.zentrixsystems.com.br",
+                        "https://*.zentrixsystems.com.br",
                         "http://localhost:*",
                         "http://127.0.0.1:*",
                         "https://*.trycloudflare.com",

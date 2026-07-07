@@ -23,6 +23,7 @@ class WebConfigTest {
 
         assertTrue(Arrays.asList(patterns).contains("https://pdv.zentrixsystems.com.br"));
         assertTrue(Arrays.asList(patterns).contains("https://www.pdv.zentrixsystems.com.br"));
+        assertTrue(Arrays.asList(patterns).contains("https://*.zentrixsystems.com.br"));
         assertTrue(Arrays.asList(patterns).contains("http://localhost:*"));
         assertTrue(Arrays.asList(patterns).contains("https://*.trycloudflare.com"));
     }
