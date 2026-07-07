@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class WebChangeOutboxService {
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
     private final ObjectMapper objectMapper;
+    private boolean requireKnownDeviceScope = true;
 
     public WebChangeOutboxService(
             JdbcTemplate jdbcTemplate,
@@ -54,6 +56,11 @@ public class WebChangeOutboxService {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
         this.objectMapper = objectMapper;
+    }
+
+    @Value("${zentrix.sync.require-known-device-scope:true}")
+    public void setRequireKnownDeviceScope(boolean requireKnownDeviceScope) {
+        this.requireKnownDeviceScope = requireKnownDeviceScope;
     }
 
     public long enqueue(String tenantId, String storeId, String entityType, String entityId, String operation, Map<String, Object> payload) {
@@ -103,6 +110,7 @@ public class WebChangeOutboxService {
         response.put("unsupportedEntityTypes", UNSUPPORTED_ENTITY_TYPES);
         response.put("statusPolicy", statusPolicy());
         response.put("requiredScope", List.of("tenantId", "storeId"));
+        response.put("deviceScopePolicy", "sourceId ou deviceId e obrigatorio quando a loja ja possui device cadastrado.");
         response.put("optionalScope", List.of("sourceId", "deviceId"));
         response.put("payloadShape", Map.of(
                 "table", "Nome da tabela destino em snake_case",
@@ -534,7 +542,7 @@ public class WebChangeOutboxService {
     }
 
     private void validateKnownSyncScope(String tenantId, String storeId, String sourceId, String deviceId) {
-        if ((sourceId == null || sourceId.isBlank()) && (deviceId == null || deviceId.isBlank())) {
+        if (!requireKnownDeviceScope) {
             return;
         }
         try {
@@ -544,6 +552,18 @@ public class WebChangeOutboxService {
                     WHERE tenant_id = ? AND id = ?
                     """, Integer.class, tenantId, storeId);
             if (knownStore == null || knownStore == 0) {
+                return;
+            }
+            if ((sourceId == null || sourceId.isBlank()) && (deviceId == null || deviceId.isBlank())) {
+                Integer knownDevices = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM tenant_devices
+                        WHERE tenant_id = ?
+                          AND store_id = ?
+                        """, Integer.class, tenantId, storeId);
+                if (knownDevices != null && knownDevices > 0) {
+                    throw new IllegalArgumentException("Informe sourceId ou deviceId para sincronizar esta loja");
+                }
                 return;
             }
             Integer matches = jdbcTemplate.queryForObject("""

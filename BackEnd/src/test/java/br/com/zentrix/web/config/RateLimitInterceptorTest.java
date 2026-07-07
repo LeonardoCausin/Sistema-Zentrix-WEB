@@ -27,6 +27,39 @@ class RateLimitInterceptorTest {
         assertEquals(429, blocked.getStatus());
     }
 
+    @Test
+    void ignoresForwardedForByDefault() throws Exception {
+        RateLimitInterceptor interceptor = new RateLimitInterceptor(Clock.fixed(Instant.parse("2026-06-30T12:00:00Z"), ZoneOffset.UTC));
+        interceptor.setAuthLimit(1);
+        interceptor.setAuthWindowSeconds(60);
+
+        MockHttpServletRequest first = request();
+        first.addHeader("X-Forwarded-For", "10.0.0.10");
+        MockHttpServletRequest second = request();
+        second.addHeader("X-Forwarded-For", "10.0.0.11");
+
+        assertTrue(interceptor.preHandle(first, new MockHttpServletResponse(), new Object()));
+        MockHttpServletResponse blocked = new MockHttpServletResponse();
+        assertFalse(interceptor.preHandle(second, blocked, new Object()));
+        assertEquals(429, blocked.getStatus());
+    }
+
+    @Test
+    void canTrustForwardedForWhenBehindProxy() throws Exception {
+        RateLimitInterceptor interceptor = new RateLimitInterceptor(Clock.fixed(Instant.parse("2026-06-30T12:00:00Z"), ZoneOffset.UTC));
+        interceptor.setAuthLimit(1);
+        interceptor.setAuthWindowSeconds(60);
+        interceptor.setTrustProxyHeaders(true);
+
+        MockHttpServletRequest first = request();
+        first.addHeader("X-Forwarded-For", "10.0.0.10");
+        MockHttpServletRequest second = request();
+        second.addHeader("X-Forwarded-For", "10.0.0.11");
+
+        assertTrue(interceptor.preHandle(first, new MockHttpServletResponse(), new Object()));
+        assertTrue(interceptor.preHandle(second, new MockHttpServletResponse(), new Object()));
+    }
+
     private MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/login");
         request.setRemoteAddr("127.0.0.1");

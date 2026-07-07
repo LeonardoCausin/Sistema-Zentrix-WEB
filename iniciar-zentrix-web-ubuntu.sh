@@ -30,6 +30,15 @@ if [[ -z "${ZENTRIX_SYNC_KEY:-}" || "${ZENTRIX_SYNC_KEY:-}" == "troque-por-uma-c
   exit 1
 fi
 
+if [[ "${ZENTRIX_CORS_ALLOW_NULL_ORIGIN:-false}" == "true" ]]; then
+  echo "ZENTRIX_CORS_ALLOW_NULL_ORIGIN=true nao deve ser usado em producao."
+  exit 1
+fi
+
+if [[ -f "./mvnw" ]]; then
+  chmod +x ./mvnw
+fi
+
 if [[ ! -f "$JAR_FILE" ]]; then
   ./mvnw -q -DskipTests package 2>/dev/null || mvn -q -DskipTests package
 fi

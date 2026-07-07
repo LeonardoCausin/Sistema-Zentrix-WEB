@@ -72,6 +72,7 @@
         const response = await fetchWithTimeout(base + '/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify(credentials)
         }, LOGIN_TIMEOUT_MS);
 
@@ -132,7 +133,7 @@
     let lastError = null;
     for (const base of apiBases()) {
       try {
-        const response = await fetchWithTimeout(base + '/health', {}, HEALTH_TIMEOUT_MS);
+        const response = await fetchWithTimeout(base + '/health', { credentials: 'include' }, HEALTH_TIMEOUT_MS);
         if (response.ok) {
           rememberApiBase(base);
           return response;
@@ -177,7 +178,7 @@
       sessionStorage.setItem('zentrix-session', JSON.stringify(session));
       localStorage.removeItem('zentrix-session');
     } catch (error) {
-      localStorage.setItem('zentrix-session', JSON.stringify(session));
+      throw new Error('O navegador bloqueou o armazenamento da sessão. Habilite o armazenamento do site e tente novamente.');
     }
   }
 })();

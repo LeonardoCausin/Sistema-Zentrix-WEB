@@ -2,16 +2,7 @@
 <html lang="pt-BR" data-theme="light">
 <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Zentrix AppGestão | Estoque</title>
 
-  <script>
-    (function () {
-      try {
-        var theme = localStorage.getItem('zentrix-theme');
-        if (theme === 'dark' || theme === 'light') {
-          document.documentElement.dataset.theme = theme;
-        }
-      } catch (error) {}
-    })();
-  </script>
+  <script src="../js/core/theme-init.js?v=20260707-security-hardening"></script>
   <style>
     html[data-theme="dark"], html[data-theme="dark"] body { background: #081323; color: #eef6ff; }
     html[data-theme="light"], html[data-theme="light"] body { background: #f4f7fb; color: #0f172a; }

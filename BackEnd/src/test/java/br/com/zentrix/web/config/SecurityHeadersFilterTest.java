@@ -1,6 +1,7 @@
 package br.com.zentrix.web.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.servlet.FilterChain;
@@ -25,7 +26,8 @@ class SecurityHeadersFilterTest {
         assertEquals("DENY", response.getHeader("X-Frame-Options"));
         assertEquals("no-referrer", response.getHeader("Referrer-Policy"));
         assertEquals("no-store", response.getHeader("Cache-Control"));
-        assertTrue(response.getHeader("Content-Security-Policy").contains("script-src 'self' 'unsafe-inline'"));
+        assertTrue(response.getHeader("Content-Security-Policy").contains("script-src 'self'"));
+        assertFalse(response.getHeader("Content-Security-Policy").contains("script-src 'self' 'unsafe-inline'"));
     }
 
     @Test

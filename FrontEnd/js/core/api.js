@@ -6,13 +6,9 @@
 
   function readSessionRaw() {
     try {
-      return sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+      return sessionStorage.getItem(SESSION_KEY);
     } catch (error) {
-      try {
-        return localStorage.getItem(SESSION_KEY);
-      } catch (storageError) {
-        return null;
-      }
+      return null;
     }
   }
 
@@ -64,7 +60,8 @@
     try {
       response = await fetchWithTimeout(base + path, {
         ...requestOptions,
-        headers
+        headers,
+        credentials: "include"
       }, timeoutMs);
     } catch (error) {
       throw friendlyConnectionError(error);

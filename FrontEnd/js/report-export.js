@@ -64,9 +64,13 @@
         ${sections.map((section) => `<section class="panel"><h2>${esc(section.title, context)}</h2>${reportTableHtml(section.rows, context)}</section>`).join("") || `<section class="panel"><h2>Dados do relatório</h2>${emptyState("Este relatório ainda não tem dados no período escolhido.", context)}</section>`}
         ${diagnostics.length ? `<section class="panel"><h2>Diagnóstico</h2><ul class="diag">${diagnostics.map((item) => `<li>${esc(item, context)}</li>`).join("")}</ul></section>` : ""}
         <p class="footer">Gerado em ${esc(new Date().toLocaleString("pt-BR"), context)}. Use Ctrl+P para salvar como PDF.</p>
-        <button class="no-print" onclick="window.print()">Imprimir ou salvar PDF</button>
+        <button class="no-print" type="button" id="printReportButton">Imprimir ou salvar PDF</button>
       </main></body></html>`);
     printWindow.document.close();
+    const printButton = printWindow.document.getElementById("printReportButton");
+    if (printButton) {
+      printButton.addEventListener("click", () => printWindow.print());
+    }
     printWindow.focus();
     setTimeout(() => printWindow.print(), 350);
   }

@@ -2,6 +2,7 @@ package br.com.zentrix.web.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import br.com.zentrix.web.dto.SyncAckRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,6 +51,14 @@ class WebChangeOutboxServiceTest {
     }
 
     @Test
+    void pullRequiresSourceOrDeviceWhenStoreHasKnownDevice() {
+        jdbcTemplate.knownStoreCount = 1;
+        jdbcTemplate.knownDeviceCount = 1;
+
+        assertThrows(IllegalArgumentException.class, () -> service.pull("tenant-1", "store-1", null, null, 0, 100));
+    }
+
+    @Test
     void nonRetryableAckErrorMovesRowToDeadLetter() {
         jdbcTemplate.ackRows = List.of(Map.of(
                 "id", 7L,
@@ -86,6 +95,8 @@ class WebChangeOutboxServiceTest {
         int deliveredUpdates;
         int deadUpdates;
         int retryUpdates;
+        int knownStoreCount;
+        int knownDeviceCount;
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
@@ -96,6 +107,18 @@ class WebChangeOutboxServiceTest {
                 return pullRows;
             }
             return List.of();
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T queryForObject(String sql, Class<T> requiredType, Object... args) {
+            if (sql.contains("FROM tenant_stores")) {
+                return (T) Integer.valueOf(knownStoreCount);
+            }
+            if (sql.contains("FROM tenant_devices")) {
+                return (T) Integer.valueOf(knownDeviceCount);
+            }
+            return null;
         }
 
         @Override

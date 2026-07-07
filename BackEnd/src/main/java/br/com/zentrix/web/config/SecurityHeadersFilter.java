@@ -56,7 +56,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
                 "frame-ancestors 'none'",
                 "img-src 'self' data: blob:",
                 "style-src 'self' 'unsafe-inline'",
-                "script-src 'self' 'unsafe-inline'",
+                "script-src 'self'",
                 "connect-src " + String.join(" ", connectSources(environment))
         );
     }

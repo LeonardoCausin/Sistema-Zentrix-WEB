@@ -66,21 +66,54 @@ sudo systemctl reload nginx
 
 Com Nginx, o frontend usa a API no mesmo dominio em `/api`, sem depender de porta `8080` publica.
 
+## Testes do backend
+
+O backend agora possui Maven Wrapper dentro de `BackEnd`, entao nao depende de Maven instalado na maquina:
+
+```bash
+cd BackEnd
+./mvnw test
+```
+
+No Windows:
+
+```bat
+cd BackEnd
+mvnw.cmd test
+```
+
 ## Frontend em tunnel separado
 
 Se o frontend for publicado sozinho em um tunnel ou dominio separado do backend, o painel precisa chamar a API publica. Para o dominio `pdv.zentrixsystems.com.br`, o frontend ja aponta automaticamente para:
 
 `https://api.zentrixsystems.com.br/api`
 
-Para outro dominio separado, configure antes de carregar `FrontEnd/js/core/api-base.js`:
+Para outro dominio separado, configure no `<head>` antes de carregar `FrontEnd/js/core/api-base.js`:
 
 ```html
-<script>
-  window.ZENTRIX_API_BASE = "https://api.seu-dominio.com.br/api";
-</script>
+<meta name="zentrix-api-base" content="https://api.seu-dominio.com.br/api" />
 ```
 
 No backend, inclua o dominio do frontend em `ZENTRIX_CORS_ALLOWED_ORIGINS` para o navegador aceitar login e consultas.
+
+## Seguranca em producao
+
+Para publicar em servidor Ubuntu:
+
+- mantenha a porta `8080` fechada para a internet; exponha somente Nginx nas portas `80/443`;
+- use HTTPS no Nginx e renove certificado automaticamente;
+- mantenha `ZENTRIX_CORS_ALLOW_NULL_ORIGIN=false`;
+- configure `ZENTRIX_CORS_ALLOWED_ORIGINS` somente com dominios reais do painel;
+- se o backend estiver somente atras do Nginx, use `ZENTRIX_RATE_LIMIT_TRUST_PROXY_HEADERS=true`;
+- mantenha `ZENTRIX_SYNC_REQUIRE_KNOWN_DEVICE_SCOPE=true`;
+- em HTTPS, use `ZENTRIX_AUTH_COOKIE_SECURE=true`;
+- se frontend e API ficarem em dominios diferentes e ambos HTTPS, use `ZENTRIX_AUTH_COOKIE_SAME_SITE=None`;
+- use valores longos e diferentes para `ZENTRIX_SYNC_KEY` e `ZENTRIX_SETUP_KEY`;
+- nao reutilize senha de banco, senha de admin e chaves de sync/setup.
+
+O login continua retornando token para compatibilidade, mas o backend tambem grava um cookie HttpOnly. Em publicacao Nginx no mesmo dominio, as chamadas autenticadas usam esse cookie automaticamente.
+
+O sync Web -> PDV agora exige `sourceId` ou `deviceId` quando a loja ja possui device cadastrado. Isso impede que uma chave global de sync seja usada sozinha para puxar dados de outra loja.
 
 ## Backups e restauracao
 

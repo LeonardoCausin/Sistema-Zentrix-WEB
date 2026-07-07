@@ -21,6 +21,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private long authWindowSeconds = 300;
     private int syncLimit = 120;
     private long syncWindowSeconds = 60;
+    private boolean trustProxyHeaders = false;
 
     public RateLimitInterceptor() {
         this(Clock.systemUTC());
@@ -65,6 +66,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         this.syncWindowSeconds = Math.max(1, syncWindowSeconds);
     }
 
+    @Value("${zentrix.rate-limit.trust-proxy-headers:false}")
+    public void setTrustProxyHeaders(boolean trustProxyHeaders) {
+        this.trustProxyHeaders = trustProxyHeaders;
+    }
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         if (!enabled || "OPTIONS".equalsIgnoreCase(request.getMethod())) {
@@ -105,13 +111,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     private String clientId(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
+        if (trustProxyHeaders) {
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                return forwarded.split(",")[0].trim();
+            }
+            String realIp = request.getHeader("X-Real-IP");
+            if (realIp != null && !realIp.isBlank()) {
+                return realIp.trim();
+            }
         }
         return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }

@@ -157,6 +157,7 @@
     try {
       response = await fetchWithTimeout(apiBase + path, {
         ...fetchOptions,
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Authorization: storedSession ? "Bearer " + storedSession.token : "",
@@ -279,9 +280,9 @@
 
   function readSessionRaw() {
     try {
-      return sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+      return sessionStorage.getItem(SESSION_KEY);
     } catch (error) {
-      return localStorage.getItem(SESSION_KEY);
+      return null;
     }
   }
 
@@ -582,9 +583,7 @@
 
     if (logoutButton) {
       event.preventDefault();
-      clearApiCache();
-      clearStoredSession();
-      window.location.href = location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html";
+      logoutAndRedirect();
       return;
     }
 
@@ -607,6 +606,22 @@
     menu.hidden = !willOpen;
     if (trigger) {
       trigger.setAttribute("aria-expanded", String(willOpen));
+    }
+  }
+
+  async function logoutAndRedirect() {
+    try {
+      await window.zentrixApi("/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+        timeoutMs: 3000
+      });
+    } catch (error) {
+      // Mesmo offline, a saida local deve acontecer.
+    } finally {
+      clearApiCache();
+      clearStoredSession();
+      window.location.href = location.pathname.includes("/FrontEnd/pages/") ? "../../index.html" : "../index.html";
     }
   }
 
@@ -2405,12 +2420,24 @@
     ];
     nav.innerHTML = groups.map(([group, links]) => `
       <div class="nav-section">${esc(group)}</div>
-      ${links.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" href="${href}"><span class="nav-icon"><img src="../assets/Icons/${escAttr(icon)}" data-fallback="../assets/Icons/${escAttr(iconFallbackFile(icon))}" alt="" loading="eager" decoding="async" onerror="this.onerror=null;this.src=this.dataset.fallback;" /></span><span>${esc(label)}</span></a>`).join("")}
+      ${links.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" href="${href}"><span class="nav-icon"><img src="../assets/Icons/${escAttr(icon)}" data-fallback="../assets/Icons/${escAttr(iconFallbackFile(icon))}" alt="" loading="eager" decoding="async" /></span><span>${esc(label)}</span></a>`).join("")}
     `).join("");
+    wireNavigationIconFallbacks(nav);
   }
 
   function iconFallbackFile(name) {
     return String(name || "").replace(/\.png$/i, "-removebg-preview.png");
+  }
+
+  function wireNavigationIconFallbacks(nav) {
+    nav.querySelectorAll("img[data-fallback]").forEach((image) => {
+      image.addEventListener("error", () => {
+        const fallback = image.dataset.fallback;
+        if (fallback && image.src !== fallback) {
+          image.src = fallback;
+        }
+      }, { once: true });
+    });
   }
 
   function rebuildNavigation() {

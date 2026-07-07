@@ -1431,8 +1431,8 @@ public class BusinessOperationsService {
     private String resolvedPassword(EmployeeRequest request, boolean required) {
         String plain = request.password();
         if (plain != null && !plain.isBlank()) {
-            if (plain.trim().length() < 6) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Senha deve ter ao menos 6 caracteres.");
+            if (plain.trim().length() < 10) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Senha deve ter ao menos 10 caracteres.");
             }
             return BCrypt.hashpw(plain, BCrypt.gensalt());
         }

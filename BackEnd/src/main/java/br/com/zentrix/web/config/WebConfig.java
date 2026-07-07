@@ -24,12 +24,13 @@ public class WebConfig implements WebMvcConfigurer {
     public WebConfig(ApiAuthInterceptor apiAuthInterceptor, RateLimitInterceptor rateLimitInterceptor, Environment environment) {
         this.apiAuthInterceptor = apiAuthInterceptor;
         this.rateLimitInterceptor = rateLimitInterceptor;
+        boolean allowNullOrigin = Boolean.parseBoolean(environment.getProperty("zentrix.cors.allow-null-origin", "false"));
         List<String> configuredOrigins = Binder.get(environment)
                 .bind("zentrix.cors.allowed-origins", Bindable.listOf(String.class))
-                .orElse(List.of("http://localhost:5500", "http://127.0.0.1:5500", "null"));
+                .orElse(List.of("http://localhost:5500", "http://127.0.0.1:5500"));
         List<String> origins = new ArrayList<>(configuredOrigins);
         addCsvValues(origins, environment.getProperty("zentrix.cors.allowed-origins-csv", ""));
-        this.allowedOrigins = distinctNonBlank(origins).toArray(String[]::new);
+        this.allowedOrigins = distinctNonBlank(origins, allowNullOrigin).toArray(String[]::new);
     }
 
     @Override
@@ -38,7 +39,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins(allowedOrigins)
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("Content-Type", "Authorization", "X-Zentrix-Sync-Key", "X-Request-Id")
-                .exposedHeaders("Authorization", "X-Request-Id");
+                .exposedHeaders("Authorization", "X-Request-Id")
+                .allowCredentials(true);
     }
 
     @Override
@@ -100,11 +102,15 @@ public class WebConfig implements WebMvcConfigurer {
         }
     }
 
-    private static Set<String> distinctNonBlank(List<String> values) {
+    private static Set<String> distinctNonBlank(List<String> values, boolean allowNullOrigin) {
         Set<String> result = new LinkedHashSet<>();
         for (String value : values) {
             if (value != null && !value.isBlank()) {
-                result.add(value.trim());
+                String origin = value.trim();
+                if ("null".equals(origin) && !allowNullOrigin) {
+                    continue;
+                }
+                result.add(origin);
             }
         }
         return result;

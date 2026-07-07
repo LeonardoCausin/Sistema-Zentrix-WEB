@@ -1,7 +1,8 @@
 package br.com.zentrix.web.config;
 
-import br.com.zentrix.web.service.AuthTokenService;
 import br.com.zentrix.web.service.AuthContext;
+import br.com.zentrix.web.service.AuthCookieService;
+import br.com.zentrix.web.service.AuthTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -13,9 +14,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class ApiAuthInterceptor implements HandlerInterceptor {
 
     private final AuthTokenService authTokenService;
+    private final AuthCookieService authCookieService;
 
-    public ApiAuthInterceptor(AuthTokenService authTokenService) {
+    public ApiAuthInterceptor(AuthTokenService authTokenService, AuthCookieService authCookieService) {
         this.authTokenService = authTokenService;
+        this.authCookieService = authCookieService;
     }
 
     @Override
@@ -24,13 +27,12 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
+        String token = tokenFromRequest(request);
+        if (token == null || token.isBlank()) {
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso ausente");
             return false;
         }
 
-        String token = authorization.substring("Bearer ".length()).trim();
         var session = authTokenService.validate(token);
         if (session.isEmpty()) {
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token de acesso inválido ou expirado");
@@ -43,5 +45,13 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         AuthContext.clear();
+    }
+
+    private String tokenFromRequest(HttpServletRequest request) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            return authorization.substring("Bearer ".length()).trim();
+        }
+        return authCookieService.readToken(request);
     }
 }
