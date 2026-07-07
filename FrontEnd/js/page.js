@@ -224,6 +224,9 @@
       // Continua com inferencia pela URL atual.
     }
     if (location && location.hostname && /^https?:$/.test(location.protocol)) {
+      if (location.hostname === "pdv.zentrixsystems.com.br" || location.hostname === "www.pdv.zentrixsystems.com.br") {
+        return "https://api.zentrixsystems.com.br/api";
+      }
       if ((location.hostname === "localhost" || location.hostname === "127.0.0.1") && ["5500", "5501", "5502", "5173", "3000"].includes(location.port || "")) {
         return (location.protocol === "https:" ? "https:" : "http:") + "//" + location.hostname + ":8080/api";
       }

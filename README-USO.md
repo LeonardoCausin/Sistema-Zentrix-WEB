@@ -66,6 +66,22 @@ sudo systemctl reload nginx
 
 Com Nginx, o frontend usa a API no mesmo dominio em `/api`, sem depender de porta `8080` publica.
 
+## Frontend em tunnel separado
+
+Se o frontend for publicado sozinho em um tunnel ou dominio separado do backend, o painel precisa chamar a API publica. Para o dominio `pdv.zentrixsystems.com.br`, o frontend ja aponta automaticamente para:
+
+`https://api.zentrixsystems.com.br/api`
+
+Para outro dominio separado, configure antes de carregar `FrontEnd/js/core/api-base.js`:
+
+```html
+<script>
+  window.ZENTRIX_API_BASE = "https://api.seu-dominio.com.br/api";
+</script>
+```
+
+No backend, inclua o dominio do frontend em `ZENTRIX_CORS_ALLOWED_ORIGINS` para o navegador aceitar login e consultas.
+
 ## Backups e restauracao
 
 A restauracao agora exige preview e frase de confirmacao. Antes de qualquer tentativa destrutiva, o backend registra um snapshot de seguranca. Como o backup fisico ainda nao esta implementado, a restauracao real fica bloqueada com mensagem clara em vez de apagar dados sem arquivo validado.

@@ -5,6 +5,10 @@
   const PUBLIC_API_BASE = "https://api.zentrixsystems.com.br/api";
   const LOCAL_FALLBACK = "http://localhost:8080/api";
   const DEV_FRONTEND_PORTS = new Set(["5500", "5501", "5502", "5173", "3000"]);
+  const SPLIT_FRONTEND_HOSTS = Object.freeze({
+    "pdv.zentrixsystems.com.br": PUBLIC_API_BASE,
+    "www.pdv.zentrixsystems.com.br": PUBLIC_API_BASE
+  });
 
   function normalizeApiBase(value) {
     return String(value || "").trim().replace(/\/+$/, "");
@@ -22,6 +26,24 @@
     return location && isLocalHost(location.hostname) && DEV_FRONTEND_PORTS.has(location.port || "");
   }
 
+  function configuredApiBase() {
+    const direct = normalizeApiBase(window.ZENTRIX_API_BASE);
+    if (direct) {
+      return direct;
+    }
+    const runtime = window.ZENTRIX_RUNTIME_CONFIG || {};
+    const runtimeBase = normalizeApiBase(runtime.apiBase);
+    if (runtimeBase) {
+      return runtimeBase;
+    }
+    try {
+      const meta = document.querySelector('meta[name="zentrix-api-base"]');
+      return normalizeApiBase(meta && meta.getAttribute("content"));
+    } catch (error) {
+      return "";
+    }
+  }
+
   function readStoredApiBase() {
     try {
       return normalizeApiBase(localStorage.getItem(STORAGE_KEY));
@@ -34,6 +56,10 @@
     if (!location || !location.hostname || !/^https?:$/.test(location.protocol)) {
       return PUBLIC_API_BASE;
     }
+    const splitHostBase = SPLIT_FRONTEND_HOSTS[String(location.hostname || "").toLowerCase()];
+    if (splitHostBase) {
+      return splitHostBase;
+    }
     if (isDevFrontendLocation()) {
       return (location.protocol === "https:" ? "https:" : "http:") + "//" + location.hostname + ":8080/api";
     }
@@ -41,7 +67,7 @@
   }
 
   function getApiBase() {
-    const configured = normalizeApiBase(window.ZENTRIX_API_BASE);
+    const configured = configuredApiBase();
     if (configured) {
       return configured;
     }
@@ -60,8 +86,9 @@
     const stored = readStoredApiBase();
     return Array.from(new Set([
       getApiBase(),
+      configuredApiBase(),
       inferApiBaseFromLocation(),
-      isDevFrontendLocation() ? "" : stored,
+      isDevFrontendLocation() ? stored : "",
       PUBLIC_API_BASE,
       LOCAL_FALLBACK,
       "http://127.0.0.1:8080/api"

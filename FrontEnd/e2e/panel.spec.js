@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const apiBaseScript = readFileSync(join(process.cwd(), "js", "core", "api-base.js"), "utf8");
 
 const session = {
   token: "e2e-token",
@@ -37,14 +41,38 @@ test("api base is compatible with same-origin nginx and local dev", async ({ pag
 });
 
 test("same-origin app ignores stale stored api base", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("zentrix-api-base", "https://api.zentrixsystems.com.br/api");
+  await page.route("https://gestao.zentrixsystems.com.br/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: `<!doctype html><meta charset="UTF-8"><script>localStorage.setItem("zentrix-api-base","https://api.zentrixsystems.com.br/api");</script><script>${apiBaseScript}</script>`
+    });
   });
 
-  await page.goto("/");
+  await page.goto("https://gestao.zentrixsystems.com.br/__api_base_test.html");
 
   const apiBase = await page.evaluate(() => window.ZentrixApiBase.getApiBase());
-  expect(apiBase).toBe(`${new URL(page.url()).origin}/api`);
+  expect(apiBase).toBe("https://gestao.zentrixsystems.com.br/api");
+});
+
+test("split frontend tunnel points to the public backend api", async ({ page }) => {
+  await page.route("https://pdv.zentrixsystems.com.br/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: `<!doctype html><meta charset="UTF-8"><script>${apiBaseScript}</script>`
+    });
+  });
+
+  await page.goto("https://pdv.zentrixsystems.com.br/__api_base_test.html");
+
+  const result = await page.evaluate(() => ({
+    apiBase: window.ZentrixApiBase.getApiBase(),
+    fallbacks: window.ZentrixApiBase.getFallbackBases()
+  }));
+
+  expect(result.apiBase).toBe("https://api.zentrixsystems.com.br/api");
+  expect(result.fallbacks[0]).toBe("https://api.zentrixsystems.com.br/api");
 });
 
 test("login falls back from a stale api base without showing fetch failure", async ({ page }) => {
