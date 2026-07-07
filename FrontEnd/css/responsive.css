@@ -156,6 +156,11 @@
     padding-right: 8px;
   }
 
+  .user-menu-wrap {
+    min-width: 0;
+    padding: 0 8px 0 10px;
+  }
+
   .notification-button {
     width: 46px;
   }

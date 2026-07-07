@@ -21,7 +21,8 @@
 
 .notification-button {
   position: relative;
-  width: 66px;
+  flex: 0 0 78px;
+  width: 78px;
   height: 52px;
   border: 0;
   border-radius: 0;
@@ -76,13 +77,18 @@
 
 .topbar-icon-img {
   display: block;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
 .notification-img:not([hidden]) + .notification-icon {
   display: none;
+}
+
+.notification-img {
+  opacity: 0.78;
+  filter: brightness(0) saturate(100%) invert(43%) sepia(10%) saturate(784%) hue-rotate(194deg) brightness(91%) contrast(85%);
 }
 
 .notification-count {
@@ -115,7 +121,7 @@
   border-left: 1px solid color-mix(in srgb, var(--border-strong), transparent 18%);
   border-right: 1px solid color-mix(in srgb, var(--border-strong), transparent 18%);
   background: color-mix(in srgb, var(--bg-elevated), transparent 5%);
-  padding: 0 10px 0 12px;
+  padding: 0 14px;
 }
 
 .user-menu-wrap {
@@ -123,16 +129,18 @@
   align-items: center;
   align-self: stretch;
   background: color-mix(in srgb, var(--bg-elevated), transparent 5%);
-  padding: 0 14px 0 18px;
+  min-width: 282px;
+  padding: 0 18px;
 }
 
 .user-card {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
+  justify-content: flex-end;
+  gap: 12px;
   min-height: 52px;
-  max-width: 330px;
+  width: 100%;
+  max-width: 300px;
   border: 0;
   border-radius: 0;
   color: var(--text-primary);
@@ -157,10 +165,7 @@
   overflow: hidden;
   border-radius: 999px;
   color: #ffffff;
-  background:
-    radial-gradient(circle at 50% 32%, rgba(255, 255, 255, 0.9) 0 12%, transparent 13%),
-    radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.95) 0 20%, transparent 21%),
-    linear-gradient(135deg, #5238ff, #3517e8);
+  background: linear-gradient(135deg, #5238ff, #3517e8);
   box-shadow: 0 12px 28px rgba(50, 22, 223, 0.28);
   font-size: 14px;
   font-weight: 900;
@@ -183,8 +188,9 @@
 
 .user-info {
   display: grid;
+  flex: 0 1 178px;
   min-width: 0;
-  text-align: center;
+  text-align: right;
   line-height: 1.15;
 }
 
@@ -309,6 +315,11 @@
 
 [data-theme="dark"] .notification-button {
   color: var(--text-secondary);
+}
+
+[data-theme="dark"] .notification-img {
+  opacity: 0.92;
+  filter: brightness(0) invert(1);
 }
 
 [data-theme="dark"] .notification-wrap,
