@@ -36,6 +36,17 @@ test("api base is compatible with same-origin nginx and local dev", async ({ pag
   expect(result.fallbacks).toContain(expected);
 });
 
+test("same-origin app ignores stale stored api base", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("zentrix-api-base", "https://api.zentrixsystems.com.br/api");
+  });
+
+  await page.goto("/");
+
+  const apiBase = await page.evaluate(() => window.ZentrixApiBase.getApiBase());
+  expect(apiBase).toBe(`${new URL(page.url()).origin}/api`);
+});
+
 test("login falls back from a stale api base without showing fetch failure", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("zentrix-api-base", "http://127.0.0.1:9999/api");
