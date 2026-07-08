@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-chart-fit";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260708-chart-axis-safe";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -2230,7 +2230,7 @@
 
   function chartYAxisPadding(labels) {
     const longest = labels.reduce((maxLength, label) => Math.max(maxLength, String(label || "").length), 0);
-    return Math.min(150, Math.max(92, Math.ceil(longest * 8.5) + 30));
+    return Math.min(190, Math.max(120, Math.ceil(longest * 9.5) + 44));
   }
 
   function manyChartPoints(length) {
