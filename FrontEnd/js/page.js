@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-settings-owner";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-modern-charts";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -2122,16 +2122,106 @@
   }
 
   function barChartHtml(rows) {
-    const values = rows.map((row) => Number(row.value) || 0);
-    const max = Math.max(0, ...values);
-    if (!rows.length) return emptyState("Ainda não há dados para o gráfico.");
-    return `<div class="bar-chart management-chart">
-      ${rows.map((row) => {
-        const value = Number(row.value) || 0;
-        const height = max <= 0 ? 0 : Math.max(8, Math.round((value / max) * 100));
-        return `<div class="bar-column"><span style="height: ${height}%"><em>${esc(row.display || "")}</em></span><small>${esc(row.label)}</small></div>`;
-      }).join("")}
+    if (!Array.isArray(rows) || !rows.length) return emptyState("Ainda não há dados para o gráfico.");
+    const points = compactChartRows(rows);
+    const values = points.map((row) => Number(row.value) || 0);
+    const max = Math.max(1, ...values);
+    const min = Math.min(0, ...values);
+    const width = 760;
+    const height = 260;
+    const pad = { top: 18, right: 28, bottom: 46, left: 58 };
+    const plotWidth = width - pad.left - pad.right;
+    const plotHeight = height - pad.top - pad.bottom;
+    const range = Math.max(1, max - min);
+    const coords = points.map((row, index) => {
+      const x = pad.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+      const y = pad.top + plotHeight - (((Number(row.value) || 0) - min) / range) * plotHeight;
+      return { ...row, x, y };
+    });
+    const linePath = coords.map((point, index) => `${index ? "L" : "M"} ${round(point.x)} ${round(point.y)}`).join(" ");
+    const areaPath = `${linePath} L ${round(coords[coords.length - 1].x)} ${pad.top + plotHeight} L ${round(coords[0].x)} ${pad.top + plotHeight} Z`;
+    const ticks = chartTicks(min, max);
+    const labels = chartLabelIndexes(points.length);
+    const total = values.reduce((sum, value) => sum + value, 0);
+    const average = total / values.length;
+    return `<div class="modern-chart" role="img" aria-label="Gráfico de evolução do período">
+      <div class="chart-summary">
+        <span>Total no período</span>
+        <strong>${esc(formatCurrency(total))}</strong>
+        <em>Média ${esc(formatCurrency(average))}</em>
+      </div>
+      <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="chartAreaGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="currentColor" stop-opacity="0.28" />
+            <stop offset="100%" stop-color="currentColor" stop-opacity="0.02" />
+          </linearGradient>
+        </defs>
+        ${ticks.map((tick) => {
+          const y = pad.top + plotHeight - ((tick - min) / range) * plotHeight;
+          return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${pad.left - 10}" y="${round(y + 4)}">${esc(compactMoney(tick))}</text></g>`;
+        }).join("")}
+        <path class="chart-area" d="${areaPath}"></path>
+        <path class="chart-line" d="${linePath}"></path>
+        ${coords.map((point, index) => `<circle class="chart-point ${labels.includes(index) ? "is-labeled" : ""}" cx="${round(point.x)}" cy="${round(point.y)}" r="${labels.includes(index) ? 4 : 2.5}"><title>${esc(point.label)}: ${esc(point.display || formatCurrency(point.value || 0))}</title></circle>`).join("")}
+        ${labels.map((index) => {
+          const point = coords[index];
+          if (!point) return "";
+          return `<text class="chart-x-label" x="${round(point.x)}" y="${height - 14}">${esc(point.label)}</text>`;
+        }).join("")}
+      </svg>
+      <div class="chart-footnote">${esc(rows.length > points.length ? `Mostrando tendência resumida de ${rows.length} registros.` : "Mostrando todos os pontos do período.")}</div>
     </div>`;
+  }
+
+  function compactChartRows(rows) {
+    const normalized = rows.map((row) => ({
+      label: String(row.label || ""),
+      value: Number(row.value) || 0,
+      display: row.display || formatCurrency(Number(row.value) || 0)
+    }));
+    const maxPoints = 18;
+    if (normalized.length <= maxPoints) return normalized;
+    const bucketSize = Math.ceil(normalized.length / maxPoints);
+    const buckets = [];
+    for (let index = 0; index < normalized.length; index += bucketSize) {
+      const chunk = normalized.slice(index, index + bucketSize);
+      const value = chunk.reduce((sum, row) => sum + row.value, 0);
+      const first = chunk[0];
+      const last = chunk[chunk.length - 1];
+      buckets.push({
+        label: first.label === last.label ? first.label : `${first.label}-${last.label}`,
+        value,
+        display: formatCurrency(value)
+      });
+    }
+    return buckets;
+  }
+
+  function chartTicks(min, max) {
+    const top = Math.max(1, max);
+    return [top, top * 0.66, top * 0.33, Math.min(0, min)];
+  }
+
+  function chartLabelIndexes(length) {
+    if (length <= 1) return [0];
+    const count = Math.min(6, length);
+    const indexes = new Set();
+    for (let index = 0; index < count; index += 1) {
+      indexes.add(Math.round((index / (count - 1)) * (length - 1)));
+    }
+    return Array.from(indexes).sort((a, b) => a - b);
+  }
+
+  function compactMoney(value) {
+    const number = Number(value) || 0;
+    if (Math.abs(number) >= 1000000) return "R$ " + quantityLabel(number / 1000000) + " mi";
+    if (Math.abs(number) >= 1000) return "R$ " + quantityLabel(number / 1000) + " mil";
+    return formatCurrency(number).replace(",00", "");
+  }
+
+  function round(value) {
+    return Math.round(value * 10) / 10;
   }
 
   function rankingHtml(rows) {

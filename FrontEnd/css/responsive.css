@@ -211,14 +211,12 @@
     max-width: 12ch;
   }
 
-  .bar-chart {
-    gap: 7px;
-    height: 210px;
+  .line-chart {
+    height: 220px;
   }
 
-  .bar-column span {
-    font-size: 0;
-    padding: 0;
+  .chart-summary strong {
+    font-size: 17px;
   }
 
   .list-item,
