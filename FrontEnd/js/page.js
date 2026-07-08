@@ -2129,7 +2129,9 @@
     const min = Math.min(0, ...values);
     const width = 760;
     const height = 260;
-    const pad = { top: 22, right: 52, bottom: 54, left: 72 };
+    const ticks = chartTicks(min, max);
+    const yAxisLabels = ticks.map((tick) => compactMoney(tick));
+    const pad = { top: 22, right: 52, bottom: 54, left: chartYAxisPadding(yAxisLabels) };
     const plotWidth = width - pad.left - pad.right;
     const plotHeight = height - pad.top - pad.bottom;
     const range = Math.max(1, max - min);
@@ -2142,7 +2144,6 @@
     });
     const linePath = coords.map((point, index) => `${index ? "L" : "M"} ${round(point.x)} ${round(point.y)}`).join(" ");
     const areaPath = `${linePath} L ${round(coords[coords.length - 1].x)} ${pad.top + plotHeight} L ${round(coords[0].x)} ${pad.top + plotHeight} Z`;
-    const ticks = chartTicks(min, max);
     const labels = chartLabelIndexes(points.length);
     const total = values.reduce((sum, value) => sum + value, 0);
     const average = total / values.length;
@@ -2162,9 +2163,9 @@
             <rect x="${pad.left - 8}" y="${pad.top - 10}" width="${plotWidth + 16}" height="${plotHeight + 18}" rx="6"></rect>
           </clipPath>
         </defs>
-        ${ticks.map((tick) => {
+        ${ticks.map((tick, index) => {
           const y = pad.top + plotHeight - ((tick - min) / range) * plotHeight;
-          return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${pad.left - 10}" y="${round(y + 4)}">${esc(compactMoney(tick))}</text></g>`;
+          return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${pad.left - 14}" y="${round(y + 4)}">${esc(yAxisLabels[index])}</text></g>`;
         }).join("")}
         <g clip-path="url(#${clipId})">
           <path class="chart-area" style="fill:url(#${gradientId})" d="${areaPath}"></path>
@@ -2225,6 +2226,11 @@
     if (!text) return "";
     if (text.includes("-")) return text.split("-")[0].trim();
     return text.length > 8 ? text.slice(0, 8) : text;
+  }
+
+  function chartYAxisPadding(labels) {
+    const longest = labels.reduce((maxLength, label) => Math.max(maxLength, String(label || "").length), 0);
+    return Math.min(150, Math.max(92, Math.ceil(longest * 8.5) + 30));
   }
 
   function manyChartPoints(length) {
