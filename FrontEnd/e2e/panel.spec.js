@@ -224,6 +224,48 @@ test("backup flow requests a real manual backup", async ({ page }) => {
   expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/backups/manual"))).toBeTruthy();
 });
 
+test("backup restore requires staging before transactional application", async ({ page }) => {
+  const calls = [];
+  await mockPanelApi(page, { calls });
+  await page.route("**/api/backups/7/restore/preview", (route) => route.fulfill({ json: {
+    id: 7,
+    totalRows: 3,
+    createdAt: "2026-07-08 08:00:00",
+    requiredConfirmation: "RESTAURAR BACKUP 7",
+    restoreAvailable: true,
+    warnings: []
+  } }));
+  await page.route("**/api/backups/7/restore", async (route) => {
+    calls.push({ method: route.request().method(), url: route.request().url() });
+    await route.fulfill({ json: {
+      status: "RESTORE_STAGED",
+      stagingId: 31,
+      totalRows: 3,
+      tables: { products: 2, clients: 1 },
+      warnings: []
+    } });
+  });
+  await page.route("**/api/backups/restore-staging/31/apply", async (route) => {
+    calls.push({ method: route.request().method(), url: route.request().url() });
+    await route.fulfill({ json: {
+      status: "RESTORE_APPLIED",
+      restoreExecuted: true,
+      message: "Backup restaurado com sucesso."
+    } });
+  });
+  page.on("dialog", async (dialog) => {
+    const answer = dialog.message().includes("APLICAR RESTAURACAO")
+      ? "APLICAR RESTAURACAO 31"
+      : "RESTAURAR BACKUP 7";
+    await dialog.accept(answer);
+  });
+
+  await page.goto("/FrontEnd/pages/backups.html");
+  await page.locator('[data-action="prepare-backup-restore"]').click();
+  await expect.poll(() => calls.filter((call) => call.method === "POST").length).toBe(2);
+  expect(calls.some((call) => call.url.includes("/restore-staging/31/apply"))).toBeTruthy();
+});
+
 async function mockPanelApi(page, options = {}) {
   const calls = options.calls || [];
   await page.addInitScript((value) => {

@@ -114,6 +114,14 @@ public class AppGestaoController {
         return operationsService.restoreBackup(AuthContext.tenantId(), id, request);
     }
 
+    @PostMapping("/backups/restore-staging/{stagingId}/apply")
+    public Map<String, Object> applyRestore(
+            @PathVariable long stagingId,
+            @RequestBody(required = false) Map<String, Object> request
+    ) {
+        return operationsService.applyStagedRestore(AuthContext.tenantId(), stagingId, request);
+    }
+
     @GetMapping("/backups/{id}/restore/preview")
     public Map<String, Object> restorePreview(@PathVariable long id) {
         return operationsService.restoreBackupPreview(AuthContext.tenantId(), id);

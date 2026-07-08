@@ -537,6 +537,12 @@
       button.addEventListener("click", () => downloadRealBackup(button.dataset.id));
     });
 
+    viewHost.querySelectorAll('[data-action="prepare-backup-restore"]').forEach((button) => {
+      if (button.dataset.ready === "true") return;
+      button.dataset.ready = "true";
+      button.addEventListener("click", () => runButtonTask(button, () => prepareBackupRestore(button.dataset.id), "Validando..."));
+    });
+
     viewHost.querySelectorAll('[data-action="sync-retry"], [data-action="sync-dead-letter"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
@@ -1250,6 +1256,56 @@
       return;
     }
     window.location.href = currentApiBase() + "/backups/" + encodeURIComponent(id) + "/download";
+  }
+
+  async function prepareBackupRestore(id) {
+    const preview = await window.zentrixApi("/backups/" + encodeURIComponent(id) + "/restore/preview", {
+      cache: "no-store"
+    });
+    if (!preview.restoreAvailable) {
+      throw new Error((preview.warnings || []).join(" ") || "Este backup não está disponível para restauração.");
+    }
+    const impact = Number(preview.totalRows || 0).toLocaleString("pt-BR");
+    const confirmation = window.prompt(
+      "Esta operação substituirá os dados da loja pelo backup de " + (preview.createdAt || "data informada")
+      + " (" + impact + " registros). Para preparar, digite exatamente:\n" + preview.requiredConfirmation
+    );
+    if (confirmation !== preview.requiredConfirmation) {
+      if (confirmation !== null) renderToast("A confirmação não confere. Nenhum dado foi alterado.", "warning");
+      return;
+    }
+    const staged = await window.zentrixApi("/backups/" + encodeURIComponent(id) + "/restore", {
+      method: "POST",
+      cache: "no-store",
+      body: JSON.stringify({ confirmation })
+    });
+    if (staged.status !== "RESTORE_STAGED") {
+      throw new Error(staged.message || "A restauração foi bloqueada durante a validação.");
+    }
+    const tables = Object.entries(staged.tables || {})
+      .filter((entry) => Number(entry[1]) > 0)
+      .map((entry) => entry[0] + ": " + entry[1])
+      .join("\n");
+    const applyText = "APLICAR RESTAURACAO " + staged.stagingId;
+    const applyConfirmation = window.prompt(
+      "Validação concluída. Serão restaurados " + staged.totalRows + " registros"
+      + (tables ? ":\n" + tables : "")
+      + "\n\nSe ocorrer qualquer erro, tudo será desfeito automaticamente."
+      + "\nPara aplicar, digite exatamente:\n" + applyText
+    );
+    if (applyConfirmation !== applyText) {
+      renderToast("Backup preparado, mas ainda não aplicado. Seus dados atuais continuam iguais.", "warning");
+      return;
+    }
+    const result = await window.zentrixApi("/backups/restore-staging/" + encodeURIComponent(staged.stagingId) + "/apply", {
+      method: "POST",
+      cache: "no-store",
+      body: JSON.stringify({ confirmation: applyConfirmation }),
+      timeoutMs: 60000
+    });
+    clearApiCache();
+    renderToast(result.message || "Backup restaurado com sucesso.", "success");
+    await loadPageData({ fresh: true, userInitiated: true });
   }
 
   async function patchStatus(endpoint, active, successMessage) {

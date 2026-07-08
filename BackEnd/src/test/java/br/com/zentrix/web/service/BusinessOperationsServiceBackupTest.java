@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 class BusinessOperationsServiceBackupTest {
     @TempDir
@@ -116,16 +117,82 @@ class BusinessOperationsServiceBackupTest {
         assertTrue(Number.class.cast(response.get("totalRows")).intValue() > 0);
     }
 
+    @Test
+    void stagedRestoreRequiresSecondExactConfirmationBeforeChangingData() throws Exception {
+        Map<String, Object> backup = service.manualBackup("tenant-1", "store-a");
+        Path file = tempDir.resolve("tenant-1").resolve("store-a").resolve(String.valueOf(backup.get("fileName")));
+        jdbcTemplate.stagingRows = List.of(Map.of(
+                "id", 101L,
+                "backupId", 101L,
+                "storeId", "store-a",
+                "status", "STAGED",
+                "checksum", backup.get("checksum"),
+                "filePath", file.toString()
+        ));
+
+        boolean rejected = false;
+        try {
+            service.applyStagedRestore("tenant-1", 101L, Map.of("confirmation", "confirmar"));
+        } catch (ResponseStatusException error) {
+            rejected = true;
+            assertEquals(400, error.getStatusCode().value());
+        }
+
+        assertTrue(rejected);
+        assertEquals(0, jdbcTemplate.restoreDeletes);
+        assertEquals(0, jdbcTemplate.restoreInserts);
+    }
+
+    @Test
+    void stagedRestoreAppliesValidatedRowsAndMarksStageAsApplied() throws Exception {
+        Map<String, Object> backup = service.manualBackup("tenant-1", "store-a");
+        Path file = tempDir.resolve("tenant-1").resolve("store-a").resolve(String.valueOf(backup.get("fileName")));
+        jdbcTemplate.stagingRows = List.of(Map.of(
+                "id", 101L,
+                "backupId", 101L,
+                "storeId", "store-a",
+                "status", "STAGED",
+                "checksum", backup.get("checksum"),
+                "filePath", file.toString()
+        ));
+
+        Map<String, Object> result = service.applyStagedRestore(
+                "tenant-1", 101L, Map.of("confirmation", "APLICAR RESTAURACAO 101"));
+
+        assertEquals("RESTORE_APPLIED", result.get("status"));
+        assertEquals(true, result.get("restoreExecuted"));
+        assertTrue(jdbcTemplate.restoreDeletes > 0);
+        assertTrue(jdbcTemplate.restoreInserts > 0);
+        assertEquals(1, jdbcTemplate.appliedUpdates);
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         List<Map<String, Object>> downloadRows = List.of();
+        List<Map<String, Object>> stagingRows = List.of();
         int stagingUpdates;
+        int appliedUpdates;
+        int restoreDeletes;
+        int restoreInserts;
 
         @Override
         public int update(String sql, Object... args) {
+            if (sql.startsWith("DELETE FROM")) restoreDeletes++;
+            if (sql.startsWith("INSERT INTO `")) restoreInserts++;
+            if (sql.contains("SET status = 'APPLIED'")) appliedUpdates++;
             if (sql.contains("backup_restore_staging")) {
                 stagingUpdates++;
             }
             return 1;
+        }
+
+        @Override
+        public int update(String sql) {
+            if (sql.startsWith("INSERT INTO `")) restoreInserts++;
+            return 1;
+        }
+
+        @Override
+        public void execute(String sql) {
         }
 
         @Override
@@ -148,6 +215,9 @@ class BusinessOperationsServiceBackupTest {
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
+            if (sql.contains("FROM backup_restore_staging")) {
+                return stagingRows;
+            }
             if (sql.contains("FROM backup_runs")) {
                 return downloadRows;
             }

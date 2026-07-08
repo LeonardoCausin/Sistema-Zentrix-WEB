@@ -590,6 +590,7 @@
       <div class="page-actions" style="margin: 16px 0">
         <button class="button btn-primary" type="button" data-action="create-backup">Gerar backup agora</button>
         ${latestCanDownload ? `<button class="button btn-light" type="button" data-action="download-real-backup" data-id="${escAttr(latest.id)}">Baixar último backup</button>` : ""}
+        ${latestCanDownload ? `<button class="button btn-light" type="button" data-action="prepare-backup-restore" data-id="${escAttr(latest.id)}">Preparar restauração</button>` : ""}
         <span class="chip ${latestCanDownload ? "success" : "warning"}">${latestCanDownload ? "Backup íntegro" : "Verifique o último backup"}</span>
       </div>
       <div class="grid two-column">

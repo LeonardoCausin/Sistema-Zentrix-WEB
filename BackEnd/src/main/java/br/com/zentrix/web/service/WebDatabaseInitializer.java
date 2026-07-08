@@ -462,6 +462,8 @@ public class WebDatabaseInitializer {
                     checksum_sha256 VARCHAR(64) NULL,
                     requested_by VARCHAR(80) NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    applied_by VARCHAR(80) NULL,
+                    applied_at DATETIME NULL,
                     message TEXT,
                     PRIMARY KEY (id),
                     INDEX idx_backup_restore_staging_scope (tenant_id, store_id, created_at),
@@ -579,12 +581,16 @@ public class WebDatabaseInitializer {
                     checksum_sha256 VARCHAR(64) NULL,
                     requested_by VARCHAR(80) NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    applied_by VARCHAR(80) NULL,
+                    applied_at DATETIME NULL,
                     message TEXT,
                     PRIMARY KEY (id),
                     INDEX idx_backup_restore_staging_scope (tenant_id, store_id, created_at),
                     INDEX idx_backup_restore_staging_backup (tenant_id, backup_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """);
+        ensureColumn("backup_restore_staging", "applied_by", "VARCHAR(80) NULL", "AFTER created_at");
+        ensureColumn("backup_restore_staging", "applied_at", "DATETIME NULL", "AFTER applied_by");
 
         ensureColumn("web_change_outbox", "target_source_id", "VARCHAR(120) NULL", "AFTER source_id");
         ensureColumn("web_change_outbox", "target_device_id", "VARCHAR(120) NULL", "AFTER target_source_id");

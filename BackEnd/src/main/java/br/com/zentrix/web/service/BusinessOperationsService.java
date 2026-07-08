@@ -32,6 +32,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,6 +45,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class BusinessOperationsService {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Pattern BACKUP_INSERT = Pattern.compile("^INSERT INTO `([a-z_]+)` .+;$");
     private static final List<String> BACKUP_TABLES = List.of(
             "tenant_stores", "tenant_devices", "users", "products", "clients", "sales", "sale_items",
             "sale_cancellations", "cash_sessions", "cash_movements", "stock_movements",
@@ -1051,6 +1054,154 @@ public class BusinessOperationsService {
                 : "Backup não foi preparado para restauração porque possui inconsistências.");
         response.put("nextStep", "Conferir o staging e liberar a aplicação transacional em uma etapa controlada.");
         return response;
+    }
+
+    @Transactional
+    public Map<String, Object> applyStagedRestore(String tenantId, long stagingId, Map<String, Object> request) {
+        permissionService.require(Permission.RESTORE_BACKUP);
+        initializer.ensureReady();
+        Map<String, Object> stage = single("""
+                SELECT s.id, s.backup_id AS backupId, s.store_id AS storeId, s.status,
+                       s.checksum_sha256 AS checksum, b.file_path AS filePath
+                FROM backup_restore_staging s
+                JOIN backup_runs b ON b.tenant_id = s.tenant_id AND b.id = s.backup_id
+                WHERE s.tenant_id = ? AND s.id = ?
+                FOR UPDATE
+                """, tenantId, stagingId);
+        if (!"STAGED".equalsIgnoreCase(value(stage.get("status")))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Esta preparação já foi aplicada ou não está disponível.");
+        }
+        String expected = "APLICAR RESTAURACAO " + stagingId;
+        if (!expected.equals(value(request == null ? null : request.get("confirmation")))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Confirmação inválida. Digite exatamente: " + expected);
+        }
+
+        Path file = Path.of(value(stage.get("filePath")));
+        if (!Files.isRegularFile(file) || !value(stage.get("checksum")).equalsIgnoreCase(sha256(file))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "O arquivo mudou após a preparação. Prepare a restauração novamente.");
+        }
+        String storeId = value(stage.get("storeId"));
+        List<String> statements = validatedRestoreStatements(file, tenantId, storeId);
+        jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=0");
+        try {
+            for (int i = BACKUP_TABLES.size() - 1; i >= 0; i--) {
+                deleteRestoreScope(BACKUP_TABLES.get(i), tenantId, storeId);
+            }
+            for (String statement : statements) {
+                jdbcTemplate.update(statement);
+            }
+        } finally {
+            jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
+        }
+        jdbcTemplate.update("""
+                UPDATE backup_restore_staging
+                SET status = 'APPLIED', applied_by = ?, applied_at = CURRENT_TIMESTAMP,
+                    message = 'Restauração aplicada integralmente com proteção transacional.'
+                WHERE tenant_id = ? AND id = ? AND status = 'STAGED'
+                """, currentUser(), tenantId, stagingId);
+        panelCacheService.clear();
+        auditService.recordCurrent("BACKUP_RESTORE_APPLIED", "backup_restore_staging", String.valueOf(stagingId),
+                "Restauração aplicada com sucesso para a loja " + storeId + ".", "CRITICO", null);
+        return Map.of(
+                "status", "RESTORE_APPLIED",
+                "restoreExecuted", true,
+                "stagingId", stagingId,
+                "backupId", stage.get("backupId"),
+                "restoredRows", statements.size(),
+                "message", "Backup restaurado com sucesso. Todos os dados foram aplicados em uma única transação."
+        );
+    }
+
+    private List<String> validatedRestoreStatements(Path file, String tenantId, String storeId) {
+        List<String> statements = new ArrayList<>();
+        try {
+            for (String rawLine : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String line = rawLine.trim();
+                if (line.isBlank() || line.startsWith("--") || line.startsWith("SET ")) continue;
+                Matcher matcher = BACKUP_INSERT.matcher(line);
+                if (!matcher.matches() || !BACKUP_TABLES.contains(matcher.group(1))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup contém uma instrução não permitida.");
+                }
+                Map<String, String> scope = restoreStatementScope(line);
+                if (!sqlQuoted(tenantId).equals(scope.get("tenant_id"))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup contém dados de outra empresa.");
+                }
+                boolean globalSetting = "app_settings".equals(matcher.group(1)) && sqlQuoted("all").equals(scope.get("store_id"));
+                if (!"all".equalsIgnoreCase(storeId) && tableHasStoreScope(matcher.group(1)) && !globalSetting
+                        && !sqlQuoted(storeId).equals(scope.get("store_id"))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup contém dados de outra loja.");
+                }
+                statements.add(line);
+            }
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível ler o backup preparado.");
+        }
+        if (statements.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup não possui dados válidos para restaurar.");
+        }
+        return statements;
+    }
+
+    private Map<String, String> restoreStatementScope(String statement) {
+        int columnsStart = statement.indexOf('(');
+        int columnsEnd = statement.indexOf(") VALUES (");
+        int valuesStart = columnsEnd < 0 ? -1 : columnsEnd + ") VALUES (".length();
+        int valuesEnd = statement.lastIndexOf(");");
+        if (columnsStart < 0 || columnsEnd < 0 || valuesEnd < valuesStart) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup possui uma linha com estrutura inválida.");
+        }
+        List<String> columns = splitSqlCsv(statement.substring(columnsStart + 1, columnsEnd));
+        List<String> values = splitSqlCsv(statement.substring(valuesStart, valuesEnd));
+        if (columns.size() != values.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup possui colunas e valores incompatíveis.");
+        }
+        Map<String, String> row = new LinkedHashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            row.put(columns.get(i).trim().replace("`", ""), values.get(i).trim());
+        }
+        return row;
+    }
+
+    private List<String> splitSqlCsv(String text) {
+        List<String> values = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\'' && quoted && i + 1 < text.length() && text.charAt(i + 1) == '\'') {
+                current.append("''");
+                i++;
+            } else if (ch == '\'') {
+                quoted = !quoted;
+                current.append(ch);
+            } else if (ch == ',' && !quoted) {
+                values.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(ch);
+            }
+        }
+        if (quoted) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O backup possui um valor de texto incompleto.");
+        }
+        values.add(current.toString());
+        return values;
+    }
+
+    private void deleteRestoreScope(String table, String tenantId, String storeId) {
+        if ("all".equalsIgnoreCase(storeId)) {
+            jdbcTemplate.update("DELETE FROM `" + table + "` WHERE tenant_id = ?", tenantId);
+        } else if ("tenant_stores".equals(table)) {
+            jdbcTemplate.update("DELETE FROM `tenant_stores` WHERE tenant_id = ? AND id = ?", tenantId, storeId);
+        } else if ("app_settings".equals(table)) {
+            jdbcTemplate.update("DELETE FROM `app_settings` WHERE tenant_id = ? AND store_id IN ('all', ?)", tenantId, storeId);
+        } else {
+            jdbcTemplate.update("DELETE FROM `" + table + "` WHERE tenant_id = ? AND store_id = ?", tenantId, storeId);
+        }
+    }
+
+    private String sqlQuoted(String value) {
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'";
     }
 
     private String restoreConfirmation(long id) {

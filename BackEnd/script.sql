@@ -102,6 +102,8 @@ CREATE TABLE `backup_restore_staging` (
   `checksum_sha256` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `requested_by` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `applied_by` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `applied_at` datetime DEFAULT NULL,
   `message` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id`),
   KEY `idx_backup_restore_staging_scope` (`tenant_id`,`store_id`,`created_at`),
