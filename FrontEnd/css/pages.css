@@ -298,7 +298,7 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
 }
 
 .chart-grid text {
-  text-anchor: end;
+  text-anchor: start;
 }
 
 .chart-x-label {

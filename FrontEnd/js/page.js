@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260708-chart-axis-safe";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260708-chart-axis-tight";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -2131,7 +2131,8 @@
     const height = 260;
     const ticks = chartTicks(min, max);
     const yAxisLabels = ticks.map((tick) => compactMoney(tick));
-    const pad = { top: 22, right: 52, bottom: 54, left: chartYAxisPadding(yAxisLabels) };
+    const yAxisLabelX = 8;
+    const pad = { top: 22, right: 52, bottom: 54, left: chartYAxisPadding(yAxisLabels, yAxisLabelX) };
     const plotWidth = width - pad.left - pad.right;
     const plotHeight = height - pad.top - pad.bottom;
     const range = Math.max(1, max - min);
@@ -2165,7 +2166,7 @@
         </defs>
         ${ticks.map((tick, index) => {
           const y = pad.top + plotHeight - ((tick - min) / range) * plotHeight;
-          return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${pad.left - 14}" y="${round(y + 4)}">${esc(yAxisLabels[index])}</text></g>`;
+          return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${yAxisLabelX}" y="${round(y + 4)}">${esc(yAxisLabels[index])}</text></g>`;
         }).join("")}
         <g clip-path="url(#${clipId})">
           <path class="chart-area" style="fill:url(#${gradientId})" d="${areaPath}"></path>
@@ -2228,9 +2229,9 @@
     return text.length > 8 ? text.slice(0, 8) : text;
   }
 
-  function chartYAxisPadding(labels) {
+  function chartYAxisPadding(labels, labelX) {
     const longest = labels.reduce((maxLength, label) => Math.max(maxLength, String(label || "").length), 0);
-    return Math.min(190, Math.max(120, Math.ceil(longest * 9.5) + 44));
+    return Math.min(150, Math.max(76, labelX + Math.ceil(longest * 6.6) + 16));
   }
 
   function manyChartPoints(length) {

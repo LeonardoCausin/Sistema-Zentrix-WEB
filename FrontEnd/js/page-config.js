@@ -6,7 +6,7 @@
     viewCacheMaxAge: 10 * 60 * 1000,
     viewCachePrefix: "zentrix-view-cache:",
     viewStatePrefix: "zentrix-view-state:",
-    clientCacheVersion: "20260708-chart-axis-safe",
+    clientCacheVersion: "20260708-chart-axis-tight",
     prefetchPeriods: Object.freeze(["today", "7d", "month", "year"])
   });
 })();
