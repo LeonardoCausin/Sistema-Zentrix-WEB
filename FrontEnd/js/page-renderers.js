@@ -602,24 +602,24 @@
     const tenantName = data.tenant && data.tenant.name ? data.tenant.name : "Cliente Zentrix";
     const users = data.users || 0;
     const lastUpdate = data.lastSync || "Aguardando o primeiro envio do PDV";
-    renderShell("Configurações", "Dados da loja, equipe, segurança e integração com o Zentrix PDV.", `
+    renderShell("Configurações", "Ajustes principais para deixar o painel com a cara e as regras da sua empresa.", `
       <div class="module-grid settings-grid">
-        ${settingsCard("Preferências", "Como o painel abre", settingsLabel(data.settings && data.settings.dashboardPeriodoPadrao, "today"), "info")}
-        ${settingsCard("Segurança", "Sessão e senha", `${settingValue(data, "sessaoExpiraMinutos", 480)} min`, "success")}
-        ${settingsCard("Regras", "Operação protegida", settingValue(data, "permitirEstoqueNegativo", false) ? "Estoque negativo liberado" : "Estoque negativo bloqueado", "warning")}
-        ${settingsCard("Alertas", "Avisos importantes", "Estoque, PDV, sync e backup", "info")}
-        ${settingsCard("Backup", "Rotina automática", `${settingValue(data, "backupHorario", "23:30")} | ${settingValue(data, "backupRetencao", 14)} dias`, "success")}
-        ${settingsCard("Integração PDV", "Conexão da loja", activeStoreName(), "info")}
+        ${settingsCard("Abertura do painel", "Tela inicial da equipe", settingsLabel(data.settings && data.settings.dashboardPeriodoPadrao, "today"), "info")}
+        ${settingsCard("Proteção de acesso", "Sessão e senha", `${settingValue(data, "sessaoExpiraMinutos", 480)} min`, "success")}
+        ${settingsCard("Regras da loja", "Vendas e estoque", settingValue(data, "permitirEstoqueNegativo", false) ? "Venda sem estoque liberada" : "Venda sem estoque bloqueada", "warning")}
+        ${settingsCard("Avisos ao dono", "Alertas importantes", "Estoque, caixa, PDV e backup", "info")}
+        ${settingsCard("Backup", "Cópia de segurança", `${settingValue(data, "backupHorario", "23:30")} | ${settingValue(data, "backupRetencao", 14)} dias`, "success")}
+        ${settingsCard("Conexão da loja", "PDV vinculado", activeStoreName(), "info")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
-        <section class="panel"><div class="panel-title"><div><h3>Resumo do painel</h3><span>Zentrix AppGestão</span></div></div><div class="stack-list">
-          <div class="list-item"><span class="list-icon success">OK</span><div><span class="list-title">Painel pronto para uso</span><span class="list-subtitle">Dados da loja protegidos</span></div><strong>Ativo</strong></div>
-          <div class="list-item"><span class="list-icon info">LO</span><div><span class="list-title">Conta da loja</span><span class="list-subtitle">Identificação interna protegida</span></div><strong>${esc(tenantName)}</strong></div>
-          <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Serviço online</span><span class="list-subtitle">Conectado com segurança</span></div><strong>Online</strong></div>
-          <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última atualização</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(lastUpdate)}</strong></div>
+        <section class="panel"><div class="panel-title"><div><h3>Resumo da conta</h3><span>Informações que ajudam o dono a acompanhar a loja</span></div></div><div class="stack-list">
+          <div class="list-item"><span class="list-icon success">OK</span><div><span class="list-title">Painel liberado</span><span class="list-subtitle">Sua equipe pode acompanhar a operação</span></div><strong>Ativo</strong></div>
+          <div class="list-item"><span class="list-icon info">LO</span><div><span class="list-title">Empresa</span><span class="list-subtitle">Nome usado nos controles internos</span></div><strong>${esc(tenantName)}</strong></div>
+          <div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Acesso online</span><span class="list-subtitle">Painel disponível para a empresa</span></div><strong>Online</strong></div>
+          <div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Último dado recebido</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(lastUpdate)}</strong></div>
         </div></section>
         <section class="panel">
-          <div class="panel-title"><div><h3>Aparência</h3><span>Escolha como prefere usar</span></div></div>
+          <div class="panel-title"><div><h3>Visual do painel</h3><span>Escolha uma aparência confortável para a equipe</span></div></div>
           <div class="theme-choice">
             <button class="button btn-light" type="button" data-action="set-theme" data-theme="light">Claro</button>
             <button class="button btn-dark" type="button" data-action="set-theme" data-theme="dark">Escuro</button>
@@ -638,49 +638,49 @@
     const settings = data.settings || {};
     return `<form class="settings-form" data-settings-form style="margin-top: 16px">
       <div class="grid two-column">
-        ${settingsPanel("Preferências gerais", "Como o painel deve abrir para a equipe.", [
-          selectField("dashboard_periodo_padrao", "Período padrão do dashboard", settings.dashboardPeriodoPadrao || "today", [["today", "Hoje"], ["7d", "7 dias"], ["month", "30 dias"], ["year", "1 ano"]]),
-          selectField("loja_padrao", "Loja padrão ao entrar", settings.lojaPadrao || "all", storeOptions(data.stores || [])),
-          selectField("pagina_inicial", "Página inicial", settings.paginaInicial || "dashboard.html", [["dashboard.html", "Dashboard"], ["vendas.html", "Vendas"], ["financeiro.html", "Financeiro"], ["sincronizacao.html", "Sincronização"]]),
-          selectField("tema_padrao", "Tema padrão", settings.temaPadrao || "system", [["system", "Seguir navegador"], ["light", "Claro"], ["dark", "Escuro"]])
+        ${settingsPanel("Como o painel abre", "Defina o que a equipe vê primeiro ao entrar.", [
+          selectField("dashboard_periodo_padrao", "Período inicial dos indicadores", settings.dashboardPeriodoPadrao || "today", [["today", "Hoje"], ["7d", "7 dias"], ["month", "30 dias"], ["year", "1 ano"]]),
+          selectField("loja_padrao", "Loja inicial", settings.lojaPadrao || "all", storeOptions(data.stores || [])),
+          selectField("pagina_inicial", "Tela inicial", settings.paginaInicial || "dashboard.html", [["dashboard.html", "Dashboard"], ["vendas.html", "Vendas"], ["financeiro.html", "Financeiro"], ["sincronizacao.html", "Sincronização"]]),
+          selectField("tema_padrao", "Visual padrão", settings.temaPadrao || "system", [["system", "Seguir navegador"], ["light", "Claro"], ["dark", "Escuro"]])
         ])}
-        ${settingsPanel("Políticas de segurança", "Controle básico para proteger acesso e sessões.", [
-          numberField("sessao_expira_minutos", "Sessão expira em minutos", settings.sessaoExpiraMinutos || 480, 15, 1440),
-          numberField("bloqueio_tentativas_login", "Bloquear após tentativas", settings.bloqueioTentativasLogin || 5, 3, 20),
-          switchField("senha_forte_obrigatoria", "Exigir senha forte", settings.senhaForteObrigatoria !== false)
+        ${settingsPanel("Proteção de acesso", "Ajustes para reduzir acesso indevido ao painel.", [
+          numberField("sessao_expira_minutos", "Encerrar sessão após minutos sem uso", settings.sessaoExpiraMinutos || 480, 15, 1440),
+          numberField("bloqueio_tentativas_login", "Bloquear login após tentativas erradas", settings.bloqueioTentativasLogin || 5, 3, 20),
+          switchField("senha_forte_obrigatoria", "Pedir senhas mais seguras para a equipe", settings.senhaForteObrigatoria !== false)
         ])}
-        ${settingsPanel("Regras operacionais", "Padrões que evitam erros em vendas e estoque.", [
-          switchField("permitir_estoque_negativo", "Permitir estoque negativo", settings.permitirEstoqueNegativo === true),
-          switchField("exigir_motivo_cancelamento", "Exigir motivo ao cancelar venda", settings.exigirMotivoCancelamento !== false),
-          switchField("exigir_motivo_desconto", "Exigir motivo para desconto alto", settings.exigirMotivoDesconto !== false),
-          numberField("desconto_maximo_padrao", "Desconto máximo padrão (%)", settings.descontoMaximoPadrao || 10, 0, 100)
+        ${settingsPanel("Regras da loja", "Escolha limites para evitar prejuízo e retrabalho.", [
+          switchField("permitir_estoque_negativo", "Permitir venda quando o estoque estiver zerado", settings.permitirEstoqueNegativo === true),
+          switchField("exigir_motivo_cancelamento", "Pedir motivo ao cancelar uma venda", settings.exigirMotivoCancelamento !== false),
+          switchField("exigir_motivo_desconto", "Pedir motivo para desconto alto", settings.exigirMotivoDesconto !== false),
+          numberField("desconto_maximo_padrao", "Desconto máximo sem autorização (%)", settings.descontoMaximoPadrao || 10, 0, 100)
         ])}
-        ${settingsPanel("Alertas configuráveis", "Escolha quais avisos aparecem no sino e no painel.", [
+        ${settingsPanel("Avisos importantes", "Escolha o que deve chamar atenção do dono e dos responsáveis.", [
           switchField("alerta_estoque_baixo", "Estoque baixo", settings.alertaEstoqueBaixo !== false),
           switchField("alerta_pdv_offline", "PDV offline", settings.alertaPdvOffline !== false),
-          switchField("alerta_sync_falha", "Falha de sincronização", settings.alertaSyncFalha !== false),
+          switchField("alerta_sync_falha", "Falha ao receber dados da loja", settings.alertaSyncFalha !== false),
           switchField("alerta_caixa_divergente", "Caixa divergente", settings.alertaCaixaDivergente !== false),
           switchField("alerta_backup_atrasado", "Backup atrasado", settings.alertaBackupAtrasado !== false)
         ])}
-        ${settingsPanel("Backup automático", "Padrão de acompanhamento e retenção dos backups.", [
-          inputField("backup_horario", "Horário preferido", settings.backupHorario || "23:30", "time"),
-          numberField("backup_retencao", "Manter backups por dias", settings.backupRetencao || 14, 1, 365),
-          numberField("backup_alertar_dias", "Alertar se atrasar dias", settings.backupAlertarDias || 1, 1, 30)
+        ${settingsPanel("Cópia de segurança", "Defina quando o sistema deve acompanhar os backups.", [
+          inputField("backup_horario", "Horário preferido para backup", settings.backupHorario || "23:30", "time"),
+          numberField("backup_retencao", "Guardar histórico por dias", settings.backupRetencao || 14, 1, 365),
+          numberField("backup_alertar_dias", "Avisar se ficar dias sem backup", settings.backupAlertarDias || 1, 1, 30)
         ])}
-        ${settingsPanel("Integração com PDV", "Identificação e expectativa de comunicação com a loja.", [
-          numberField("sync_intervalo_segundos", "Intervalo esperado de sincronização", settings.syncIntervaloSegundos || 30, 10, 3600),
-          selectField("ambiente_nome", "Ambiente", settings.ambienteNome || "Produção", [["Produção", "Produção"], ["Local", "Local"], ["Teste", "Teste"]]),
-          inputField("pdv_integration_token", settings.pdvIntegrationTokenConfigured ? "Nova chave do PDV" : "Chave do PDV", "", "password", "Preencha apenas para trocar")
+        ${settingsPanel("Conexão com a loja", "Ajustes para manter o painel recebendo dados do PDV.", [
+          numberField("sync_intervalo_segundos", "Tempo esperado para receber novas informações", settings.syncIntervaloSegundos || 30, 10, 3600),
+          selectField("ambiente_nome", "Tipo de uso", settings.ambienteNome || "Produção", [["Produção", "Uso real"], ["Local", "Uso local"], ["Teste", "Teste ou demonstração"]]),
+          inputField("pdv_integration_token", settings.pdvIntegrationTokenConfigured ? "Trocar código de conexão do PDV" : "Código de conexão do PDV", "", "password", "Preencha somente quando precisar trocar")
         ])}
-        ${settingsPanel("Manutenção do sistema", "Ferramentas simples para suporte e operação.", [
-          inputField("maintenance_cache_version", "Versão de cache do painel", settings.maintenanceCacheVersion || "", "text", "Ex.: 20260707"),
-          `<div class="list-item"><span class="list-icon info">API</span><div><span class="list-title">API</span><span class="list-subtitle">${esc(data.api || "Painel online Zentrix")}</span></div><strong>Online</strong></div>`,
-          `<div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Última atualização</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(data.lastSync || "-")}</strong></div>`
+        ${settingsPanel("Suporte e atualização", "Informações simples para atendimento e manutenção.", [
+          inputField("maintenance_cache_version", "Código de atualização do painel", settings.maintenanceCacheVersion || "", "text", "Use quando o suporte solicitar"),
+          `<div class="list-item"><span class="list-icon success">ON</span><div><span class="list-title">Painel online</span><span class="list-subtitle">Acesso disponível para a empresa</span></div><strong>Ativo</strong></div>`,
+          `<div class="list-item"><span class="list-icon info">PDV</span><div><span class="list-title">Último dado recebido</span><span class="list-subtitle">${esc(activeStoreName())}</span></div><strong>${esc(data.lastSync || "-")}</strong></div>`
         ])}
       </div>
       <div class="page-actions settings-actions">
         <button class="button btn-primary" type="submit">Salvar configurações</button>
-        <span class="chip info">Aplicado para ${esc(activeStoreName())}</span>
+        <span class="chip info">Vale para ${esc(activeStoreName())}</span>
       </div>
     </form>`;
   }

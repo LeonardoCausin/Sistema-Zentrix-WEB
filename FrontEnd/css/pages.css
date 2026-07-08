@@ -493,11 +493,29 @@ body.is-authenticated.app-data-ready .window-title span:last-child {
 
 .settings-section {
   min-height: 100%;
+  border-color: color-mix(in srgb, var(--border-color), var(--accent-blue) 10%);
 }
 
 .settings-fields {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.settings-fields .field {
+  display: grid;
+  gap: 7px;
+}
+
+.settings-fields .field span,
+.settings-fields .permission-row > span:first-child {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.settings-fields .text-field,
+.settings-fields .select-field {
+  min-height: 42px;
 }
 
 .settings-actions {
