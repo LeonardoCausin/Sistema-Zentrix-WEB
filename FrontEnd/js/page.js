@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-modern-charts";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260707-chart-fit";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -2129,10 +2129,12 @@
     const min = Math.min(0, ...values);
     const width = 760;
     const height = 260;
-    const pad = { top: 18, right: 28, bottom: 46, left: 58 };
+    const pad = { top: 22, right: 52, bottom: 54, left: 72 };
     const plotWidth = width - pad.left - pad.right;
     const plotHeight = height - pad.top - pad.bottom;
     const range = Math.max(1, max - min);
+    const gradientId = `chartAreaGradient-${points.length}-${Math.round(totalFromRows(points))}`;
+    const clipId = `chartClip-${points.length}-${Math.round(max)}-${Math.round(min)}`;
     const coords = points.map((row, index) => {
       const x = pad.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
       const y = pad.top + plotHeight - (((Number(row.value) || 0) - min) / range) * plotHeight;
@@ -2152,22 +2154,27 @@
       </div>
       <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <linearGradient id="chartAreaGradient" x1="0" x2="0" y1="0" y2="1">
+          <linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stop-color="currentColor" stop-opacity="0.28" />
             <stop offset="100%" stop-color="currentColor" stop-opacity="0.02" />
           </linearGradient>
+          <clipPath id="${clipId}">
+            <rect x="${pad.left - 8}" y="${pad.top - 10}" width="${plotWidth + 16}" height="${plotHeight + 18}" rx="6"></rect>
+          </clipPath>
         </defs>
         ${ticks.map((tick) => {
           const y = pad.top + plotHeight - ((tick - min) / range) * plotHeight;
           return `<g class="chart-grid"><line x1="${pad.left}" y1="${round(y)}" x2="${width - pad.right}" y2="${round(y)}"></line><text x="${pad.left - 10}" y="${round(y + 4)}">${esc(compactMoney(tick))}</text></g>`;
         }).join("")}
-        <path class="chart-area" d="${areaPath}"></path>
-        <path class="chart-line" d="${linePath}"></path>
-        ${coords.map((point, index) => `<circle class="chart-point ${labels.includes(index) ? "is-labeled" : ""}" cx="${round(point.x)}" cy="${round(point.y)}" r="${labels.includes(index) ? 4 : 2.5}"><title>${esc(point.label)}: ${esc(point.display || formatCurrency(point.value || 0))}</title></circle>`).join("")}
+        <g clip-path="url(#${clipId})">
+          <path class="chart-area" style="fill:url(#${gradientId})" d="${areaPath}"></path>
+          <path class="chart-line" d="${linePath}"></path>
+          ${coords.map((point, index) => `<circle class="chart-point ${labels.includes(index) ? "is-labeled" : ""}" cx="${round(point.x)}" cy="${round(point.y)}" r="${labels.includes(index) ? 3.8 : manyChartPoints(points.length) ? 1.8 : 2.5}"><title>${esc(point.label)}: ${esc(point.display || formatCurrency(point.value || 0))}</title></circle>`).join("")}
+        </g>
         ${labels.map((index) => {
           const point = coords[index];
           if (!point) return "";
-          return `<text class="chart-x-label" x="${round(point.x)}" y="${height - 14}">${esc(point.label)}</text>`;
+          return `<text class="chart-x-label" x="${round(point.x)}" y="${height - 18}">${esc(chartAxisLabel(point.label))}</text>`;
         }).join("")}
       </svg>
       <div class="chart-footnote">${esc(rows.length > points.length ? `Mostrando tendência resumida de ${rows.length} registros.` : "Mostrando todos os pontos do período.")}</div>
@@ -2180,7 +2187,7 @@
       value: Number(row.value) || 0,
       display: row.display || formatCurrency(Number(row.value) || 0)
     }));
-    const maxPoints = 18;
+    const maxPoints = 32;
     if (normalized.length <= maxPoints) return normalized;
     const bucketSize = Math.ceil(normalized.length / maxPoints);
     const buckets = [];
@@ -2205,12 +2212,27 @@
 
   function chartLabelIndexes(length) {
     if (length <= 1) return [0];
-    const count = Math.min(6, length);
+    const count = Math.min(length > 18 ? 5 : 6, length);
     const indexes = new Set();
     for (let index = 0; index < count; index += 1) {
       indexes.add(Math.round((index / (count - 1)) * (length - 1)));
     }
     return Array.from(indexes).sort((a, b) => a - b);
+  }
+
+  function chartAxisLabel(label) {
+    const text = String(label || "").trim();
+    if (!text) return "";
+    if (text.includes("-")) return text.split("-")[0].trim();
+    return text.length > 8 ? text.slice(0, 8) : text;
+  }
+
+  function manyChartPoints(length) {
+    return Number(length) > 22;
+  }
+
+  function totalFromRows(rows) {
+    return rows.reduce((sum, row) => sum + (Number(row.value) || 0), 0);
   }
 
   function compactMoney(value) {
