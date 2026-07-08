@@ -75,12 +75,37 @@ CREATE TABLE `backup_runs` (
   `status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'WAITING',
   `total_rows` int NOT NULL DEFAULT '0',
   `file_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `file_size_bytes` bigint NOT NULL DEFAULT '0',
+  `checksum_sha256` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `backup_type` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'MANUAL',
+  `file_path` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `finished_at` datetime DEFAULT NULL,
   `message` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id`),
   KEY `idx_backup_runs_scope` (`tenant_id`,`store_id`,`created_at`),
   KEY `idx_backup_runs_status` (`tenant_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `backup_restore_staging`;
+CREATE TABLE `backup_restore_staging` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `store_id` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'WEB',
+  `backup_id` bigint NOT NULL,
+  `status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'STAGED',
+  `total_rows` int NOT NULL DEFAULT '0',
+  `tables_json` longtext COLLATE utf8mb4_unicode_ci,
+  `warnings_json` longtext COLLATE utf8mb4_unicode_ci,
+  `file_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `checksum_sha256` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `requested_by` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `message` text COLLATE utf8mb4_unicode_ci,
+  PRIMARY KEY (`id`),
+  KEY `idx_backup_restore_staging_scope` (`tenant_id`,`store_id`,`created_at`),
+  KEY `idx_backup_restore_staging_backup` (`tenant_id`,`backup_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `cash_movements`;

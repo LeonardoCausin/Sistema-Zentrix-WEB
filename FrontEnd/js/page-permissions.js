@@ -33,8 +33,8 @@
     ["Segurança", "configuracoes.editar", "Editar configurações"]
   ]);
   const rolePresets = Object.freeze({
-    ADMIN: EMPLOYEE_PERMISSIONS.map((item) => item[1]),
-    GERENTE: EMPLOYEE_PERMISSIONS.map((item) => item[1]).filter((value) => !["funcionarios.permissoes", "backups.restaurar", "configuracoes.editar"].includes(value)),
+    ADMIN: permissions.map((item) => item[1]),
+    GERENTE: permissions.map((item) => item[1]).filter((value) => !["funcionarios.permissoes", "backups.restaurar", "configuracoes.editar"].includes(value)),
     CAIXA: ["dashboard.visualizar", "vendas.visualizar", "caixa.visualizar", "caixa.abrir", "caixa.sangria", "caixa.suprimento", "clientes.visualizar", "clientes.criar"],
     ESTOQUISTA: ["dashboard.visualizar", "produtos.visualizar", "produtos.criar", "produtos.editar", "estoque.visualizar", "estoque.movimentar", "relatorios.visualizar"],
     FINANCEIRO: ["dashboard.visualizar", "vendas.visualizar", "caixa.visualizar", "financeiro.visualizar", "financeiro.editar", "relatorios.visualizar"],

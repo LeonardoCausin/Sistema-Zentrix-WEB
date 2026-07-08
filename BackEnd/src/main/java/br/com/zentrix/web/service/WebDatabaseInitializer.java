@@ -435,12 +435,37 @@ public class WebDatabaseInitializer {
                     status VARCHAR(30) NOT NULL DEFAULT 'WAITING',
                     total_rows INT NOT NULL DEFAULT 0,
                     file_name VARCHAR(255) NULL,
+                    file_size_bytes BIGINT NOT NULL DEFAULT 0,
+                    checksum_sha256 VARCHAR(64) NULL,
+                    created_by VARCHAR(80) NULL,
+                    backup_type VARCHAR(40) NOT NULL DEFAULT 'MANUAL',
+                    file_path VARCHAR(500) NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     finished_at DATETIME NULL,
                     message TEXT,
                     PRIMARY KEY (id),
                     INDEX idx_backup_runs_scope (tenant_id, store_id, created_at),
                     INDEX idx_backup_runs_status (tenant_id, status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS backup_restore_staging (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
+                    backup_id BIGINT NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'STAGED',
+                    total_rows INT NOT NULL DEFAULT 0,
+                    tables_json LONGTEXT NULL,
+                    warnings_json LONGTEXT NULL,
+                    file_name VARCHAR(255) NULL,
+                    checksum_sha256 VARCHAR(64) NULL,
+                    requested_by VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    message TEXT,
+                    PRIMARY KEY (id),
+                    INDEX idx_backup_restore_staging_scope (tenant_id, store_id, created_at),
+                    INDEX idx_backup_restore_staging_backup (tenant_id, backup_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
         );
@@ -533,6 +558,33 @@ public class WebDatabaseInitializer {
         ensureColumn("financial_entries", "notes", "VARCHAR(255) NULL", "AFTER origin");
         ensureIndex("financial_entries", "idx_financial_entries_date", List.of("tenant_id", "store_id", "entry_date"));
         ensureIndex("financial_entries", "idx_financial_entries_status", List.of("tenant_id", "store_id", "status", "type"));
+
+        ensureColumn("backup_runs", "file_size_bytes", "BIGINT NOT NULL DEFAULT 0", "AFTER file_name");
+        ensureColumn("backup_runs", "checksum_sha256", "VARCHAR(64) NULL", "AFTER file_size_bytes");
+        ensureColumn("backup_runs", "created_by", "VARCHAR(80) NULL", "AFTER checksum_sha256");
+        ensureColumn("backup_runs", "backup_type", "VARCHAR(40) NOT NULL DEFAULT 'MANUAL'", "AFTER created_by");
+        ensureColumn("backup_runs", "file_path", "VARCHAR(500) NULL", "AFTER backup_type");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS backup_restore_staging (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
+                    backup_id BIGINT NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'STAGED',
+                    total_rows INT NOT NULL DEFAULT 0,
+                    tables_json LONGTEXT NULL,
+                    warnings_json LONGTEXT NULL,
+                    file_name VARCHAR(255) NULL,
+                    checksum_sha256 VARCHAR(64) NULL,
+                    requested_by VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    message TEXT,
+                    PRIMARY KEY (id),
+                    INDEX idx_backup_restore_staging_scope (tenant_id, store_id, created_at),
+                    INDEX idx_backup_restore_staging_backup (tenant_id, backup_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
 
         ensureColumn("web_change_outbox", "target_source_id", "VARCHAR(120) NULL", "AFTER source_id");
         ensureColumn("web_change_outbox", "target_device_id", "VARCHAR(120) NULL", "AFTER target_source_id");

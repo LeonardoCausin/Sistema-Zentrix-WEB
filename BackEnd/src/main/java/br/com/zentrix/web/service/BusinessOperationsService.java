@@ -15,12 +15,19 @@ import br.com.zentrix.web.service.PermissionService.Permission;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,6 +35,7 @@ import java.util.Map;
 import org.mindrot.jbcrypt.BCrypt;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,6 +43,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class BusinessOperationsService {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final List<String> BACKUP_TABLES = List.of(
+            "tenant_stores", "tenant_devices", "users", "products", "clients", "sales", "sale_items",
+            "sale_cancellations", "cash_sessions", "cash_movements", "stock_movements",
+            "financial_entries", "audit_log", "app_settings", "web_change_outbox", "sync_reconciliation"
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -44,6 +57,7 @@ public class BusinessOperationsService {
     private final AuthTokenService authTokenService;
     private final WebChangeOutboxService webChangeOutboxService;
     private final PanelCacheService panelCacheService;
+    private final Path backupRoot;
 
     public BusinessOperationsService(
             JdbcTemplate jdbcTemplate,
@@ -53,7 +67,8 @@ public class BusinessOperationsService {
             SettingsService settingsService,
             AuthTokenService authTokenService,
             WebChangeOutboxService webChangeOutboxService,
-            PanelCacheService panelCacheService
+            PanelCacheService panelCacheService,
+            @Value("${zentrix.backup.dir:backups}") String backupDir
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
@@ -63,6 +78,7 @@ public class BusinessOperationsService {
         this.authTokenService = authTokenService;
         this.webChangeOutboxService = webChangeOutboxService;
         this.panelCacheService = panelCacheService;
+        this.backupRoot = Path.of(backupDir == null || backupDir.isBlank() ? "backups" : backupDir.trim());
     }
 
     public Map<String, Object> saleDetail(String tenantId, String storeId, int id) {
@@ -325,7 +341,7 @@ public class BusinessOperationsService {
         String store = normalizeWritableStore(tenantId, storeId);
         validateProductRequest(request, false);
         if (request.code() != null && !request.code().isBlank() && !code.equals(request.code().trim())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O codigo do produto nao pode ser alterado por esta rota.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O código do produto não pode ser alterado por esta rota.");
         }
         Map<String, Object> before = adminProduct(tenantId, store, code);
         BigDecimal previousPrice = decimal(before.get("price"));
@@ -576,7 +592,7 @@ public class BusinessOperationsService {
     public Map<String, Object> updateEmployee(String tenantId, String username, EmployeeRequest request) {
         permissionService.require(Permission.USERS_EDIT);
         if (request.username() != null && !request.username().isBlank() && !username.equalsIgnoreCase(request.username().trim())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O login do usuario nao pode ser alterado por esta rota.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O login do usuário não pode ser alterado por esta rota.");
         }
         Map<String, Object> before = employee(tenantId, username);
         boolean disabling = request.active() != null && !request.active();
@@ -772,12 +788,153 @@ public class BusinessOperationsService {
 
     public Map<String, Object> manualBackup(String tenantId, String storeId) {
         permissionService.require(Permission.MANAGE_SETTINGS);
-        jdbcTemplate.update("""
-                INSERT INTO backup_runs (tenant_id, store_id, source_id, status, total_rows, file_name, finished_at, message)
-                VALUES (?, ?, 'WEB', 'SUCCESS', 0, ?, CURRENT_TIMESTAMP, 'Backup manual registrado.')
-                """, tenantId, normalizeStore(storeId), "backup-" + tenantId + "-" + System.currentTimeMillis() + ".zip");
-        auditService.recordCurrent("BACKUP_CREATED", "backup_runs", tenantId, "Backup manual registrado.", "INFO", null);
-        return Map.of("status", "SUCCESS", "message", "Backup manual registrado.");
+        initializer.ensureReady();
+        String store = normalizeStore(storeId);
+        String username = currentUser();
+        Long backupId = null;
+        try {
+            jdbcTemplate.update("""
+                    INSERT INTO backup_runs (tenant_id, store_id, source_id, status, total_rows, created_by, backup_type, message)
+                    VALUES (?, ?, 'WEB', 'GERANDO', 0, ?, 'MANUAL', 'Gerando backup manual.')
+                    """, tenantId, store, username);
+            backupId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+            Path file = backupPath(tenantId, store, backupId == null ? System.currentTimeMillis() : backupId);
+            int rows = writeSqlBackupFile(file, tenantId, store, backupId);
+            long size = Files.size(file);
+            String checksum = sha256(file);
+            jdbcTemplate.update("""
+                    UPDATE backup_runs
+                    SET status = 'CONCLUIDO', total_rows = ?, file_name = ?, file_size_bytes = ?, checksum_sha256 = ?,
+                        file_path = ?, finished_at = CURRENT_TIMESTAMP, message = 'Backup manual concluído.'
+                    WHERE tenant_id = ? AND id = ?
+                    """, rows, file.getFileName().toString(), size, checksum, file.toAbsolutePath().toString(), tenantId, backupId);
+            auditService.recordCurrent("BACKUP_CREATED", "backup_runs", String.valueOf(backupId), "Backup manual gerado com arquivo físico.", "INFO", null);
+            return Map.of(
+                    "status", "CONCLUIDO",
+                    "id", backupId,
+                    "fileName", file.getFileName().toString(),
+                    "sizeBytes", size,
+                    "checksum", checksum,
+                    "message", "Backup gerado com sucesso."
+            );
+        } catch (Exception e) {
+            if (backupId != null) {
+                jdbcTemplate.update("""
+                        UPDATE backup_runs
+                        SET status = 'FALHOU', finished_at = CURRENT_TIMESTAMP, message = ?
+                        WHERE tenant_id = ? AND id = ?
+                        """, friendlyBackupError(e), tenantId, backupId);
+            }
+            auditService.recordCurrent("BACKUP_FAILED", "backup_runs", String.valueOf(backupId), "Falha ao gerar backup manual.", "ALERTA", friendlyBackupError(e));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível gerar o backup agora. Verifique a configuração do servidor.");
+        }
+    }
+
+    public Path validatedBackupFile(String tenantId, long id) {
+        permissionService.require(Permission.MANAGE_SETTINGS);
+        Map<String, Object> backup = single("""
+                SELECT file_path AS filePath, file_name AS fileName, checksum_sha256 AS checksum, status
+                FROM backup_runs
+                WHERE tenant_id = ? AND id = ?
+                """, tenantId, id);
+        if (!"CONCLUIDO".equalsIgnoreCase(String.valueOf(backup.get("status")))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Este backup ainda não está pronto para download.");
+        }
+        Path path = Path.of(String.valueOf(backup.get("filePath")));
+        if (!Files.isRegularFile(path)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo de backup não encontrado no servidor.");
+        }
+        String expected = value(backup.get("checksum"));
+        if (!expected.isBlank() && !expected.equalsIgnoreCase(sha256(path))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Backup inválido ou corrompido. Gere um novo backup.");
+        }
+        return path;
+    }
+
+    public String backupDownloadName(String tenantId, long id) {
+        Map<String, Object> backup = single("SELECT file_name AS fileName FROM backup_runs WHERE tenant_id = ? AND id = ?", tenantId, id);
+        return value(backup.get("fileName"));
+    }
+
+    private Path backupPath(String tenantId, String store, long id) throws IOException {
+        Path dir = backupRoot.resolve(safeFilePart(tenantId)).resolve(safeFilePart(store));
+        Files.createDirectories(dir);
+        return dir.resolve("zentrix-backup-" + safeFilePart(store) + "-" + id + ".sql");
+    }
+
+    private int writeSqlBackupFile(Path file, String tenantId, String store, Long backupId) throws IOException {
+        StringBuilder sql = new StringBuilder();
+        sql.append("-- Backup Zentrix AppGestão\n");
+        sql.append("-- Empresa: ").append(tenantId).append(" | Loja: ").append(store).append(" | Backup: ").append(backupId).append("\n");
+        sql.append("SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n");
+        int total = 0;
+        for (String table : BACKUP_TABLES) {
+            List<Map<String, Object>> rows = backupRows(table, tenantId, store);
+            total += rows.size();
+            sql.append("-- Tabela ").append(table).append(" (").append(rows.size()).append(" registros)\n");
+            for (Map<String, Object> row : rows) {
+                sql.append(insertStatement(table, row)).append("\n");
+            }
+            sql.append("\n");
+        }
+        sql.append("SET FOREIGN_KEY_CHECKS=1;\n");
+        Files.writeString(file, sql.toString(), StandardCharsets.UTF_8);
+        return total;
+    }
+
+    private List<Map<String, Object>> backupRows(String table, String tenantId, String store) {
+        String sql = "SELECT * FROM `" + table + "` WHERE tenant_id = ?";
+        List<Object> args = new ArrayList<>();
+        args.add(tenantId);
+        if ("all".equalsIgnoreCase(store)) {
+            return jdbcTemplate.queryForList(sql, args.toArray());
+        }
+        if ("tenant_stores".equals(table)) {
+            sql += " AND id = ?";
+            args.add(store);
+        } else if ("app_settings".equals(table)) {
+            sql += " AND store_id IN ('all', ?)";
+            args.add(store);
+        } else if (tableHasStoreScope(table)) {
+            sql += " AND store_id = ?";
+            args.add(store);
+        }
+        return jdbcTemplate.queryForList(sql, args.toArray());
+    }
+
+    private boolean tableHasStoreScope(String table) {
+        return !"tenant_stores".equals(table);
+    }
+
+    private String insertStatement(String table, Map<String, Object> row) {
+        String columns = row.keySet().stream().map(key -> "`" + key + "`").reduce((a, b) -> a + ", " + b).orElse("");
+        String values = row.values().stream().map(this::sqlValue).reduce((a, b) -> a + ", " + b).orElse("");
+        return "INSERT INTO `" + table + "` (" + columns + ") VALUES (" + values + ");";
+    }
+
+    private String sqlValue(Object value) {
+        if (value == null) return "NULL";
+        if (value instanceof Number) return String.valueOf(value);
+        if (value instanceof Boolean bool) return bool ? "1" : "0";
+        return "'" + String.valueOf(value).replace("\\", "\\\\").replace("'", "''") + "'";
+    }
+
+    private String sha256(Path file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file)));
+        } catch (IOException | NoSuchAlgorithmException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível validar o arquivo de backup.");
+        }
+    }
+
+    private String safeFilePart(String value) {
+        return String.valueOf(value == null ? "default" : value).replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private String friendlyBackupError(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? "Falha ao gerar backup." : message.substring(0, Math.min(message.length(), 240));
     }
 
     public Map<String, Object> restoreBackupPreview(String tenantId, long id) {
@@ -785,7 +942,7 @@ public class BusinessOperationsService {
         initializer.ensureReady();
         Map<String, Object> backup = single("""
                 SELECT id, tenant_id AS tenantId, store_id AS storeId, source_id AS sourceId, device_id AS deviceId,
-                       status, total_rows AS totalRows, file_name AS fileName,
+                       status, total_rows AS totalRows, file_name AS fileName, file_path AS filePath, checksum_sha256 AS checksum,
                        CAST(created_at AS CHAR) AS createdAt,
                        CAST(finished_at AS CHAR) AS finishedAt,
                        message
@@ -793,23 +950,45 @@ public class BusinessOperationsService {
                 WHERE tenant_id = ? AND id = ?
                 """, tenantId, id);
         List<String> warnings = new ArrayList<>();
-        warnings.add("A restauracao so e liberada depois de validar o arquivo fisico do backup.");
-        warnings.add("Antes de restaurar, o sistema cria um snapshot de seguranca no historico.");
-        warnings.add("A confirmacao exigida e literal para evitar clique acidental.");
+        String status = value(backup.get("status"));
+        String filePath = value(backup.get("filePath"));
+        String checksum = value(backup.get("checksum"));
+        boolean completed = "CONCLUIDO".equalsIgnoreCase(status);
+        boolean fileExists = false;
+        boolean checksumValid = false;
+        if (completed && !filePath.isBlank()) {
+            Path path = Path.of(filePath);
+            fileExists = Files.isRegularFile(path);
+            checksumValid = fileExists && (checksum.isBlank() || checksum.equalsIgnoreCase(sha256(path)));
+        }
+        if (!completed) {
+            warnings.add("Este backup ainda não foi concluído e não pode ser usado para restauração.");
+        }
+        if (!fileExists) {
+            warnings.add("O arquivo físico do backup não foi encontrado no servidor.");
+        }
+        if (fileExists && !checksumValid) {
+            warnings.add("O arquivo físico existe, mas a validação de integridade falhou.");
+        }
+        warnings.add("A restauração real continua bloqueada até existir aplicação por staging com rollback transacional.");
+        warnings.add("A confirmação exigida é literal para evitar clique acidental.");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", backup.get("id"));
         response.put("tenantId", backup.get("tenantId"));
         response.put("storeId", backup.get("storeId"));
         response.put("sourceId", backup.get("sourceId"));
         response.put("deviceId", backup.get("deviceId"));
-        response.put("status", backup.get("status"));
+        response.put("status", status);
         response.put("totalRows", backup.get("totalRows"));
         response.put("fileName", backup.get("fileName"));
+        response.put("fileExists", fileExists);
+        response.put("checksumValid", checksumValid);
+        response.put("fileValidated", completed && fileExists && checksumValid);
         response.put("createdAt", backup.get("createdAt"));
         response.put("finishedAt", backup.get("finishedAt"));
         response.put("message", backup.get("message"));
         response.put("requiredConfirmation", restoreConfirmation(id));
-        response.put("restoreAvailable", false);
+        response.put("restoreAvailable", completed && fileExists && checksumValid);
         response.put("warnings", warnings);
         return response;
     }
@@ -821,35 +1000,111 @@ public class BusinessOperationsService {
         String expectedConfirmation = restoreConfirmation(id);
         String confirmation = value(request == null ? null : request.get("confirmation"));
         if (!expectedConfirmation.equals(confirmation)) {
-            auditService.recordCurrent("BACKUP_RESTORE_REJECTED", "backup_runs", String.valueOf(id), "Restauracao bloqueada por confirmacao invalida.", "CRITICO", null);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Confirmacao invalida. Digite exatamente: " + expectedConfirmation);
+            auditService.recordCurrent("BACKUP_RESTORE_REJECTED", "backup_runs", String.valueOf(id), "Restauração bloqueada por confirmação inválida.", "CRITICO", null);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Confirmação inválida. Digite exatamente: " + expectedConfirmation);
         }
-        String store = String.valueOf(preview.getOrDefault("storeId", "WEB"));
-        String fileName = "pre-restore-" + tenantId + "-" + System.currentTimeMillis() + ".zip";
+        if (!Boolean.TRUE.equals(preview.get("fileValidated"))) {
+            auditService.recordCurrent("BACKUP_RESTORE_BLOCKED", "backup_runs", String.valueOf(id), "Restauração bloqueada porque o arquivo do backup não passou na validação.", "CRITICO", null);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "O backup precisa estar concluído, presente no servidor e íntegro antes de preparar a restauração.");
+        }
+        Path file = validatedBackupFile(tenantId, id);
+        BackupStagingPlan plan = validateRestoreStaging(file);
+        String status = plan.warnings().isEmpty() ? "STAGED" : "BLOCKED";
         jdbcTemplate.update("""
-                INSERT INTO backup_runs (tenant_id, store_id, source_id, status, total_rows, file_name, finished_at, message)
-                VALUES (?, ?, 'WEB', 'SAFETY_SNAPSHOT', ?, ?, CURRENT_TIMESTAMP, ?)
+                INSERT INTO backup_restore_staging
+                    (tenant_id, store_id, backup_id, status, total_rows, tables_json, warnings_json,
+                     file_name, checksum_sha256, requested_by, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 tenantId,
-                store,
-                estimateProtectedRows(tenantId, store),
-                fileName,
-                "Snapshot de seguranca registrado antes da tentativa de restauracao do backup " + id + "."
+                value(preview.get("storeId")),
+                id,
+                status,
+                plan.totalRows(),
+                jsonString(plan.tableRows()),
+                jsonString(plan.warnings()),
+                value(preview.get("fileName")),
+                sha256(file),
+                currentUser(),
+                status.equals("STAGED")
+                        ? "Backup validado em staging. Nenhum dado de produção foi alterado."
+                        : "Backup analisado, mas bloqueado por inconsistência no arquivo."
         );
-        Long snapshotId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-        auditService.recordCurrent("BACKUP_RESTORE_BLOCKED", "backup_runs", String.valueOf(id), "Restauracao destrutiva bloqueada ate existir arquivo fisico validado.", "CRITICO", "Snapshot " + snapshotId);
+        Long stagingId = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        auditService.recordCurrent(status.equals("STAGED") ? "BACKUP_RESTORE_STAGED" : "BACKUP_RESTORE_BLOCKED",
+                "backup_runs", String.valueOf(id), status.equals("STAGED")
+                        ? "Backup preparado em staging sem alterar produção."
+                        : "Staging de restauração bloqueado por inconsistência.",
+                status.equals("STAGED") ? "ALERTA" : "CRITICO",
+                plan.warnings().isEmpty() ? null : String.join("; ", plan.warnings()));
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", "RESTORE_BLOCKED");
+        response.put("status", status.equals("STAGED") ? "RESTORE_STAGED" : "RESTORE_BLOCKED");
         response.put("restoreExecuted", false);
         response.put("backupId", id);
-        response.put("safetySnapshotId", snapshotId);
-        response.put("message", "Snapshot de seguranca criado. A restauracao real foi bloqueada porque nao existe arquivo fisico de backup validado para aplicar com rollback seguro.");
-        response.put("nextStep", "Anexe ou gere um backup fisico validado antes de liberar restauracao destrutiva.");
+        response.put("stagingId", stagingId);
+        response.put("fileValidated", preview.get("fileValidated"));
+        response.put("totalRows", plan.totalRows());
+        response.put("tables", plan.tableRows());
+        response.put("warnings", plan.warnings());
+        response.put("message", status.equals("STAGED")
+                ? "Backup preparado em staging. Nenhum dado de produção foi alterado."
+                : "Backup não foi preparado para restauração porque possui inconsistências.");
+        response.put("nextStep", "Conferir o staging e liberar a aplicação transacional em uma etapa controlada.");
         return response;
     }
 
     private String restoreConfirmation(long id) {
         return "RESTAURAR BACKUP " + id;
+    }
+
+    private BackupStagingPlan validateRestoreStaging(Path file) {
+        Map<String, Integer> tableRows = new LinkedHashMap<>();
+        for (String table : BACKUP_TABLES) {
+            tableRows.put(table, 0);
+        }
+        List<String> warnings = new ArrayList<>();
+        try {
+            for (String rawLine : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String line = rawLine.trim();
+                if (line.startsWith("-- Tabela ")) {
+                    String table = line.substring("-- Tabela ".length());
+                    int end = table.indexOf(" ");
+                    table = end > 0 ? table.substring(0, end) : table;
+                    if (!BACKUP_TABLES.contains(table)) {
+                        warnings.add("Tabela não permitida no backup: " + table);
+                    }
+                    continue;
+                }
+                if (!line.startsWith("INSERT INTO `")) {
+                    continue;
+                }
+                int end = line.indexOf('`', "INSERT INTO `".length());
+                String table = end > 0 ? line.substring("INSERT INTO `".length(), end) : "";
+                if (!BACKUP_TABLES.contains(table)) {
+                    warnings.add("INSERT ignorado para tabela não permitida: " + table);
+                    continue;
+                }
+                tableRows.put(table, tableRows.getOrDefault(table, 0) + 1);
+            }
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível preparar o staging da restauração.");
+        }
+        int totalRows = tableRows.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalRows == 0) {
+            warnings.add("O arquivo de backup não possui registros para restaurar.");
+        }
+        return new BackupStagingPlan(totalRows, tableRows, warnings);
+    }
+
+    private String jsonString(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível registrar os detalhes da restauração.");
+        }
+    }
+
+    private record BackupStagingPlan(int totalRows, Map<String, Integer> tableRows, List<String> warnings) {
     }
 
     private int estimateProtectedRows(String tenantId, String store) {
@@ -1444,7 +1699,7 @@ public class BusinessOperationsService {
             }
         }
         if (required) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe a senha do usuario.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe a senha do usuário.");
         }
         return null;
     }
@@ -1565,7 +1820,7 @@ public class BusinessOperationsService {
     }
 
     private String value(Object value) {
-        return value == null ? null : String.valueOf(value);
+        return value == null ? "" : String.valueOf(value);
     }
 
     private boolean booleanValue(Object value) {

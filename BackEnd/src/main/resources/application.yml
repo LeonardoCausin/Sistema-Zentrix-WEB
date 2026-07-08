@@ -46,6 +46,8 @@ zentrix:
     trust-proxy-headers: ${ZENTRIX_RATE_LIMIT_TRUST_PROXY_HEADERS:false}
   health:
     expose-details: ${ZENTRIX_HEALTH_DETAILS:false}
+  backup:
+    dir: ${ZENTRIX_BACKUP_DIR:backups}
   security:
     csp-connect-src: ${ZENTRIX_CSP_CONNECT_SRC:}
   cors:

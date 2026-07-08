@@ -40,7 +40,7 @@ public class WebChangeOutboxService {
     private static final List<Map<String, Object>> UNSUPPORTED_ENTITY_TYPES = List.of(
             Map.of("entityType", "SUPPLIER", "reason", "Fornecedores ainda não são enviados do painel para o PDV nesta versão."),
             Map.of("entityType", "COMANDA", "reason", "Comandas continuam originadas no PDV e entram no Web via push."),
-            Map.of("entityType", "AUDIT_LOG", "reason", "Auditoria e historico operacional nao sao reenviados ao PDV.")
+            Map.of("entityType", "AUDIT_LOG", "reason", "Auditoria e histórico operacional não são reenviados ao PDV.")
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -323,7 +323,7 @@ public class WebChangeOutboxService {
                 .distinct()
                 .toList();
         if (ids.isEmpty()) {
-            throw new IllegalArgumentException("Ids de confirmacao invalidos");
+            throw new IllegalArgumentException("IDs de confirmação inválidos");
         }
         String status = request.normalizedStatus();
         if (!status.equals("ACKED") && !status.equals("ERROR")) {
@@ -578,7 +578,7 @@ public class WebChangeOutboxService {
                 throw new IllegalArgumentException("Este PDV não está autorizado para sincronizar esta loja.");
             }
         } catch (DataAccessException ignored) {
-            // Bancos legados podem ainda nao ter metadados de devices no primeiro pull.
+            // Bancos legados podem ainda não ter metadados de devices no primeiro pull.
         }
     }
 

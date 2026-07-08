@@ -2,11 +2,17 @@ package br.com.zentrix.web.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -309,20 +315,36 @@ public class WebDataService {
         int safeLimit = safeLimit(limit, 20, 200);
         int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
-                SELECT received_at, tenant_id, store_id, device_id, source_id, total_rows, status
-                FROM sync_runs
+                SELECT id, created_at, finished_at, tenant_id, store_id, device_id, source_id, total_rows, status,
+                       file_name, file_size_bytes, checksum_sha256, created_by, backup_type, file_path, message
+                FROM backup_runs
                 WHERE %s
-                ORDER BY received_at DESC, id DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", rs.getTimestamp("received_at") == null ? "-" : rs.getTimestamp("received_at").toString());
+            row.put("id", rs.getLong("id"));
+            row.put("date", rs.getTimestamp("created_at") == null ? "-" : rs.getTimestamp("created_at").toString());
+            row.put("finishedAt", rs.getTimestamp("finished_at") == null ? null : rs.getTimestamp("finished_at").toString());
             row.put("origin", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
             row.put("tenantId", rs.getString("tenant_id"));
             row.put("storeId", rs.getString("store_id"));
             row.put("deviceId", rs.getString("device_id"));
             row.put("sourceId", rs.getString("source_id"));
-            row.put("size", rs.getInt("total_rows") + " registros");
+            row.put("fileName", rs.getString("file_name"));
+            row.put("size", humanBytes(rs.getLong("file_size_bytes")));
+            row.put("rows", rs.getInt("total_rows"));
+            String checksum = rs.getString("checksum_sha256");
+            String filePath = rs.getString("file_path");
+            boolean fileExists = filePath != null && !filePath.isBlank() && Files.isRegularFile(Path.of(filePath));
+            boolean checksumValid = fileExists && (checksum == null || checksum.isBlank() || checksum.equalsIgnoreCase(sha256(Path.of(filePath))));
+            row.put("checksum", checksum);
+            row.put("fileExists", fileExists);
+            row.put("checksumValid", checksumValid);
+            row.put("integrity", backupIntegrityLabel(rs.getString("status"), fileExists, checksumValid));
+            row.put("createdBy", rs.getString("created_by"));
+            row.put("type", rs.getString("backup_type"));
+            row.put("message", rs.getString("message"));
             row.put("status", rs.getString("status"));
             return row;
         }, pagedArgs(filter, safeLimit, safeOffset));
@@ -1132,6 +1154,39 @@ public class WebDataService {
         return NumberFormat.getCurrencyInstance(PT_BR)
                 .format(value == null ? BigDecimal.ZERO : value)
                 .replace('\u00A0', ' ');
+    }
+
+    private String humanBytes(long bytes) {
+        if (bytes <= 0) {
+            return "0 B";
+        }
+        String[] units = {"B", "KB", "MB", "GB"};
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit++;
+        }
+        return String.format(PT_BR, "%.1f %s", value, units[unit]);
+    }
+
+    private String backupIntegrityLabel(String status, boolean fileExists, boolean checksumValid) {
+        if (!"CONCLUIDO".equalsIgnoreCase(status)) {
+            return "Aguardando conclusão";
+        }
+        if (!fileExists) {
+            return "Arquivo ausente";
+        }
+        return checksumValid ? "Íntegro" : "Inválido";
+    }
+
+    private String sha256(Path file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file)));
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return "";
+        }
     }
 
     static List<Map<String, Object>> deduplicateStores(List<Map<String, Object>> stores) {

@@ -39,11 +39,34 @@ class AuthServiceTest {
     }
 
     @Test
+    void rejectsManagerUserEvenWhenPasswordMatches() {
+        jdbcTemplate.addQueryResult(List.of(user("gerente", "GERENTE", BCrypt.hashpw("senha", BCrypt.gensalt(4)))));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> authService.login(new LoginRequest("gerente", "senha")));
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        assertEquals(0, authTokenService.issuedCount);
+    }
+
+    @Test
     void issuesTokenForAdminUser() {
         jdbcTemplate.addQueryResult(List.of(user("admin", "ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)))));
         jdbcTemplate.addQueryResult(List.of());
 
         var response = authService.login(new LoginRequest("admin", "senha"));
+
+        assertEquals("token-123", response.token());
+        assertEquals("tenant-1", response.companyId());
+        assertEquals(1, authTokenService.issuedCount);
+    }
+
+    @Test
+    void issuesTokenForOwnerUser() {
+        jdbcTemplate.addQueryResult(List.of(user("dono", "DONO", BCrypt.hashpw("senha", BCrypt.gensalt(4)))));
+        jdbcTemplate.addQueryResult(List.of());
+
+        var response = authService.login(new LoginRequest("dono", "senha"));
 
         assertEquals("token-123", response.token());
         assertEquals("tenant-1", response.companyId());

@@ -6,6 +6,7 @@
         activeStoreName,
         auditTone,
         auditTimelineHtml,
+        backupIntegrityHtml,
         backupTimelineHtml,
         barChartHtml,
         cashDifferenceTag,
@@ -573,26 +574,36 @@
 
   async function renderBackups() {
     const rows = await safeApi("/backups" + storeQuery(), []);
-    const latest = rows[0];
-    const failed = rows.filter((row) => String(row.status || "").toLowerCase().includes("fail")).length;
+    const latest = rows.find((row) => String(row.status || "").toUpperCase() === "CONCLUIDO") || rows[0];
+    const failed = rows.filter((row) => String(row.status || "").toUpperCase().includes("FALH")).length;
+    const validBackups = rows.filter((row) => String(row.integrity || "").toLowerCase() === "íntegro").length;
+    const completedMissingFile = rows.filter((row) => String(row.status || "").toUpperCase() === "CONCLUIDO" && !row.fileExists).length;
+    const latestCanDownload = latest && latest.id && latest.fileExists && latest.checksumValid !== false;
     const exportId = "export-backups";
     renderShell("Backups", "Histórico, status e segurança dos dados sincronizados.", `
       <div class="grid metrics-grid">
-        ${metricCard("Último backup", latest ? latest.date : "Aguardando", "Recebido pelo AppGestão", latest ? "success" : "warning", "CL", "Nuvem")}
-        ${metricCard("Status", failed ? "Falha no backup" : rows.length ? "Backup em dia" : "Backup pendente", "Monitoramento de segurança", failed ? "danger" : rows.length ? "success" : "warning", failed ? "!" : "OK", "Dados")}
-        ${metricCard("Lotes recebidos", String(rows.length), "Sincronizações recentes", "info", "#", activeStoreName())}
+        ${metricCard("Último backup", latest ? latest.date : "Aguardando", latest ? latest.integrity || "Verificando integridade" : "Arquivo de segurança gerado pelo AppGestão", latestCanDownload ? "success" : latest ? "warning" : "warning", "BK", "Arquivo")}
+        ${metricCard("Integridade", rows.length ? `${validBackups}/${rows.length}` : "Aguardando", "Backups íntegros no histórico", completedMissingFile ? "warning" : validBackups ? "success" : "warning", "OK", "Checksum")}
+        ${metricCard("Arquivos gerados", String(rows.length), "Histórico de backups reais", "info", "#", activeStoreName())}
         ${metricCard("Falhas", String(failed), "Backups com erro", failed ? "danger" : "success", "X", "Auditoria")}
       </div>
-      <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="download-backup">Baixar backup</button><span class="chip success">Dados protegidos</span></div>
+      <div class="page-actions" style="margin: 16px 0">
+        <button class="button btn-primary" type="button" data-action="create-backup">Gerar backup agora</button>
+        ${latestCanDownload ? `<button class="button btn-light" type="button" data-action="download-real-backup" data-id="${escAttr(latest.id)}">Baixar último backup</button>` : ""}
+        <span class="chip ${latestCanDownload ? "success" : "warning"}">${latestCanDownload ? "Backup íntegro" : "Verifique o último backup"}</span>
+      </div>
       <div class="grid two-column">
-        <section class="panel"><div class="panel-title"><div><h3>Timeline de backups</h3><span>Últimas sincronizações</span></div></div>${backupTimelineHtml(rows)}</section>
-        ${dataTableHtml("Backups", ["Data", "Origem", "Registros", "Status"], rows, (row) => [
-          row.date, row.origin, row.size, tag(row.status)
+        <section class="panel"><div class="panel-title"><div><h3>Timeline de backups</h3><span>Últimos arquivos gerados</span></div></div>${backupTimelineHtml(rows)}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Integridade do último backup</h3><span>Conferência antes de baixar ou restaurar</span></div></div>${backupIntegrityHtml(latest)}</section>
+      </div>
+      <div style="margin-top: 16px">
+        ${dataTableHtml("Backups", ["Data", "Responsável", "Arquivo", "Tamanho", "Registros", "Integridade", "Status"], rows, (row) => [
+          row.date, row.createdBy || "-", row.fileName || "-", row.size || "0 B", row.rows || 0, tag(row.integrity || "-"), tag(row.status)
         ], exportId)}
       </div>
     `);
-    setupCsvExport(exportId, "Backups", ["Data", "Origem", "Registros", "Status"], rows.map((row) => [
-      row.date, row.origin, row.size, row.status
+    setupCsvExport(exportId, "Backups", ["Data", "Responsável", "Arquivo", "Tamanho", "Registros", "Integridade", "Status", "Checksum"], rows.map((row) => [
+      row.date, row.createdBy || "-", row.fileName || "-", row.size || "0 B", row.rows || 0, row.integrity || "-", row.status, row.checksum || ""
     ]));
   }
 

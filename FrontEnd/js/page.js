@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260708-chart-axis-tight";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260708-backup-monitor";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -525,24 +525,17 @@
       button.addEventListener("click", () => setFinancialEntryStatus(button));
     });
 
-    const backupButton = viewHost.querySelector('[data-action="download-backup"]');
-    if (backupButton && backupButton.dataset.ready !== "true") {
-      backupButton.dataset.ready = "true";
-      backupButton.addEventListener("click", () => {
-        const payload = readViewState(page || currentPageName(), "csv:export-backups");
-        if (payload) {
-          downloadCsvPayload(payload.title, payload.headers || [], payload.rows || []);
-          renderToast("Backup baixado com sucesso. Guarde este arquivo em um local seguro.", "success");
-          return;
-        }
-        const exportButton = document.getElementById("export-backups");
-        if (exportButton && !exportButton.disabled) {
-          exportButton.click();
-          return;
-        }
-        renderToast("Ainda não há backup recebido do PDV para baixar.", "warning");
-      });
+    const createBackupButton = viewHost.querySelector('[data-action="create-backup"]');
+    if (createBackupButton && createBackupButton.dataset.ready !== "true") {
+      createBackupButton.dataset.ready = "true";
+      createBackupButton.addEventListener("click", () => runButtonTask(createBackupButton, createManualBackup, "Gerando..."));
     }
+
+    viewHost.querySelectorAll('[data-action="download-real-backup"]').forEach((button) => {
+      if (button.dataset.ready === "true") return;
+      button.dataset.ready = "true";
+      button.addEventListener("click", () => downloadRealBackup(button.dataset.id));
+    });
 
     viewHost.querySelectorAll('[data-action="sync-retry"], [data-action="sync-dead-letter"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
@@ -1235,6 +1228,30 @@
     }
   }
 
+  async function createManualBackup() {
+    try {
+      const result = await window.zentrixApi("/backups/manual?store=" + encodeURIComponent(writeStore()), {
+        method: "POST",
+        cache: "no-store",
+        body: JSON.stringify({ reason: "Backup manual solicitado no AppGestão" }),
+        timeoutMs: 30000
+      });
+      clearApiCache();
+      renderToast(result && result.message ? result.message : "Backup gerado com sucesso.", "success");
+      loadPageData({ fresh: true, userInitiated: true });
+    } catch (error) {
+      renderToast(error.message || "Não foi possível gerar o backup agora.", "danger");
+    }
+  }
+
+  function downloadRealBackup(id) {
+    if (!id) {
+      renderToast("Backup indisponível para download.", "warning");
+      return;
+    }
+    window.location.href = currentApiBase() + "/backups/" + encodeURIComponent(id) + "/download";
+  }
+
   async function patchStatus(endpoint, active, successMessage) {
     try {
       await window.zentrixApi(endpoint, {
@@ -1467,6 +1484,7 @@
       activeStoreName,
       auditTone,
       auditTimelineHtml,
+      backupIntegrityHtml,
       backupTimelineHtml,
       barChartHtml,
       cashDifferenceTag,
@@ -2094,13 +2112,29 @@
   }
 
   function backupTimelineHtml(rows) {
-    if (!rows.length) return emptyState("Ainda não há backup recebido do PDV.");
+    if (!rows.length) return emptyState("Ainda não há backup gerado. Use o botão para criar a primeira cópia de segurança.");
     return `<div class="timeline">${rows.slice(0, 8).map((row) => `
       <div class="timeline-item">
-        <span class="list-icon ${tagTone(row.status)}">CL</span>
-        <div><span class="list-title">${esc(row.origin || "Origem")}</span><span class="list-subtitle">${esc(row.size || "0 registros")}</span></div>
+        <span class="list-icon ${tagTone(row.status)}">BK</span>
+        <div><span class="list-title">${esc(row.fileName || row.origin || "Backup")}</span><span class="list-subtitle">${esc(row.size || "0 B")} | ${esc(row.createdBy || "Sistema")}</span></div>
         <strong>${esc(row.date || "-")}</strong>
       </div>`).join("")}</div>`;
+  }
+
+  function backupIntegrityHtml(row) {
+    if (!row) {
+      return emptyState("Gere o primeiro backup para acompanhar a integridade dos dados.");
+    }
+    const checksum = row.checksum ? String(row.checksum) : "";
+    const shortChecksum = checksum ? checksum.slice(0, 16) + "..." : "Não informado";
+    const integrity = row.integrity || "Verificando";
+    const fileLabel = row.fileExists ? "Arquivo encontrado" : "Arquivo não encontrado";
+    const checksumLabel = row.checksumValid ? "Checksum confirmado" : checksum ? "Checksum divergente" : "Sem checksum";
+    return `<div class="stack-list">
+      <div class="list-item"><span class="list-icon ${row.checksumValid ? "success" : "warning"}">OK</span><div><span class="list-title">${esc(integrity)}</span><span class="list-subtitle">Status de integridade do arquivo</span></div><strong>${esc(row.status || "-")}</strong></div>
+      <div class="list-item"><span class="list-icon ${row.fileExists ? "success" : "danger"}">AR</span><div><span class="list-title">${esc(fileLabel)}</span><span class="list-subtitle">${esc(row.fileName || "Arquivo ainda não gerado")}</span></div><strong>${esc(row.size || "0 B")}</strong></div>
+      <div class="list-item"><span class="list-icon ${row.checksumValid ? "success" : "warning"}">SH</span><div><span class="list-title">${esc(checksumLabel)}</span><span class="list-subtitle">${esc(shortChecksum)}</span></div><strong>${esc(String(row.rows || 0))}</strong></div>
+    </div>`;
   }
 
   function reportsHistoryHtml(data) {

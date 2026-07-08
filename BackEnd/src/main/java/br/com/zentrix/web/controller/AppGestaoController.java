@@ -8,8 +8,14 @@ import br.com.zentrix.web.service.PermissionService;
 import br.com.zentrix.web.service.PermissionService.Permission;
 import br.com.zentrix.web.service.ReportService;
 import br.com.zentrix.web.service.WebDataService;
+import java.net.MalformedURLException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -111,5 +117,16 @@ public class AppGestaoController {
     @GetMapping("/backups/{id}/restore/preview")
     public Map<String, Object> restorePreview(@PathVariable long id) {
         return operationsService.restoreBackupPreview(AuthContext.tenantId(), id);
+    }
+
+    @GetMapping("/backups/{id}/download")
+    public ResponseEntity<Resource> downloadBackup(@PathVariable long id) throws MalformedURLException {
+        Path file = operationsService.validatedBackupFile(AuthContext.tenantId(), id);
+        String fileName = operationsService.backupDownloadName(AuthContext.tenantId(), id);
+        Resource resource = new UrlResource(file.toUri());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .header(HttpHeaders.CONTENT_TYPE, "application/sql; charset=utf-8")
+                .body(resource);
     }
 }

@@ -148,7 +148,84 @@ test("sync center shows diagnostics and retries a failed outbox item", async ({ 
   await expect(page.getByText("Item colocado novamente para envio ao PDV.")).toBeVisible();
 });
 
-async function mockPanelApi(page) {
+
+test("product flow creates a product from the web panel", async ({ page }) => {
+  const calls = [];
+  await mockPanelApi(page, { calls });
+  await page.goto("/FrontEnd/pages/produtos.html");
+
+  await page.locator('[data-action="new-product"]').click();
+  const form = page.locator('[data-admin-form="product"] form');
+  await form.locator('[name="code"]').fill("P-E2E");
+  await form.locator('[name="description"]').fill("Produto E2E");
+  await form.locator('[name="price"]').fill("19,90");
+  await form.locator('[name="stock"]').fill("5");
+  await form.locator('[name="minStock"]').fill("1");
+  await form.locator('button[type="submit"]').click();
+
+  await expect(page.getByText("Produto cadastrado.")).toBeVisible();
+  expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/admin/produtos"))).toBeTruthy();
+});
+
+test("client flow creates a client from the web panel", async ({ page }) => {
+  const calls = [];
+  await mockPanelApi(page, { calls });
+  await page.goto("/FrontEnd/pages/clientes.html");
+
+  await page.locator('[data-action="new-client"]').click();
+  const form = page.locator('[data-admin-form="client"] form');
+  await form.locator('[name="name"]').fill("Cliente E2E");
+  await form.locator('[name="cpfCnpj"]').fill("12345678900");
+  await form.locator('[name="phone"]').fill("(11) 99999-0000");
+  await form.locator('[name="email"]').fill("cliente@teste.com");
+  await form.locator('button[type="submit"]').click();
+
+  await expect(page.getByText("Cliente cadastrado.")).toBeVisible();
+  expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/admin/clientes"))).toBeTruthy();
+});
+
+test("stock flow records a manual movement", async ({ page }) => {
+  const calls = [];
+  await mockPanelApi(page, { calls });
+  await page.goto("/FrontEnd/pages/estoque.html");
+
+  await page.locator('[data-action="new-stock-movement"]').click();
+  const form = page.locator('[data-admin-form="stock"] form');
+  await form.locator('[name="productCode"]').fill("P-E2E");
+  await form.locator('[name="quantity"]').fill("3");
+  await form.locator('[name="reason"]').fill("Reposição de teste");
+  await form.locator('button[type="submit"]').click();
+
+  await expect(page.getByText("Movimentação de estoque registrada.")).toBeVisible();
+  expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/stock/entry"))).toBeTruthy();
+});
+
+test("cash page loads sessions and backup monitor shows integrity", async ({ page }) => {
+  await mockPanelApi(page);
+
+  await page.goto("/FrontEnd/pages/caixa.html");
+  await expect(page.getByText("Caixa aberto")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Operador E2E" })).toBeVisible();
+
+  await page.goto("/FrontEnd/pages/backups.html");
+  await expect(page.getByText("Backup íntegro")).toBeVisible();
+  await expect(page.getByText("Checksum confirmado")).toBeVisible();
+  await expect(page.locator('[data-action="download-real-backup"]')).toBeVisible();
+});
+
+test("backup flow requests a real manual backup", async ({ page }) => {
+  const calls = [];
+  await mockPanelApi(page, { calls });
+  await page.goto("/FrontEnd/pages/backups.html");
+
+  await page.locator('[data-action="create-backup"]').click();
+
+  await expect(page.getByText("Backup gerado com sucesso.")).toBeVisible();
+  expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/backups/manual"))).toBeTruthy();
+});
+
+async function mockPanelApi(page, options = {}) {
+  const calls = options.calls || [];
   await page.addInitScript((value) => {
     sessionStorage.setItem("zentrix-session", JSON.stringify(value));
   }, session);
@@ -167,6 +244,52 @@ async function mockPanelApi(page) {
   });
   await page.route("**/api/dashboard**", async (route) => {
     await route.fulfill({ json: dashboardPayload() });
+  });
+  await page.route("**/api/cash-sessions**", async (route) => {
+    await route.fulfill({ json: cashSessionsPayload() });
+  });
+  await page.route("**/api/admin/produtos**", async (route) => {
+    const request = route.request();
+    calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
+    if (request.method() === "POST") {
+      await route.fulfill({ json: { code: "P-E2E", description: "Produto E2E" } });
+      return;
+    }
+    await route.fulfill({ json: productsPayload() });
+  });
+  await page.route("**/api/admin/clientes**", async (route) => {
+    const request = route.request();
+    calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
+    if (request.method() === "POST") {
+      await route.fulfill({ json: { id: 99, name: "Cliente E2E" } });
+      return;
+    }
+    await route.fulfill({ json: clientsPayload() });
+  });
+  await page.route("**/api/stock/alerts**", async (route) => {
+    await route.fulfill({ json: stockAlertsPayload() });
+  });
+  await page.route("**/api/stock/movements**", async (route) => {
+    await route.fulfill({ json: stockMovementsPayload() });
+  });
+  await page.route("**/api/stock/entry**", async (route) => {
+    const request = route.request();
+    calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
+    await route.fulfill({ json: { status: "OK" } });
+  });
+  await page.route("**/api/backups/manual**", async (route) => {
+    const request = route.request();
+    calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
+    await route.fulfill({ json: { status: "CONCLUIDO", id: 8, message: "Backup gerado com sucesso." } });
+  });
+  await page.route("**/api/backups**", async (route) => {
+    const request = route.request();
+    if (request.url().includes("/api/backups/manual")) {
+      calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
+      await route.fulfill({ json: { status: "CONCLUIDO", id: 8, message: "Backup gerado com sucesso." } });
+      return;
+    }
+    await route.fulfill({ json: backupsPayload() });
   });
   await page.route("**/api/audit**", async (route) => {
     await route.fulfill({ json: auditPayload() });
@@ -247,6 +370,86 @@ function observabilityPayload() {
     memory: { used: "128 MB" },
     database: { status: "UP" }
   };
+}
+
+function productsPayload() {
+  return [
+    {
+      store: "Loja Web",
+      storeId: "WEB",
+      code: "P-E2E",
+      description: "Produto Teste",
+      unit: "UN",
+      price: "R$ 19,90",
+      costPrice: "R$ 10,00",
+      stock: "5",
+      currentStock: "5",
+      minimumStock: "1",
+      category: "Geral",
+      active: true
+    }
+  ];
+}
+
+function clientsPayload() {
+  return [
+    {
+      store: "Loja Web",
+      storeId: "WEB",
+      id: 1,
+      name: "Cliente Teste",
+      cpfCnpj: "12345678900",
+      phone: "(11) 99999-0000",
+      email: "cliente@teste.com",
+      address: "Rua Teste",
+      active: true,
+      createdAt: "2026-07-02"
+    }
+  ];
+}
+
+function stockAlertsPayload() {
+  return [{ productCode: "P-E2E", product: "Produto Teste", currentStock: "5", minimumStock: "10" }];
+}
+
+function stockMovementsPayload() {
+  return [
+    { productCode: "P-E2E", type: "ENTRADA", quantity: "2", previousStock: "3", newStock: "5", reason: "Reposição", user: "admin", createdAt: "2026-07-02 18:00" }
+  ];
+}
+
+function cashSessionsPayload() {
+  return [
+    {
+      store: "Loja Web",
+      code: "CX-1",
+      operator: "Operador E2E",
+      openedAt: "2026-07-02 09:00",
+      closedAt: "-",
+      status: "Aberto",
+      expected: "R$ 500,00",
+      informed: "-",
+      difference: "-"
+    }
+  ];
+}
+
+function backupsPayload() {
+  return [
+    {
+      id: 7,
+      date: "2026-07-02 18:00",
+      createdBy: "admin",
+      fileName: "zentrix-backup-WEB-7.sql",
+      size: "12.0 KB",
+      rows: 42,
+      status: "CONCLUIDO",
+      fileExists: true,
+      checksumValid: true,
+      integrity: "Íntegro",
+      checksum: "1234567890abcdef1234567890abcdef"
+    }
+  ];
 }
 
 function settingsPayload() {
