@@ -407,7 +407,8 @@ body.is-authenticated .app-shell {
   background: linear-gradient(180deg, var(--accent-blue), var(--accent-cyan));
 }
 
-.sidebar-status {
+.sidebar-status,
+.sidebar-sync {
   display: grid;
   gap: 12px;
   padding: 14px 10px 0;
@@ -415,15 +416,19 @@ body.is-authenticated .app-shell {
 }
 
 .sidebar-status strong,
-.sidebar-status span {
+.sidebar-status span,
+.sidebar-sync strong,
+.sidebar-sync span {
   display: block;
 }
 
-.sidebar-status strong {
+.sidebar-status strong,
+.sidebar-sync strong {
   font-size: 12px;
 }
 
-.sidebar-status span {
+.sidebar-status span,
+.sidebar-sync span {
   margin-top: 4px;
   color: var(--text-secondary);
   font-size: 11px;
