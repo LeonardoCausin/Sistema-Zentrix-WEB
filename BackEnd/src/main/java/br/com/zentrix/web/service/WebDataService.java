@@ -29,6 +29,7 @@ public class WebDataService {
     private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
     private static final Duration PANEL_CACHE_TTL = Duration.ofSeconds(20);
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Sao_Paulo");
+    private static final int PDV_ONLINE_WINDOW_MINUTES = 3;
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -68,12 +69,16 @@ public class WebDataService {
         Long lowStock = number("SELECT COUNT(*) FROM products p WHERE p.stock <= p.min_stock AND " + productFilter.sql(), productFilter.args());
         Long criticalStock = number("SELECT COUNT(*) FROM products p WHERE p.stock <= 0 AND " + productFilter.sql(), productFilter.args());
 
+        Map<String, Object> syncStatus = syncStatusSummary(tenantId, store);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("company", company(tenantId, store));
         response.put("activeStore", activeStore(tenantId, store));
         response.put("stores", stores(tenantId));
-        response.put("lastSync", lastSync(tenantId, store));
-        response.put("syncProgress", lastSyncProgress(tenantId, store));
+        response.put("lastSync", syncStatus.get("lastSync"));
+        response.put("pdvConnected", syncStatus.get("connected"));
+        response.put("pdvStatus", syncStatus.get("connectionLabel"));
+        response.put("pdvLastSeen", syncStatus.get("lastSeenAt"));
+        response.put("syncProgress", Boolean.TRUE.equals(syncStatus.get("connected")) ? 100 : 0);
         response.put("period", normalizePeriod(period));
         response.put("metrics", List.of(
                 metric("Faturamento", currency(periodTotal), periodLabel(period), "success"),
@@ -88,7 +93,7 @@ public class WebDataService {
         response.put("topProducts", topProducts(tenantId, period, store));
         response.put("alerts", alertService.alerts(tenantId, store));
         response.put("license", licenseService.current(tenantId));
-        response.put("syncStatus", syncStatusSummary(tenantId, store));
+        response.put("syncStatus", syncStatus);
         response.put("cashSummary", cashSummary(tenantId, period, store));
         response.put("financeSummary", financeSummary(tenantId, period, store));
         response.put("cancelledSales", number("SELECT COUNT(*) FROM sales s WHERE s.status = 'CANCELLED' AND " + salesFilter.sql(), salesFilter.args()));
@@ -776,6 +781,29 @@ public class WebDataService {
         summary.putIfAbsent("status", "WAITING");
         summary.putIfAbsent("progress", 0);
         summary.put("recentFailures", number("SELECT COUNT(*) FROM sync_runs WHERE status <> 'SUCCESS' AND " + filter.sql() + " AND received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)", filter.args()));
+        Filter deviceFilter = scopeFilter(tenantId, store, "td");
+        List<Map<String, Object>> devices = jdbcTemplate.query("""
+                SELECT td.source_id, td.id AS device_id, td.last_seen_at,
+                       CASE WHEN td.last_seen_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE) THEN 1 ELSE 0 END AS connected
+                FROM tenant_devices td
+                WHERE %s
+                ORDER BY td.last_seen_at DESC
+                LIMIT 1
+                """.formatted(deviceFilter.sql()), (rs, rowNum) -> {
+            Map<String, Object> device = new LinkedHashMap<>();
+            device.put("lastSourceId", rs.getString("source_id"));
+            device.put("lastDeviceId", rs.getString("device_id"));
+            device.put("lastSeenAt", rs.getTimestamp("last_seen_at") == null ? null : rs.getTimestamp("last_seen_at").toString());
+            device.put("connected", rs.getInt("connected") == 1);
+            return device;
+        }, withFirstArg(PDV_ONLINE_WINDOW_MINUTES, deviceFilter.argsArray()));
+        Map<String, Object> device = devices.isEmpty() ? Map.of("connected", false) : devices.get(0);
+        boolean connected = Boolean.TRUE.equals(device.get("connected"));
+        summary.put("connected", connected);
+        summary.put("connectionLabel", connected ? "PDV conectado" : "PDV desconectado");
+        summary.put("lastSeenAt", device.get("lastSeenAt"));
+        summary.putIfAbsent("lastSourceId", device.get("lastSourceId"));
+        summary.putIfAbsent("lastDeviceId", device.get("lastDeviceId"));
         return summary;
     }
 
@@ -1144,10 +1172,13 @@ public class WebDataService {
         return result.isEmpty() ? null : result.get(0);
     }
 
-    private int lastSyncProgress(String tenantId, String store) {
-        Filter filter = scopeFilter(tenantId, store, null);
-        Long success = number("SELECT COUNT(*) FROM sync_runs WHERE status = 'SUCCESS' AND " + filter.sql(), filter.args());
-        return success > 0 ? 100 : 0;
+    private Object[] withFirstArg(Object first, Object[] rest) {
+        Object[] args = new Object[(rest == null ? 0 : rest.length) + 1];
+        args[0] = first;
+        if (rest != null && rest.length > 0) {
+            System.arraycopy(rest, 0, args, 1, rest.length);
+        }
+        return args;
     }
 
     private String currency(BigDecimal value) {

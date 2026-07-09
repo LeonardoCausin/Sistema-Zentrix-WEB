@@ -131,6 +131,7 @@ public class SyncIngestService {
 
     public Map<String, Object> lastStatus(String tenantId, String storeId, String sourceId) {
         initializer.ensureReady();
+        touchDevicePresence(tenantId, storeId, sourceId, null);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT id, tenant_id, store_id, device_id, source_id, mode, status, generated_at, received_at, finished_at,
                        total_rows, table_counts_json, message
@@ -161,6 +162,25 @@ public class SyncIngestService {
         response.put("reconciliation", lastReconciliation(row.get("id")));
         response.put("message", Objects.toString(row.get("message"), ""));
         return response;
+    }
+
+    public void touchDevicePresence(String tenantId, String storeId, String sourceId, String deviceId) {
+        String safeTenant = optionalText(tenantId, null);
+        String safeStore = optionalText(storeId, null);
+        String safeSource = optionalText(sourceId, null);
+        String safeDevice = optionalText(deviceId, safeSource);
+        if (safeTenant == null || safeStore == null || safeDevice == null) {
+            return;
+        }
+        jdbcTemplate.update("""
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE
+                    source_id = COALESCE(VALUES(source_id), source_id),
+                    status = 'ACTIVE',
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                """, safeTenant, safeStore, safeDevice, safeDevice, safeSource);
     }
 
     private void validateRequest(SyncPushRequest request) {

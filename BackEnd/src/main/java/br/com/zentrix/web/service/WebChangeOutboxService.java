@@ -196,6 +196,7 @@ public class WebChangeOutboxService {
         String safeSource = optional(sourceId, null);
         String safeDevice = optional(deviceId, null);
         validateKnownSyncScope(safeTenant, safeStore, safeSource, safeDevice);
+        touchDevicePresence(safeTenant, safeStore, safeSource, safeDevice);
         int safeLimit = safeLimit(limit);
         long effectiveAfterId = effectiveAfterId(safeTenant, safeStore, safeSource, safeDevice, afterId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
@@ -266,6 +267,22 @@ public class WebChangeOutboxService {
         return response;
     }
 
+    private void touchDevicePresence(String tenantId, String storeId, String sourceId, String deviceId) {
+        String safeDevice = optional(deviceId, optional(sourceId, null));
+        if (safeDevice == null) {
+            return;
+        }
+        jdbcTemplate.update("""
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+                ON DUPLICATE KEY UPDATE
+                    source_id = COALESCE(VALUES(source_id), source_id),
+                    status = 'ACTIVE',
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                """, tenantId, storeId, safeDevice, safeDevice, sourceId);
+    }
+
     private long effectiveAfterId(String tenantId, String storeId, String sourceId, String deviceId, long afterId) {
         long requested = Math.max(0L, afterId);
         if (requested == 0L) {
@@ -317,6 +334,7 @@ public class WebChangeOutboxService {
         String safeSource = optional(sourceId, null);
         String safeDevice = optional(deviceId, null);
         validateKnownSyncScope(safeTenant, safeStore, safeSource, safeDevice);
+        touchDevicePresence(safeTenant, safeStore, safeSource, safeDevice);
         List<Long> ids = request.ids().stream()
                 .filter(Objects::nonNull)
                 .filter(id -> id > 0)

@@ -148,7 +148,7 @@
     const total = sumMoney(paidRows.map((row) => row.total));
     const average = paidRows.length ? total / paidRows.length : 0;
     const exportId = "export-vendas";
-    renderShell("Vendas", "Consulta de vendas, itens, pagamentos e cancelamentos sincronizados do PDV.", `
+    renderShell("Vendas", "Consulta de vendas, itens, pagamentos e cancelamentos do PDV.", `
       ${filterStrip([
         ["Período", periodLabel()],
         ["Operador", "Todos"],
@@ -277,7 +277,7 @@
     const rows = await safeApi("/admin/produtos" + storeQuery(), []);
     const inactive = rows.filter((row) => String(row.status || "").toLowerCase().includes("inativo")).length;
     const empty = rows.filter((row) => Number(row.currentStock || 0) <= 0).length;
-    renderShell("Produtos", "Cadastro sincronizado por loja, com categoria, preço, estoque e status.", `
+    renderShell("Produtos", "Cadastro por loja, com categoria, preço, estoque e status.", `
       <div class="grid metrics-grid">
         ${metricCard("Total de produtos", String(rows.length), "Itens recebidos do PDV", "info", "#", activeStoreName())}
         ${metricCard("Ativos", String(rows.length - inactive), "Disponíveis para venda", "success", "OK", "Catálogo")}
@@ -331,7 +331,7 @@
     const exportId = "export-clientes";
     renderShell("Clientes", "Cadastro, Última compra, total gasto e frequência de relacionamento.", `
       <div class="grid metrics-grid">
-        ${metricCard("Total de clientes", String(rows.length), "Base sincronizada", "info", "#", activeStoreName())}
+        ${metricCard("Total de clientes", String(rows.length), "Base de clientes", "info", "#", activeStoreName())}
         ${metricCard("Recorrentes", "Em análise", "Depende do histórico de compras", "warning", "~", "CRM")}
         ${metricCard("Novos", String(rows.length), "Cadastros recebidos do PDV", "success", "+", periodLabel())}
         ${metricCard("Frequência", "PDV", "Acompanhamento comercial", "info", "R", "Online")}
@@ -362,7 +362,7 @@
     ]);
     renderShell("Funcionários", "Cargo, status, vendas realizadas e permissões operacionais.", `
       <div class="grid metrics-grid">
-        ${metricCard("Funcionários", String(rows.length), "Usuários sincronizados", "info", "#", activeStoreName())}
+        ${metricCard("Funcionários", String(rows.length), "Usuários da loja", "info", "#", activeStoreName())}
         ${metricCard("Ativos", String(active), "Podem operar no PDV", "success", "OK", "Permissões")}
         ${metricCard("Administradores", String(rows.filter((row) => roleTone(row.role) === "danger").length), "Acesso elevado", "warning", "AD", "Segurança")}
         ${metricCard("Operadores", String(rows.filter((row) => roleTone(row.role) !== "danger").length), "Atendimento e vendas", "info", "OP", "Equipe")}
@@ -401,16 +401,16 @@
     const syncTone = dead ? "danger" : retryable ? "warning" : "success";
     const syncLabel = dead ? "Ação" : retryable ? "Reenvio" : "OK";
     const exportId = "export-auditoria";
-    renderShell("Auditoria", "Ações sensíveis, falhas de sincronização e alterações manuais.", `
+    renderShell("Auditoria", "Ações sensíveis, avisos do PDV e alterações manuais.", `
       <div class="grid metrics-grid">
         ${metricCard("Eventos", String(rows.length), "Registros no período", "info", "#", periodLabel())}
         ${metricCard("Alertas", String(risky), "Cancelamentos, exclusões e falhas", risky ? "warning" : "success", "!", "Risco")}
         ${metricCard("Envios ao PDV", String(pending), "Alterações aguardando envio", pending ? "warning" : "success", "PDV", "Fila")}
-        ${metricCard("Sincronização", dead ? String(dead) : String(retryable), dead ? "Itens pausados pedem atenção" : retryable ? "Erros aguardando novo envio" : "Fila saudável", syncTone, syncLabel, "Monitor")}
+        ${metricCard("PDV", dead ? String(dead) : String(retryable), dead ? "Itens pausados pedem atenção" : retryable ? "Erros aguardando novo envio" : "Envios em dia", syncTone, syncLabel, "Status")}
       </div>
       <div class="grid two-column" style="margin-top: 16px">
         <section class="panel"><div class="panel-title"><div><h3>Timeline de auditoria</h3><span>Eventos mais recentes</span></div></div>${auditTimelineHtml(rows)}</section>
-        <section class="panel"><div class="panel-title"><div><h3>Monitor de sincronização</h3><span>Envios, confirmações e últimos recebimentos do PDV</span></div></div>${syncMonitorHtml(monitor)}</section>
+        <section class="panel"><div class="panel-title"><div><h3>Status do PDV</h3><span>Envios, confirmações e últimos dados recebidos</span></div></div>${syncMonitorHtml(monitor)}</section>
       </div>
       <div style="margin-top: 16px">
         ${dataTableHtml("Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows, (row) => [
@@ -425,7 +425,7 @@
 
   function syncMonitorHtml(monitor) {
     if (!monitor || !Object.keys(monitor).length) {
-      return emptyState("Monitor de sincronização indisponível no momento.");
+      return emptyState("Status do PDV indisponível no momento.");
     }
     const rows = [
       ["PENDING", monitor.pendingCount || 0, "Aguardando envio ao PDV"],
@@ -459,7 +459,7 @@
     const retryable = Number(monitor.retryableErrorCount || 0);
     const dead = Number(monitor.deadLetterCount || 0);
     const healthTone = dead ? "danger" : retryable ? "warning" : "success";
-    renderShell("Sincronização", "Envios do painel para o PDV, status da loja e ações seguras.", `
+    renderShell("Status do PDV", "Envios do painel para o PDV, status da loja e ações seguras.", `
       ${filterStrip([
         ["Loja", activeStoreName()],
         ["Contrato", monitor.contractVersion || "-"],
@@ -484,7 +484,7 @@
 
   function syncCenterSummaryHtml(monitor) {
     if (!monitor || !Object.keys(monitor).length) {
-      return emptyState("Monitor de sincronização indisponível no momento.");
+      return emptyState("Status do PDV indisponível no momento.");
     }
     const summary = Array.isArray(monitor.summary) ? monitor.summary : [];
     const rows = summary.map((row) => `<div class="list-item"><span class="list-icon ${syncMonitorTone(row.status, row.count)}">${esc(row.status || "-")}</span><div><span class="list-title">${esc(row.status || "-")}</span><span class="list-subtitle">Último registro ${esc(String(row.lastId || 0))}</span></div><strong>${esc(String(row.count || 0))}</strong></div>`).join("");
@@ -580,7 +580,7 @@
     const completedMissingFile = rows.filter((row) => String(row.status || "").toUpperCase() === "CONCLUIDO" && !row.fileExists).length;
     const latestCanDownload = latest && latest.id && latest.fileExists && latest.checksumValid !== false;
     const exportId = "export-backups";
-    renderShell("Backups", "Histórico, status e segurança dos dados sincronizados.", `
+    renderShell("Backups", "Histórico, status e segurança dos dados.", `
       <div class="grid metrics-grid">
         ${metricCard("Último backup", latest ? latest.date : "Aguardando", latest ? latest.integrity || "Verificando integridade" : "Arquivo de segurança gerado pelo AppGestão", latestCanDownload ? "success" : latest ? "warning" : "warning", "BK", "Arquivo")}
         ${metricCard("Integridade", rows.length ? `${validBackups}/${rows.length}` : "Aguardando", "Backups íntegros no histórico", completedMissingFile ? "warning" : validBackups ? "success" : "warning", "OK", "Checksum")}
@@ -653,7 +653,7 @@
         ${settingsPanel("Como o painel abre", "Defina o que a equipe vê primeiro ao entrar.", [
           selectField("dashboard_periodo_padrao", "Período inicial dos indicadores", settings.dashboardPeriodoPadrao || "today", [["today", "Hoje"], ["7d", "7 dias"], ["month", "30 dias"], ["year", "1 ano"]]),
           selectField("loja_padrao", "Loja inicial", settings.lojaPadrao || "all", storeOptions(data.stores || [])),
-          selectField("pagina_inicial", "Tela inicial", settings.paginaInicial || "dashboard.html", [["dashboard.html", "Dashboard"], ["vendas.html", "Vendas"], ["financeiro.html", "Financeiro"], ["sincronizacao.html", "Sincronização"]]),
+          selectField("pagina_inicial", "Tela inicial", settings.paginaInicial || "dashboard.html", [["dashboard.html", "Dashboard"], ["vendas.html", "Vendas"], ["financeiro.html", "Financeiro"]]),
           selectField("tema_padrao", "Visual padrão", settings.temaPadrao || "system", [["system", "Seguir navegador"], ["light", "Claro"], ["dark", "Escuro"]])
         ])}
         ${settingsPanel("Proteção de acesso", "Ajustes para reduzir acesso indevido ao painel.", [
@@ -670,7 +670,6 @@
         ${settingsPanel("Avisos importantes", "Escolha o que deve chamar atenção do dono e dos responsáveis.", [
           switchField("alerta_estoque_baixo", "Estoque baixo", settings.alertaEstoqueBaixo !== false),
           switchField("alerta_pdv_offline", "PDV offline", settings.alertaPdvOffline !== false),
-          switchField("alerta_sync_falha", "Falha ao receber dados da loja", settings.alertaSyncFalha !== false),
           switchField("alerta_caixa_divergente", "Caixa divergente", settings.alertaCaixaDivergente !== false),
           switchField("alerta_backup_atrasado", "Backup atrasado", settings.alertaBackupAtrasado !== false)
         ])}
@@ -679,8 +678,7 @@
           numberField("backup_retencao", "Guardar histórico por dias", settings.backupRetencao || 14, 1, 365),
           numberField("backup_alertar_dias", "Avisar se ficar dias sem backup", settings.backupAlertarDias || 1, 1, 30)
         ])}
-        ${settingsPanel("Conexão com a loja", "Ajustes para manter o painel recebendo dados do PDV.", [
-          numberField("sync_intervalo_segundos", "Tempo esperado para receber novas informações", settings.syncIntervaloSegundos || 30, 10, 3600),
+        ${settingsPanel("Conexão com a loja", "Ajustes para manter o painel conectado ao PDV.", [
           selectField("ambiente_nome", "Tipo de uso", settings.ambienteNome || "Produção", [["Produção", "Uso real"], ["Local", "Uso local"], ["Teste", "Teste ou demonstração"]]),
           inputField("pdv_integration_token", settings.pdvIntegrationTokenConfigured ? "Trocar código de conexão do PDV" : "Código de conexão do PDV", "", "password", "Preencha somente quando precisar trocar")
         ])}

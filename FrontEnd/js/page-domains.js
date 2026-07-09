@@ -11,7 +11,6 @@
     clientes: Object.freeze({ renderer: "renderClients", endpoints: ["/admin/clientes"], query: "store" }),
     funcionarios: Object.freeze({ renderer: "renderEmployees", endpoints: ["/employees"], query: "store" }),
     auditoria: Object.freeze({ renderer: "renderAudit", endpoints: ["/audit", "/sync/monitor"], query: "period" }),
-    sincronizacao: Object.freeze({ renderer: "renderSyncCenter", endpoints: ["/sync/monitor", "/observability"], query: "store" }),
     relatorios: Object.freeze({ renderer: "renderReports", endpoints: ["/reports"], query: "period" }),
     backups: Object.freeze({ renderer: "renderBackups", endpoints: ["/backups"], query: "store" }),
     configuracoes: Object.freeze({ renderer: "renderOwnerSettings", endpoints: ["/settings"], query: "store" })

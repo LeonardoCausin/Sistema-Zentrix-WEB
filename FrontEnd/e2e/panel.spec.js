@@ -131,21 +131,12 @@ test("theme preference lives in settings", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("audit page shows the sync outbox monitor", async ({ page }) => {
+test("audit page shows the PDV status monitor", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/auditoria.html");
-  await expect(page.getByText("Monitor de sincronização")).toBeVisible();
+  await expect(page.getByText("Status do PDV")).toBeVisible();
   await expect(page.getByText("Envios ao PDV")).toBeVisible();
   await expect(page.locator(".list-title", { hasText: "DELIVERED" })).toBeVisible();
-});
-
-test("sync center shows diagnostics and retries a failed outbox item", async ({ page }) => {
-  await mockPanelApi(page);
-  await page.goto("/FrontEnd/pages/sincronizacao.html");
-  await expect(page.getByText("Erros recentes")).toBeVisible();
-  await expect(page.getByText("Tipo não suportado")).toBeVisible();
-  await page.locator('[data-action="sync-retry"]').first().click();
-  await expect(page.getByText("Item colocado novamente para envio ao PDV.")).toBeVisible();
 });
 
 
@@ -387,7 +378,7 @@ function auditPayload() {
       action: "SYNC_SUCCESS",
       time: "2026-07-02 18:00",
       user: "PDV",
-      description: "Sincronização recebida.",
+      description: "Dados recebidos.",
       value: "5 registros"
     }
   ];

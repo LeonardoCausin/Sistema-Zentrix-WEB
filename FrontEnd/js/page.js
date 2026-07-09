@@ -994,7 +994,7 @@
     const action = button.dataset.action === "sync-dead-letter" ? "dead-letter" : "retry";
     const store = button.dataset.storeId || currentStore || "all";
     if (!id) {
-      renderToast("Não encontramos esse item de sincronização. Atualize a tela e tente novamente.", "warning");
+      renderToast("Não encontramos esse envio ao PDV. Atualize a tela e tente novamente.", "warning");
       return;
     }
     const previousText = button.textContent;
@@ -1010,7 +1010,7 @@
       renderToast(action === "retry" ? "Item colocado novamente para envio ao PDV." : "Item pausado para não travar os próximos envios.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "Não conseguimos atualizar a sincronização agora. Tente novamente.", "danger");
+      renderToast(error.message || "Não conseguimos atualizar o envio ao PDV agora. Tente novamente.", "danger");
     } finally {
       button.disabled = false;
       button.textContent = previousText;
@@ -1515,7 +1515,6 @@
       clientes: { renderer: "renderClients", endpoints: ["/admin/clientes"], query: "store" },
       funcionarios: { renderer: "renderEmployees", endpoints: ["/employees"], query: "store" },
       auditoria: { renderer: "renderAudit", endpoints: ["/audit", "/sync/monitor"], query: "period" },
-      sincronizacao: { renderer: "renderSyncCenter", endpoints: ["/sync/monitor", "/observability"], query: "store" },
       relatorios: { renderer: "renderReports", endpoints: ["/reports"], query: "period" },
       backups: { renderer: "renderBackups", endpoints: ["/backups"], query: "store" },
       configuracoes: { renderer: "renderOwnerSettings", endpoints: ["/settings"], query: "store" }
@@ -1625,22 +1624,6 @@
   }
 
   function renderPageFallback(page, message) {
-    if (page === "sincronizacao") {
-      renderShell("Sincronização", "Envios do painel para o PDV e monitoramento da loja", `
-        <section class="panel">
-          <div class="panel-title">
-            <div><h3>Dados temporariamente indisponíveis</h3><span>${esc(friendlyMessage(message))}</span></div>
-            <button class="button btn-primary compact-button" type="button" data-action="retry-page-load">Atualizar</button>
-          </div>
-          ${emptyState("Aguardando uma resposta válida do Zentrix.")}
-        </section>
-      `);
-      const retryButton = viewHost.querySelector('[data-action="retry-page-load"]');
-      if (retryButton) {
-        retryButton.addEventListener("click", () => loadPageData({ userInitiated: true, fresh: true }));
-      }
-      return;
-    }
     const labels = {
       dashboard: ["Dashboard", "Indicadores da operação em tempo real"],
       vendas: ["Vendas", "Consulta de vendas, itens e pagamentos"],
@@ -1650,7 +1633,7 @@
       estoque: ["Estoque", "Níveis mínimos, entradas e saídas"],
       clientes: ["Clientes", "Cadastro e relacionamento"],
       funcionarios: ["Funcionários", "Equipe e permissões"],
-      auditoria: ["Auditoria", "Ações sensíveis e sincronização"],
+      auditoria: ["Auditoria", "Ações sensíveis e registros importantes"],
       relatorios: ["Relatórios", "Exportações por período"],
       backups: ["Backups", "Histórico e segurança dos dados"],
       configuracoes: ["Configurações", "Empresa, usuários e preferências"]
@@ -1740,7 +1723,7 @@
 
   function productFormHtml() {
     return `<section class="panel" hidden data-admin-form="product" style="margin-bottom: 16px">
-      <div class="panel-title"><div><h3>Novo produto</h3><span>Cadastro direto no AppGestão para sincronização administrativa</span></div></div>
+      <div class="panel-title"><div><h3>Novo produto</h3><span>Cadastro direto no AppGestão para uso na loja</span></div></div>
       <form class="form-grid">
         <input type="hidden" name="mode" value="create" />
         <input type="hidden" name="originalCode" />
@@ -1860,10 +1843,10 @@
     return [
       { label: "Vendas hoje", value: sales.value || "0", note: "Quantidade de vendas pagas", tone: "success", icon: "$", trend: sales.trend || periodLabel() },
       { label: "Faturamento", value: revenue.value || "R$ 0,00", note: activeStoreLabel(data), tone: "info", icon: "R$", trend: revenue.trend || periodLabel() },
-      { label: "Lucro estimado", value: "Em análise", note: "Depende do custo sincronizado", tone: "warning", icon: "%", trend: "Estimativa" },
+      { label: "Lucro estimado", value: "Em análise", note: "Depende do custo cadastrado", tone: "warning", icon: "%", trend: "Estimativa" },
       { label: "Ticket médio", value: ticket.value || "R$ 0,00", note: "Média por venda concluída", tone: "info", icon: "~", trend: ticket.trend || periodLabel() },
       { label: "Produtos vendidos", value: productsSold ? String(Math.round(productsSold)) : "0", note: "Itens presentes no ranking", tone: "success", icon: "#", trend: "Top itens" },
-      { label: "Caixa atual", value: syncStatusLabel(data), note: "Status recebido do Zentrix PDV", tone: data.lastSync ? "success" : "warning", icon: "PDV", trend: "Online" },
+      { label: "Caixa atual", value: syncStatusLabel(data), note: "Status atual do Zentrix PDV", tone: data.pdvConnected ? "success" : "warning", icon: "PDV", trend: data.pdvConnected ? "Online" : "Offline" },
       { label: "Estoque crítico", value: stock.value || "0", note: stock.trend || "Produtos em atenção", tone: "danger", icon: "!", trend: "Crítico" }
     ];
   }
@@ -1909,9 +1892,9 @@
       <div class="entity-head"><span class="avatar info">${esc(initials(row.name))}</span>${tag(row.status || "Cliente")}</div>
       <strong>${esc(row.name || "Cliente")}</strong>
       <div class="entity-meta">
-        <div><span>Última compra</span><strong>Em análise</strong></div>
+        <div><span>?ltima compra</span><strong>Em análise</strong></div>
         <div><span>Total gasto</span><strong>PDV</strong></div>
-        <div><span>Frequência</span><strong>Sincronizada</strong></div>
+        <div><span>Frequência</span><strong>Atualizada</strong></div>
         <div><span>Telefone</span><strong>${esc(row.phone || "-")}</strong></div>
       </div>
       <div class="entity-actions">
@@ -2203,7 +2186,7 @@
   }
 
   function diagnosticsHtml(rows) {
-    const list = Array.isArray(rows) && rows.length ? rows : ["Dados sincronizados e relatórios prontos para análise."];
+    const list = Array.isArray(rows) && rows.length ? rows : ["Dados atualizados e relatórios prontos para análise."];
     return list.map((item, index) => `<div class="list-item"><span class="list-icon ${index ? "info" : "warning"}">${index ? "IN" : "PDV"}</span><div><span class="list-title">${index ? "Observação" : "Diagnóstico"}</span><span class="list-subtitle">${esc(item)}</span></div><strong>${index ? "OK" : "Sync"}</strong></div>`).join("");
   }
 
@@ -2393,15 +2376,18 @@
   }
 
   function syncAlertOwnerHtml(data) {
-    const synced = data && Number(data.syncProgress || 0) === 100 && data.lastSync;
-    const title = synced ? "PDV conectado" : "Atualização pendente";
-    const subtitle = data && data.lastSync ? data.lastSync : "Aguardando o primeiro envio do PDV";
-    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(String((data && data.syncProgress) || 0))}%</strong></div>`;
+    const status = data && data.syncStatus ? data.syncStatus : {};
+    const synced = data && (data.pdvConnected === true || status.connected === true);
+    const title = synced ? "PDV conectado" : "PDV desconectado";
+    const subtitle = data && (data.pdvLastSeen || status.lastSeenAt || data.lastSync) ? (data.pdvLastSeen || status.lastSeenAt || data.lastSync) : "Aguardando contato do PDV";
+    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(synced ? "Online" : "Offline")}</strong></div>`;
   }
 
   function syncAlertHtml(data) {
-    const synced = data && Number(data.syncProgress || 0) === 100 && data.lastSync;
-    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${synced ? "PDV conectado" : "Sincronização pendente"}</span><span class="list-subtitle">${esc(data.lastSync || "Aguardando primeira sincronização")}</span></div><strong>${esc(String(data.syncProgress || 0))}%</strong></div>`;
+    const status = data && data.syncStatus ? data.syncStatus : {};
+    const synced = data && (data.pdvConnected === true || status.connected === true);
+    const lastSeen = data && (data.pdvLastSeen || status.lastSeenAt || data.lastSync);
+    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${synced ? "PDV conectado" : "PDV desconectado"}</span><span class="list-subtitle">${esc(lastSeen || "Aguardando contato do PDV")}</span></div><strong>${esc(synced ? "Online" : "Offline")}</strong></div>`;
   }
 
   function storesListHtml(rows) {
@@ -2468,16 +2454,16 @@
     setText(".status-pill", "Conectando");
     const statusPill = document.querySelector(".status-pill");
     if (statusPill) statusPill.className = "status-pill warning";
-    setText(".sidebar-sync strong", "Atualização");
-    setText(".sidebar-sync span", "Carregando estado real");
-    const progress = document.querySelector(".sidebar-sync .progress-track span");
+    setText(".sidebar-status strong", "Atualização");
+    setText(".sidebar-status span", "Carregando estado real");
+    const progress = document.querySelector(".sidebar-status .progress-track span");
     if (progress) progress.style.width = "0%";
-    setText(".sidebar-sync strong", "Preparando painel");
-    setText(".sidebar-sync span", "Buscando dados da loja");
-    setText(".sidebar-sync .button", "Ver histórico");
-    setText(".sidebar-sync .button", "Histórico");
+    setText(".sidebar-status strong", "Preparando painel");
+    setText(".sidebar-status span", "Buscando dados da loja");
+    setText(".sidebar-status .button", "Ver histórico");
+    setText(".sidebar-status .button", "Histórico");
     setText(".window-title span:last-child", "Zentrix AppGestão");
-    setText(".sidebar-sync .button", "Ver histórico");
+    setText(".sidebar-status .button", "Ver histórico");
     populateStoreSelect([{ id: "all", name: "Geral", label: "Todas as lojas", isAll: true }]);
   }
 
@@ -2556,26 +2542,28 @@
     const companyName = active && active.name ? String(active.name) : "Geral";
     const lastSync = data && data.lastSync ? String(data.lastSync) : "";
     const apiOnline = Boolean(data);
-    const progress = Math.max(0, Math.min(100, Number((data && data.syncProgress) || (lastSync ? 100 : 0))));
-    const pdvConnected = Boolean(lastSync);
+    const syncStatus = data && data.syncStatus ? data.syncStatus : {};
+    const pdvConnected = Boolean(data && (data.pdvConnected === true || syncStatus.connected === true));
+    const pdvLastSeen = data && (data.pdvLastSeen || syncStatus.lastSeenAt || lastSync);
+    const progress = Math.max(0, Math.min(100, Number((data && data.syncProgress) || (pdvConnected ? 100 : 0))));
     const title = "Zentrix AppGestão - " + companyName;
 
     setText(".window-title span:last-child", title);
-    const statusPill = document.querySelector(".sidebar-sync .status-pill");
+    const statusPill = document.querySelector(".sidebar-status .status-pill");
     if (statusPill) {
       statusPill.className = "status-pill " + (apiOnline ? "success" : "warning");
       statusPill.textContent = apiOnline ? "Online" : "Atualizando";
     }
     updateNotifications(apiOnline, pdvConnected, lastSync);
 
-    setText(".sidebar-sync strong", pdvConnected ? "PDV conectado" : companyName);
-    setText(".sidebar-sync span", lastSync ? "Última sincronização: " + lastSync : "Aguardando primeira sincronização");
-    setText(".sidebar-sync .button", "Histórico");
-    const progressBar = document.querySelector(".sidebar-sync .progress-track span");
+    setText(".sidebar-status strong", pdvConnected ? "PDV conectado" : "PDV desconectado");
+    setText(".sidebar-status span", pdvLastSeen ? "?ltimo contato: " + pdvLastSeen : "Aguardando contato do PDV");
+    setText(".sidebar-status .button", "Histórico");
+    const progressBar = document.querySelector(".sidebar-status .progress-track span");
     if (progressBar) progressBar.style.width = progress + "%";
-    setText(".sidebar-sync strong", pdvConnected ? "Loja atualizada" : "Aguardando dados");
-    setText(".sidebar-sync span", lastSync ? "Última atualização: " + lastSync : "Aguardando o primeiro envio do PDV");
-    setText(".sidebar-sync .button", "Ver histórico");
+    setText(".sidebar-status strong", pdvConnected ? "PDV conectado" : "PDV desconectado");
+    setText(".sidebar-status span", pdvLastSeen ? "?ltimo contato: " + pdvLastSeen : "Aguardando contato do PDV");
+    setText(".sidebar-status .button", "Ver histórico");
   }
 
   async function refreshTopbarAlerts() {
@@ -2584,7 +2572,7 @@
       timeoutMs: 6000
     });
     topbarAlerts = Array.isArray(alerts) ? alerts : [];
-    const lastSync = document.querySelector(".sidebar-sync span") ? document.querySelector(".sidebar-sync span").textContent.replace("Última atualização: ", "") : "";
+    const lastSync = document.querySelector(".sidebar-status span") ? document.querySelector(".sidebar-status span").textContent.replace("?ltima atualização: ", "") : "";
     updateNotifications(true, Boolean(lastSync && !lastSync.includes("Aguardando")), lastSync, topbarAlerts);
   }
 
@@ -2672,7 +2660,7 @@
     }
     menu.innerHTML = hasAttention
       ? `<strong>Atenção</strong><span>${esc(apiOnline ? "Aguardando atualização do PDV." : "Conexão instável no momento.")}</span>`
-      : `<strong>Tudo certo</strong><span>${esc(lastSync ? "Última atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
+      : `<strong>Tudo certo</strong><span>${esc(lastSync ? "?ltima atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
   }
 
   async function refreshAccountToolbar() {
@@ -2824,7 +2812,6 @@
       ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "auditoria.png"],
         ["relatorios.html", "Relatórios", "relatorios.png"],
-        ["sincronizacao.html", "Sincronização", "auditoria.png"],
         ["backups.html", "Backups", "backups.png"],
         ["configuracoes.html", "Configurações", "configuracoes.png"]
       ]]
@@ -2871,7 +2858,6 @@
       ["Segurança e Sistema", [
         ["auditoria.html", "Auditoria", "!"],
         ["relatorios.html", "Relatórios", "?"],
-        ["sincronizacao.html", "Sincronização", "SYNC"],
         ["backups.html", "Backups", "CL"],
         ["configuracoes.html", "Configurações", "?"]
       ]]
@@ -2993,7 +2979,8 @@
   }
 
   function syncStatusLabel(data) {
-    return data && data.lastSync ? "PDV conectado" : "Aguardando PDV";
+    const status = data && data.syncStatus ? data.syncStatus : {};
+    return data && (data.pdvConnected === true || status.connected === true) ? "PDV conectado" : "PDV desconectado";
   }
 
   function percentWidth(value) {
@@ -3079,7 +3066,7 @@
     if (type === "product") {
       setFormValue(form, "originalCode", "");
       setFormValue(form, "unit", "UN");
-      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo produto", "Cadastro direto no AppGestão para sincronização administrativa");
+      setAdminFormTitle(form.closest("[data-admin-form]"), "Novo produto", "Cadastro direto no AppGestão para uso na loja");
       setFormSubmitText(form, "Salvar produto");
       setFieldReadOnly(form, "code", false);
       setFieldReadOnly(form, "stock", false);

@@ -57,8 +57,6 @@
     const replacements = [
       [/\bZentrix Web\b/g, "Zentrix AppGest\u00e3o"],
       [/\bExtensao\b/g, "Extens\u00e3o"],
-      [/\bSincronizacao\b/g, "Sincroniza\u00e7\u00e3o"],
-      [/\bsincronizacao\b/g, "sincroniza\u00e7\u00e3o"],
       [/\bHistorico\b/g, "Hist\u00f3rico"],
       [/\bhistorico\b/g, "hist\u00f3rico"],
       [/\bConfiguracoes\b/g, "Configura\u00e7\u00f5es"],

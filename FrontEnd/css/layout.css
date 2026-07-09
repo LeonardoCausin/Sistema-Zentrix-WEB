@@ -407,23 +407,23 @@ body.is-authenticated .app-shell {
   background: linear-gradient(180deg, var(--accent-blue), var(--accent-cyan));
 }
 
-.sidebar-sync {
+.sidebar-status {
   display: grid;
   gap: 12px;
   padding: 14px 10px 0;
   border-top: 1px solid var(--border-color);
 }
 
-.sidebar-sync strong,
-.sidebar-sync span {
+.sidebar-status strong,
+.sidebar-status span {
   display: block;
 }
 
-.sidebar-sync strong {
+.sidebar-status strong {
   font-size: 12px;
 }
 
-.sidebar-sync span {
+.sidebar-status span {
   margin-top: 4px;
   color: var(--text-secondary);
   font-size: 11px;
