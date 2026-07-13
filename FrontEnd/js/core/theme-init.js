@@ -1,7 +1,8 @@
 (function () {
   try {
     var theme = localStorage.getItem("zentrix-theme");
-    document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+    var explicitChoice = localStorage.getItem("zentrix-theme-user-choice") === "true";
+    document.documentElement.dataset.theme = explicitChoice && theme === "light" ? "light" : "dark";
   } catch (error) {
     // Mantem a pagina carregando quando o navegador bloqueia storage.
   }

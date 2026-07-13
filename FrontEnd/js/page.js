@@ -66,7 +66,8 @@
     return;
   }
 
-  root.dataset.theme = storedTheme === "light" ? "light" : "dark";
+  const explicitThemeChoice = localStorage.getItem("zentrix-theme-user-choice") === "true";
+  root.dataset.theme = explicitThemeChoice && storedTheme === "light" ? "light" : "dark";
 
   enhanceChrome();
 
@@ -627,6 +628,7 @@
     root.dataset.theme = nextTheme;
     try {
       localStorage.setItem("zentrix-theme", nextTheme);
+      localStorage.setItem("zentrix-theme-user-choice", "true");
     } catch (error) {
       // Mantem o tema aplicado mesmo se o navegador bloquear storage.
     }

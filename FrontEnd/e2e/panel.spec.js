@@ -107,6 +107,19 @@ test("dashboard loads an authenticated management flow", async ({ page }) => {
   await expect(page.getByText("Última sincronização")).toHaveCount(0);
 });
 
+test("dark theme is the default even with stale light preference", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("zentrix-theme", "light");
+    localStorage.removeItem("zentrix-theme-user-choice");
+  });
+  await mockPanelApi(page);
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg-primary").trim());
+  expect(bg).toBe("#081323");
+});
+
 test("authenticated top bar shows notifications and account menu", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/dashboard.html");
