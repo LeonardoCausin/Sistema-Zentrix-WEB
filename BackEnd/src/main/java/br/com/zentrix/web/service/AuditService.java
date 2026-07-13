@@ -2,6 +2,7 @@ package br.com.zentrix.web.service;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AuditService {
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Sao_Paulo");
+
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
 
@@ -88,7 +91,7 @@ public class AuditService {
                 entityType,
                 entityId,
                 details,
-                Timestamp.valueOf(LocalDateTime.now()),
+                Timestamp.valueOf(LocalDateTime.now(BUSINESS_ZONE)),
                 safe(riskLevel, "INFO"),
                 previousValue,
                 newValue,

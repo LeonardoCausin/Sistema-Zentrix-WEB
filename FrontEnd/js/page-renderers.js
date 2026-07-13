@@ -553,6 +553,9 @@
     const value = row.dateTime || row.createdAt || row.created_at || "";
     if (value) {
       const text = String(value).trim();
+      if (text === "-") {
+        return auditDateFromTimeOnly(row.time);
+      }
       const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
       if (match) {
         return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
@@ -564,7 +567,34 @@
     if (row.date && row.time) {
       return `${row.date} ${String(row.time).slice(0, 5)}`;
     }
-    return row.time ? `Data nao informada ${String(row.time).slice(0, 5)}` : "-";
+    return auditDateFromTimeOnly(row.time);
+  }
+
+  function auditDateFromTimeOnly(time) {
+    if (!time || String(time).trim() === "-") return "-";
+    const match = String(time).trim().match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "-";
+    const today = new Date();
+    const utcDate = new Date(Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate(),
+      Number(match[1]),
+      Number(match[2])
+    ));
+    const parts = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).formatToParts(utcDate).reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+    return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
   }
 
   function humanizeAuditCode(code) {
