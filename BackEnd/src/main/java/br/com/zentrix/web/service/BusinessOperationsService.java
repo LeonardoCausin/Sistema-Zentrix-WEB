@@ -219,6 +219,7 @@ public class BusinessOperationsService {
     }
 
     public List<Map<String, Object>> stockMovements(String tenantId, String storeId) {
+        permissionService.requireKey("estoque.visualizar");
         List<Object> args = new ArrayList<>();
         StringBuilder where = new StringBuilder("tenant_id = ?");
         args.add(tenantId);
@@ -238,7 +239,7 @@ public class BusinessOperationsService {
     }
 
     public List<Map<String, Object>> adminProducts(String tenantId, String storeId, String search, String category, String status, int limit, int offset) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("produtos.visualizar");
         initializer.ensureReady();
         List<Object> args = new ArrayList<>();
         StringBuilder where = new StringBuilder("tenant_id = ? AND deleted_at IS NULL");
@@ -294,7 +295,7 @@ public class BusinessOperationsService {
     }
 
     public Map<String, Object> adminProduct(String tenantId, String storeId, String code) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireAnyKey("produtos.visualizar", "produtos.criar", "produtos.editar", "produtos.desativar");
         Map<String, Object> row = single("""
                 SELECT tenant_id, store_id, source_id, code, description, unit, price, cost_price, stock,
                        min_stock, ideal_stock, category, barcode, active, created_at, updated_at
@@ -415,7 +416,7 @@ public class BusinessOperationsService {
     }
 
     public List<Map<String, Object>> adminClients(String tenantId, String storeId, String search, String status, int limit, int offset) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("clientes.visualizar");
         initializer.ensureReady();
         List<Object> args = new ArrayList<>();
         StringBuilder where = new StringBuilder("tenant_id = ? AND deleted_at IS NULL");
@@ -466,7 +467,7 @@ public class BusinessOperationsService {
     }
 
     public Map<String, Object> adminClient(String tenantId, String storeId, int id) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireAnyKey("clientes.visualizar", "clientes.criar", "clientes.editar");
         Map<String, Object> row = single("""
                 SELECT tenant_id, store_id, source_id, id, name, cpf_cnpj, phone, email, address, created_at,
                        birth_date, active, notes, loyalty_points, updated_at
@@ -571,6 +572,9 @@ public class BusinessOperationsService {
     @Transactional
     public Map<String, Object> createEmployee(String tenantId, String storeId, EmployeeRequest request) {
         permissionService.require(Permission.USERS_CREATE);
+        if (!isMasterSession() && isProtectedRole(request.role())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente o usuario master pode criar usuarios protegidos.");
+        }
         String store = normalizeWritableStore(tenantId, storeId);
         String username = request.username().trim();
         String password = resolvedPassword(request, true);
@@ -598,6 +602,16 @@ public class BusinessOperationsService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "O login do usuário não pode ser alterado por esta rota.");
         }
         Map<String, Object> before = employee(tenantId, username);
+        guardProtectedEmployeeChange(username, before);
+        if (isCurrentUser(username) && request.active() != null && !request.active()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao pode bloquear o proprio usuario.");
+        }
+        if (isCurrentUser(username) && !String.valueOf(before.get("role")).equalsIgnoreCase(request.role())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao pode alterar o proprio cargo.");
+        }
+        if (!isMasterSession() && isProtectedRole(request.role())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente o usuario master pode definir este cargo.");
+        }
         boolean disabling = request.active() != null && !request.active();
         boolean removingAdminRole = isAdminRole(String.valueOf(before.get("role"))) && !isAdminRole(request.role());
         if (disabling || removingAdminRole) {
@@ -625,10 +639,14 @@ public class BusinessOperationsService {
     @Transactional
     public Map<String, Object> updateEmployeeStatus(String tenantId, String username, boolean active) {
         permissionService.require(Permission.USERS_EDIT);
+        if (isCurrentUser(username) && !active) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao pode bloquear o proprio usuario.");
+        }
         if (!active) {
             guardLastActiveAdmin(tenantId, username);
         }
         Map<String, Object> before = employee(tenantId, username);
+        guardProtectedEmployeeChange(username, before);
         String store = String.valueOf(before.get("storeId"));
         jdbcTemplate.update("UPDATE users SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND store_id = ? AND username = ?", active, tenantId, store, username);
         if (!active) {
@@ -642,7 +660,11 @@ public class BusinessOperationsService {
     @Transactional
     public Map<String, Object> updatePermissions(String tenantId, String username, PermissionUpdateRequest request) {
         permissionService.require(Permission.USERS_PERMISSIONS);
+        if (isCurrentUser(username)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao pode alterar as proprias permissoes.");
+        }
         Map<String, Object> before = employee(tenantId, username);
+        guardProtectedEmployeeChange(username, before);
         String store = String.valueOf(before.get("storeId"));
         jdbcTemplate.update("UPDATE users SET permissions_json = ?, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND store_id = ? AND username = ?", permissionsJson(request.permissions()), tenantId, store, username);
         authTokenService.revokeUser(username);
@@ -652,7 +674,7 @@ public class BusinessOperationsService {
     }
 
     public List<Map<String, Object>> financialEntries(String tenantId, String storeId, String period, String type, String status, int limit, int offset) {
-        permissionService.require(Permission.MANAGE_FINANCE);
+        permissionService.requireKey("financeiro.visualizar");
         initializer.ensureReady();
         String store = normalizeListStore(storeId);
         List<Object> args = new ArrayList<>();
@@ -1917,6 +1939,35 @@ public class BusinessOperationsService {
         if (activeAdmins != null && activeAdmins <= 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não é permitido inativar o último administrador ativo.");
         }
+    }
+
+    private void guardProtectedEmployeeChange(String username, Map<String, Object> employee) {
+        if (isMasterSession()) {
+            return;
+        }
+        if (isProtectedRole(String.valueOf(employee.get("role")))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Somente o usuario master pode alterar este usuario.");
+        }
+    }
+
+    private boolean isCurrentUser(String username) {
+        return currentUser().equalsIgnoreCase(username == null ? "" : username.trim());
+    }
+
+    private boolean isMasterSession() {
+        return AuthContext.current()
+                .map(session -> {
+                    PermissionService.Role role = permissionService.normalizeRole(session.role());
+                    return role == PermissionService.Role.SUPER_ADMIN || role == PermissionService.Role.MASTER_ADMIN;
+                })
+                .orElse(false);
+    }
+
+    private boolean isProtectedRole(String role) {
+        PermissionService.Role normalizedRole = permissionService.normalizeRole(role);
+        return normalizedRole == PermissionService.Role.SUPER_ADMIN
+                || normalizedRole == PermissionService.Role.MASTER_ADMIN
+                || normalizedRole == PermissionService.Role.DONO;
     }
 
     private boolean isAdminRole(String role) {

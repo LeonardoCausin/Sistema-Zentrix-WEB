@@ -3,6 +3,7 @@ package br.com.zentrix.web.service;
 import java.text.Normalizer;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
@@ -100,7 +101,7 @@ public class PermissionService {
                 "financeiro.visualizar",
                 "configuracoes.visualizar"
         );
-        map(Permission.VIEW_REPORTS, "relatorios.visualizar");
+        map(Permission.VIEW_REPORTS, "relatorios.visualizar", "auditoria.visualizar");
         map(Permission.MANAGE_PRODUCTS, "produtos.criar", "produtos.editar", "produtos.desativar");
         map(Permission.PRODUCTS_CREATE, "produtos.criar");
         map(Permission.PRODUCTS_EDIT, "produtos.editar");
@@ -114,7 +115,7 @@ public class PermissionService {
         map(Permission.CANCEL_SALE, "vendas.cancelar");
         map(Permission.CLOSE_CASH, "caixa.fechar");
         map(Permission.CASH_MOVEMENT, "caixa.sangria", "caixa.suprimento", "caixa.abrir");
-        map(Permission.MANAGE_USERS, "funcionarios.criar", "funcionarios.editar");
+        map(Permission.MANAGE_USERS, "funcionarios.visualizar", "funcionarios.criar", "funcionarios.editar");
         map(Permission.USERS_CREATE, "funcionarios.criar");
         map(Permission.USERS_EDIT, "funcionarios.editar");
         map(Permission.MANAGE_PERMISSIONS, "funcionarios.permissoes");
@@ -137,7 +138,7 @@ public class PermissionService {
 
     public boolean can(String role, Set<String> customPermissions, Permission permission) {
         Role normalizedRole = normalizeRole(role);
-        if (normalizedRole == Role.SUPER_ADMIN || normalizedRole == Role.MASTER_ADMIN || normalizedRole == Role.DONO) {
+        if (normalizedRole == Role.SUPER_ADMIN || normalizedRole == Role.MASTER_ADMIN) {
             return true;
         }
         if (customPermissions != null && !customPermissions.isEmpty()) {
@@ -151,13 +152,60 @@ public class PermissionService {
             }
             return false;
         }
+        if (normalizedRole == Role.DONO) {
+            return true;
+        }
         return ROLE_PERMISSIONS.getOrDefault(normalizedRole, Set.of()).contains(permission);
+    }
+
+    public boolean canKey(String permissionKey) {
+        return AuthContext.current()
+                .map(session -> canKey(session.role(), session.permissions(), permissionKey))
+                .orElse(false);
+    }
+
+    public boolean canKey(String role, Set<String> customPermissions, String permissionKey) {
+        String key = normalizePermissionKey(permissionKey);
+        Role normalizedRole = normalizeRole(role);
+        if (normalizedRole == Role.SUPER_ADMIN || normalizedRole == Role.MASTER_ADMIN) {
+            return true;
+        }
+        if (customPermissions != null && !customPermissions.isEmpty()) {
+            Set<String> normalizedCustom = customPermissions.stream()
+                    .map(this::normalizePermissionKey)
+                    .collect(java.util.stream.Collectors.toSet());
+            return normalizedCustom.contains("*") || normalizedCustom.contains("admin") || normalizedCustom.contains(key);
+        }
+        if (normalizedRole == Role.DONO) {
+            return true;
+        }
+        for (Permission permission : ROLE_PERMISSIONS.getOrDefault(normalizedRole, Set.of())) {
+            if (PERMISSION_KEYS.getOrDefault(permission, Set.of()).contains(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void require(Permission permission) {
         if (!can(permission)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não tem permissão para executar esta ação.");
         }
+    }
+
+    public void requireKey(String permissionKey) {
+        if (!canKey(permissionKey)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao tem permissao para acessar esta area.");
+        }
+    }
+
+    public void requireAnyKey(String... permissionKeys) {
+        for (String permissionKey : permissionKeys) {
+            if (canKey(permissionKey)) {
+                return;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao tem permissao para acessar esta area.");
     }
 
     public Role normalizeRole(String role) {
@@ -179,6 +227,10 @@ public class PermissionService {
         String text = value == null ? "" : value.trim().toUpperCase();
         return Normalizer.normalize(text, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
+    }
+
+    private String normalizePermissionKey(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static void map(Permission permission, String... keys) {

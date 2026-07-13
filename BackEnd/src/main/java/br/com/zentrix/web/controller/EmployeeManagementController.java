@@ -37,21 +37,25 @@ public class EmployeeManagementController {
 
     @PostMapping
     public Map<String, Object> create(@RequestParam(defaultValue = "WEB") String store, @Valid @RequestBody EmployeeRequest request) {
+        permissionService.require(Permission.USERS_CREATE);
         return operationsService.createEmployee(AuthContext.tenantId(), store, request);
     }
 
     @PutMapping("/{username}")
     public Map<String, Object> update(@PathVariable String username, @Valid @RequestBody EmployeeRequest request) {
+        permissionService.require(Permission.USERS_EDIT);
         return operationsService.updateEmployee(AuthContext.tenantId(), username, request);
     }
 
     @PatchMapping("/{username}/status")
     public Map<String, Object> status(@PathVariable String username, @RequestParam boolean active) {
+        permissionService.require(Permission.USERS_EDIT);
         return operationsService.updateEmployeeStatus(AuthContext.tenantId(), username, active);
     }
 
     @PutMapping("/{username}/permissions")
     public Map<String, Object> permissions(@PathVariable String username, @Valid @RequestBody PermissionUpdateRequest request) {
+        permissionService.require(Permission.USERS_PERMISSIONS);
         return operationsService.updatePermissions(AuthContext.tenantId(), username, request);
     }
 }

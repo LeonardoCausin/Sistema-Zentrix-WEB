@@ -35,6 +35,52 @@
   const employeePermissionsConfig = window.ZentrixEmployeePermissions || {};
   const EMPLOYEE_PERMISSIONS = Object.freeze(employeePermissionsConfig.permissions || []);
   const EMPLOYEE_ROLE_PRESETS = Object.freeze(employeePermissionsConfig.rolePresets || {});
+  const PAGE_ORDER = Object.freeze(["dashboard", "vendas", "caixa", "financeiro", "produtos", "estoque", "clientes", "funcionarios", "auditoria", "relatorios", "backups", "configuracoes"]);
+  const PAGE_LABELS = Object.freeze({
+    dashboard: "Dashboard",
+    vendas: "Vendas",
+    caixa: "Caixa",
+    financeiro: "Financeiro",
+    produtos: "Produtos",
+    estoque: "Estoque",
+    clientes: "Clientes",
+    funcionarios: "Funcionarios",
+    auditoria: "Auditoria",
+    relatorios: "Relatorios",
+    backups: "Backups",
+    configuracoes: "Configuracoes"
+  });
+  const PAGE_ACCESS = Object.freeze({
+    dashboard: ["dashboard.visualizar"],
+    vendas: ["vendas.visualizar"],
+    caixa: ["caixa.visualizar"],
+    financeiro: ["financeiro.visualizar", "financeiro.editar"],
+    produtos: ["produtos.visualizar"],
+    estoque: ["estoque.visualizar", "estoque.movimentar"],
+    clientes: ["clientes.visualizar"],
+    funcionarios: ["funcionarios.visualizar", "funcionarios.criar", "funcionarios.editar", "funcionarios.permissoes"],
+    auditoria: ["auditoria.visualizar"],
+    relatorios: ["relatorios.visualizar"],
+    backups: ["backups.gerar", "backups.restaurar"],
+    configuracoes: ["configuracoes.visualizar", "configuracoes.editar"]
+  });
+  const ACTION_PERMISSION_RULES = Object.freeze([
+    ['[data-action="new-product"]', "produtos.criar"],
+    ['[data-action="edit-product"]', "produtos.editar"],
+    ['[data-action="toggle-product-status"]', "produtos.desativar"],
+    ['[data-action="new-client"]', "clientes.criar"],
+    ['[data-action="edit-client"]', "clientes.editar"],
+    ['[data-action="toggle-client-status"]', "clientes.editar"],
+    ['[data-action="new-stock-movement"]', "estoque.movimentar"],
+    ['[data-action="new-employee"]', "funcionarios.criar"],
+    ['[data-action="edit-employee"]', "funcionarios.editar"],
+    ['[data-action="toggle-employee-status"]', "funcionarios.editar"],
+    ['[data-action="new-finance-entry"]', "financeiro.editar"],
+    ['[data-action="edit-finance-entry"]', "financeiro.editar"],
+    ['[data-action="set-finance-status"]', "financeiro.editar"],
+    ['[data-action="create-backup"]', "backups.gerar"],
+    ['[data-action="prepare-backup-restore"]', "backups.restaurar"]
+  ]);
   const pageUtils = window.ZentrixPageUtils || {};
   const {
     decimalField,
@@ -292,6 +338,128 @@
     }
   }
 
+  function roleKeyValue(role) {
+    const value = typeof normalizeKey === "function" ? normalizeKey(role || "") : String(role || "").trim().toUpperCase();
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9_]/g, "_").replace(/_+/g, "_");
+  }
+
+  function isMasterRole(role) {
+    return ["SUPER_ADMIN", "SUPERADMIN", "MASTER_ADMIN", "MASTERADMIN"].includes(roleKeyValue(role));
+  }
+
+  function isFullAccessRole(role) {
+    return isMasterRole(role) || ["DONO", "OWNER", "ADMIN", "ADMINISTRADOR", "ADMINISTRATOR"].includes(roleKeyValue(role));
+  }
+
+  function explicitSessionPermissions(account) {
+    if (!account || !Array.isArray(account.permissions)) {
+      return [];
+    }
+    return account.permissions
+      .map((permission) => String(permission || "").trim())
+      .filter(Boolean);
+  }
+
+  function sessionPermissionSet() {
+    const account = readStoredSession() || {};
+    if (isMasterRole(account.role)) {
+      return new Set(["*"]);
+    }
+    const explicitPermissions = explicitSessionPermissions(account);
+    if (explicitPermissions.length > 0) {
+      return new Set(explicitPermissions);
+    }
+    if (isFullAccessRole(account.role)) {
+      return new Set(["*"]);
+    }
+    const preset = EMPLOYEE_ROLE_PRESETS[roleKeyValue(account.role)] || [];
+    return new Set(preset);
+  }
+
+  function hasPermission(permission) {
+    const permissions = sessionPermissionSet();
+    return permissions.has("*") || permissions.has("admin") || permissions.has(permission);
+  }
+
+  function currentUsername() {
+    const account = readStoredSession() || {};
+    return String(account.username || account.user || account.login || "").trim().toLowerCase();
+  }
+
+  function isCurrentUsername(username) {
+    const current = currentUsername();
+    return Boolean(current) && current === String(username || "").trim().toLowerCase();
+  }
+
+  function canAccessPage(page) {
+    const required = PAGE_ACCESS[page] || [];
+    return required.length === 0 || required.some((permission) => hasPermission(permission));
+  }
+
+  function firstPermittedPage() {
+    return PAGE_ORDER.find((page) => canAccessPage(page)) || null;
+  }
+
+  function visibleNavigationLinks(links) {
+    return links.filter(([href]) => {
+      const page = String(href || "").replace(/\.html$/i, "");
+      return canAccessPage(page);
+    });
+  }
+
+  function enforceActionPermissions() {
+    if (!viewHost) return;
+    ACTION_PERMISSION_RULES.forEach(([selector, permission]) => {
+      if (hasPermission(permission)) return;
+      viewHost.querySelectorAll(selector).forEach((element) => element.remove());
+    });
+    if (!hasPermission("funcionarios.permissoes")) {
+      viewHost.querySelectorAll('[name="permissions"], [data-permission-field]').forEach((field) => {
+        field.disabled = true;
+        field.setAttribute("aria-disabled", "true");
+      });
+    }
+    viewHost.querySelectorAll('[data-action="edit-employee"], [data-action="toggle-employee-status"]').forEach((button) => {
+      if (isCurrentUsername(button.dataset.username)) {
+        button.remove();
+      }
+    });
+  }
+
+  function renderPermissionDenied(page, fallbackPage) {
+    const title = PAGE_LABELS[page] || "Acesso restrito";
+    const fallbackLabel = PAGE_LABELS[fallbackPage] || "uma tela permitida";
+    const action = fallbackPage
+      ? `<a class="button btn-primary compact-button" href="${escAttr(fallbackPage)}.html">Ir para ${esc(fallbackLabel)}</a>`
+      : "";
+    renderShell(title, "Permissao necessaria", `
+      <section class="panel">
+        <div class="panel-title">
+          <div>
+            <h3>Voce nao tem permissao para acessar esta tela</h3>
+            <span>Peça ao administrador ou dono da loja para revisar suas permissoes.</span>
+          </div>
+          ${action}
+        </div>
+        ${emptyState("Esta area esta protegida para manter os dados da loja seguros.")}
+      </section>
+    `, { noStoreTabs: true });
+    body.classList.add("app-data-ready");
+  }
+
+  function ensurePageAccess(page, silent) {
+    if (canAccessPage(page)) {
+      return true;
+    }
+    const fallbackPage = firstPermittedPage();
+    if (page === "dashboard" && fallbackPage && fallbackPage !== page && !silent) {
+      window.location.replace(`${fallbackPage}.html`);
+      return false;
+    }
+    renderPermissionDenied(page, fallbackPage);
+    return false;
+  }
+
   function prefetchApi(path) {
     if (loadingData) {
       return;
@@ -379,6 +547,8 @@
   }
 
   function wirePageActions(page) {
+    enforceActionPermissions();
+
     viewHost.querySelectorAll('[data-action="set-theme"]').forEach((button) => {
       if (button.dataset.ready === "true") return;
       button.dataset.ready = "true";
@@ -550,6 +720,7 @@
 
     ensurePageSearchPanel(page || currentPageName());
     wireListFilters();
+    enforceActionPermissions();
   }
 
   function handleGlobalClick(event) {
@@ -925,6 +1096,10 @@
     const mode = formValue(form, "mode") || "create";
     const originalUsername = formValue(form, "originalUsername");
     const username = mode === "edit" ? originalUsername : formValue(form, "username");
+    if (mode === "edit" && isCurrentUsername(username)) {
+      renderToast("Voce nao pode alterar as permissoes da propria conta.", "danger");
+      return;
+    }
     const password = formValue(form, "password");
     const payload = {
       username,
@@ -1418,8 +1593,12 @@
   async function loadPageData(options) {
     const silent = options && options.silent;
     const userInitiated = options && options.userInitiated;
+    const page = currentPageName();
     if (silent && hasActiveAdminForm()) {
       await refreshChrome().catch(() => null);
+      return;
+    }
+    if (!ensurePageAccess(page, silent)) {
       return;
     }
     if (loadingData && !userInitiated) {
@@ -1434,7 +1613,6 @@
     }
     const previousForceFresh = forceFreshData;
     forceFreshData = Boolean(options && options.fresh);
-    const page = currentPageName();
     const restoredFromCache = !silent && restoreCachedView(page);
     const domain = pageDomains()[page];
     const loader = domain ? pageRenderers()[domain.renderer] : null;
@@ -1907,6 +2085,13 @@
     const active = rowIsActive(row);
     const displayName = row.displayName || row.name || row.username;
     const permissions = employeePermissions(row);
+    const selfAccount = isCurrentUsername(row.username);
+    const actions = selfAccount
+      ? `<span class="tag warning">Sua conta e protegida</span>`
+      : `
+        <button class="button btn-light compact-button" type="button" data-action="edit-employee" data-username="${escAttr(row.username)}">Editar</button>
+        <button class="button ${active ? "btn-light" : "btn-primary"} compact-button" type="button" data-action="toggle-employee-status" data-username="${escAttr(row.username)}" data-active="${active ? "true" : "false"}">${active ? "Inativar" : "Reativar"}</button>
+      `;
     return `<article class="entity-card">
       <div class="entity-head"><span class="avatar ${role}">${esc(initials(displayName))}</span>${tag(active ? "Ativo" : "Inativo")}</div>
       <strong>${esc(displayName)}</strong>
@@ -1917,8 +2102,7 @@
         <div><span>Permissoes configuradas</span><strong>${esc(String(permissions.length))}</strong></div>
       </div>
       <div class="entity-actions">
-        <button class="button btn-light compact-button" type="button" data-action="edit-employee" data-username="${escAttr(row.username)}">Editar</button>
-        <button class="button ${active ? "btn-light" : "btn-primary"} compact-button" type="button" data-action="toggle-employee-status" data-username="${escAttr(row.username)}" data-active="${active ? "true" : "false"}">${active ? "Inativar" : "Reativar"}</button>
+        ${actions}
       </div>
       <div class="entity-meta" hidden>
         <div><span>Permissões</span><strong>${esc(role === "danger" ? "Administrador" : role === "warning" ? "Gerente" : "Operador")}</strong></div>
@@ -2424,6 +2608,9 @@
     if (text.includes("401") || text.toLowerCase().includes("unauthorized")) {
       return "Sua sessão expirou. Entre novamente.";
     }
+    if (text.includes("403") || text.toLowerCase().includes("forbidden") || text.toLowerCase().includes("permiss")) {
+      return "Voce nao tem permissao para realizar esta acao.";
+    }
     if (text.includes("404")) {
       return "Esta informação ainda não está disponível no painel.";
     }
@@ -2765,7 +2952,15 @@
   function normalizeNotificationUrl(url) {
     const value = String(url || "/dashboard.html").trim();
     const file = value.split("/").pop() || "dashboard.html";
-    return file.includes(".html") ? file : "dashboard.html";
+    if (!file.includes(".html")) {
+      return "dashboard.html";
+    }
+    const page = file.replace(/\.html$/i, "");
+    if (canAccessPage(page)) {
+      return file;
+    }
+    const fallbackPage = firstPermittedPage();
+    return fallbackPage ? `${fallbackPage}.html` : "dashboard.html";
   }
 
   function wireTopbarIconFallbacks(container) {
@@ -2802,10 +2997,14 @@
         ["configuracoes.html", "Configurações", "configuracoes.png"]
       ]]
     ];
-    nav.innerHTML = groups.map(([group, links]) => `
-      <div class="nav-section">${esc(group)}</div>
-      ${links.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" href="${href}"><span class="nav-icon"><img src="../assets/Icons/${escAttr(icon)}" data-fallback="../assets/Icons/${escAttr(iconFallbackFile(icon))}" alt="" loading="eager" decoding="async" /></span><span>${esc(label)}</span></a>`).join("")}
-    `).join("");
+    nav.innerHTML = groups.map(([group, links]) => {
+      const visibleLinks = visibleNavigationLinks(links);
+      if (!visibleLinks.length) return "";
+      return `
+        <div class="nav-section">${esc(group)}</div>
+        ${visibleLinks.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" href="${href}"><span class="nav-icon"><img src="../assets/Icons/${escAttr(icon)}" data-fallback="../assets/Icons/${escAttr(iconFallbackFile(icon))}" alt="" loading="eager" decoding="async" /></span><span>${esc(label)}</span></a>`).join("")}
+      `;
+    }).join("");
     wireNavigationIconFallbacks(nav);
   }
 
@@ -2848,10 +3047,14 @@
         ["configuracoes.html", "Configurações", "?"]
       ]]
     ];
-    nav.innerHTML = groups.map(([group, links]) => `
-      <div class="nav-section">${esc(group)}</div>
-      ${links.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" data-icon="${esc(icon)}" href="${href}"><span>${esc(label)}</span></a>`).join("")}
-    `).join("");
+    nav.innerHTML = groups.map(([group, links]) => {
+      const visibleLinks = visibleNavigationLinks(links);
+      if (!visibleLinks.length) return "";
+      return `
+        <div class="nav-section">${esc(group)}</div>
+        ${visibleLinks.map(([href, label, icon]) => `<a class="nav-item ${href === currentPage ? "active" : ""}" data-icon="${esc(icon)}" href="${href}"><span>${esc(label)}</span></a>`).join("")}
+      `;
+    }).join("");
   }
 
   function setText(selector, value) {

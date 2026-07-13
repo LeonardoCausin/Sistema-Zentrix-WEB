@@ -51,7 +51,7 @@ public class PanelController {
             @RequestParam(defaultValue = "today") String period,
             @RequestParam(defaultValue = "all") String store
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("dashboard.visualizar");
         return dataService.dashboard(AuthContext.tenantId(), period, store);
     }
 
@@ -62,7 +62,7 @@ public class PanelController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("vendas.visualizar");
         return dataService.sales(AuthContext.tenantId(), period, store, limit, offset);
     }
 
@@ -72,7 +72,7 @@ public class PanelController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("produtos.visualizar");
         return dataService.products(AuthContext.tenantId(), store, limit, offset);
     }
 
@@ -83,7 +83,7 @@ public class PanelController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("caixa.visualizar");
         return dataService.cashSessions(AuthContext.tenantId(), period, store, limit, offset);
     }
 
@@ -93,7 +93,7 @@ public class PanelController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("estoque.visualizar");
         return dataService.stockAlerts(AuthContext.tenantId(), store, limit, offset);
     }
 
@@ -104,7 +104,7 @@ public class PanelController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_REPORTS);
+        permissionService.requireKey("auditoria.visualizar");
         return dataService.auditEvents(AuthContext.tenantId(), period, store, limit, offset);
     }
 
@@ -114,7 +114,7 @@ public class PanelController {
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.MANAGE_SETTINGS);
+        permissionService.requireAnyKey("backups.gerar", "backups.restaurar");
         return dataService.backups(AuthContext.tenantId(), store, limit, offset);
     }
 
@@ -124,7 +124,7 @@ public class PanelController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.VIEW_PANEL);
+        permissionService.requireKey("clientes.visualizar");
         return dataService.clients(AuthContext.tenantId(), store, limit, offset);
     }
 
@@ -134,7 +134,7 @@ public class PanelController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        permissionService.require(Permission.MANAGE_USERS);
+        permissionService.requireKey("funcionarios.visualizar");
         return dataService.employees(AuthContext.tenantId(), store, limit, offset);
     }
 
@@ -143,7 +143,7 @@ public class PanelController {
             @RequestParam(defaultValue = "today") String period,
             @RequestParam(defaultValue = "all") String store
     ) {
-        permissionService.require(Permission.MANAGE_FINANCE);
+        permissionService.requireKey("financeiro.visualizar");
         return dataService.finance(AuthContext.tenantId(), period, store);
     }
 
@@ -152,13 +152,13 @@ public class PanelController {
             @RequestParam(defaultValue = "today") String period,
             @RequestParam(defaultValue = "all") String store
     ) {
-        permissionService.require(Permission.VIEW_REPORTS);
+        permissionService.requireKey("relatorios.visualizar");
         return reportService.overview(AuthContext.tenantId(), period, store);
     }
 
     @GetMapping("/settings")
     public Map<String, Object> settings(@RequestParam(defaultValue = "all") String store) {
-        permissionService.require(Permission.MANAGE_SETTINGS);
+        permissionService.requireKey("configuracoes.visualizar");
         return dataService.settings(AuthContext.tenantId(), store);
     }
 
@@ -167,7 +167,7 @@ public class PanelController {
             @RequestParam(defaultValue = "all") String store,
             @RequestBody Map<String, Object> request
     ) {
-        permissionService.require(Permission.MANAGE_SETTINGS);
+        permissionService.requireKey("configuracoes.editar");
         Map<String, Object> updated = settingsService.updateSettings(AuthContext.tenantId(), store, request);
         auditService.recordCurrent("SETTINGS_UPDATED", "app_settings", store, "Configurações do sistema atualizadas.", "ALERTA", reason(request));
         return Map.of("settings", updated, "store", store);

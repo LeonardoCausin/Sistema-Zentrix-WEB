@@ -6,6 +6,7 @@ const apiBaseScript = readFileSync(join(process.cwd(), "js", "core", "api-base.j
 
 const session = {
   token: "e2e-token",
+  username: "admin",
   displayName: "Usuário Teste",
   role: "ADMIN",
   tenantId: "tenant-e2e",
@@ -95,6 +96,35 @@ test("authenticated page protects itself without local session", async ({ page }
   await expect(page).toHaveURL(/index\.html$/);
 });
 
+test("user without dashboard permission opens the first allowed page", async ({ page }) => {
+  const limitedSession = {
+    ...session,
+    role: "CONSULTA",
+    permissions: ["produtos.visualizar"]
+  };
+  await mockPanelApi(page, { session: limitedSession });
+
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await expect(page).toHaveURL(/produtos\.html$/);
+  await expect(page.locator(".nav-list").getByText("Dashboard")).toHaveCount(0);
+  await expect(page.locator(".nav-list").getByText("Produtos")).toBeVisible();
+});
+
+test("direct access to a forbidden page shows a clear permission message", async ({ page }) => {
+  const limitedSession = {
+    ...session,
+    role: "CONSULTA",
+    permissions: ["produtos.visualizar"]
+  };
+  await mockPanelApi(page, { session: limitedSession });
+
+  await page.goto("/FrontEnd/pages/relatorios.html");
+
+  await expect(page.getByText("Voce nao tem permissao para acessar esta tela")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Ir para Produtos/ })).toBeVisible();
+});
+
 test("dashboard loads an authenticated management flow", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/dashboard.html");
@@ -157,6 +187,17 @@ test("audit page shows administrative audit instead of sync monitor", async ({ p
   await expect(page.getByText("Envios ao PDV")).toHaveCount(0);
 });
 
+
+test("employee page protects the logged account from self permission changes", async ({ page }) => {
+  await mockPanelApi(page);
+  await page.goto("/FrontEnd/pages/funcionarios.html");
+
+  const ownCard = page.locator(".entity-card", { hasText: "Teste" }).first();
+  await expect(ownCard.getByText("Sua conta e protegida")).toBeVisible();
+  await expect(ownCard.locator('[data-action="edit-employee"]')).toHaveCount(0);
+  await expect(ownCard.locator('[data-action="toggle-employee-status"]')).toHaveCount(0);
+  await expect(page.locator(".entity-card", { hasText: "Operador E2E" }).locator('[data-action="edit-employee"]')).toBeVisible();
+});
 
 test("product flow creates a product from the web panel", async ({ page }) => {
   const calls = [];
@@ -277,12 +318,13 @@ test("backup restore requires staging before transactional application", async (
 
 async function mockPanelApi(page, options = {}) {
   const calls = options.calls || [];
+  const activeSession = options.session || session;
   await page.addInitScript((value) => {
     sessionStorage.setItem("zentrix-session", JSON.stringify(value));
-  }, session);
+  }, activeSession);
 
   await page.route("**/api/auth/me", async (route) => {
-    await route.fulfill({ json: session });
+    await route.fulfill({ json: activeSession });
   });
   await page.route("**/api/stores", async (route) => {
     await route.fulfill({ json: [{ id: "all", name: "Todas as lojas", isAll: true }, { id: "WEB", name: "Loja Web" }] });
@@ -327,6 +369,9 @@ async function mockPanelApi(page, options = {}) {
     const request = route.request();
     calls.push({ method: request.method(), url: request.url(), body: request.postDataJSON?.() });
     await route.fulfill({ json: { status: "OK" } });
+  });
+  await page.route("**/api/employees**", async (route) => {
+    await route.fulfill({ json: employeesPayload(activeSession) });
   });
   await page.route("**/api/backups/manual**", async (route) => {
     const request = route.request();
@@ -385,6 +430,27 @@ function alertsPayload() {
       message: "1 produto abaixo do mínimo.",
       actionLabel: "Repor estoque",
       actionUrl: "/estoque.html"
+    }
+  ];
+}
+
+function employeesPayload(activeSession) {
+  return [
+    {
+      username: activeSession.username || "admin",
+      displayName: activeSession.displayName || "Usuario Teste",
+      role: activeSession.role || "ADMIN",
+      active: true,
+      lastLoginAt: "2026-07-13 15:00",
+      permissions: activeSession.permissions || ["*"]
+    },
+    {
+      username: "operador",
+      displayName: "Operador E2E",
+      role: "CAIXA",
+      active: true,
+      lastLoginAt: "2026-07-13 14:00",
+      permissions: ["vendas.visualizar", "caixa.visualizar"]
     }
   ];
 }

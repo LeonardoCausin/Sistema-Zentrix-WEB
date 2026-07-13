@@ -81,4 +81,40 @@ class PermissionServiceTest {
         assertTrue(permissionService.can(Permission.RESTORE_BACKUP));
         assertTrue(permissionService.can(Permission.MANAGE_USERS));
     }
+
+    @Test
+    void ownerCanBeLimitedByExplicitMasterRules() {
+        AuthContext.set(new AuthTokenService.SessionToken(
+                "dono",
+                "Dono da Loja",
+                "DONO",
+                "tenant-1",
+                Set.of("clientes.visualizar"),
+                Instant.now(),
+                Instant.now().plusSeconds(300)
+        ));
+
+        assertTrue(permissionService.can(Permission.VIEW_PANEL));
+        assertFalse(permissionService.can(Permission.PRODUCTS_EDIT));
+        assertFalse(permissionService.can(Permission.USERS_PERMISSIONS));
+        assertTrue(permissionService.canKey("clientes.visualizar"));
+        assertFalse(permissionService.canKey("dashboard.visualizar"));
+    }
+
+    @Test
+    void masterAdminIgnoresExplicitRestrictions() {
+        AuthContext.set(new AuthTokenService.SessionToken(
+                "master",
+                "Master",
+                "MASTER_ADMIN",
+                "tenant-1",
+                Set.of("clientes.visualizar"),
+                Instant.now(),
+                Instant.now().plusSeconds(300)
+        ));
+
+        assertTrue(permissionService.can(Permission.PRODUCTS_EDIT));
+        assertTrue(permissionService.can(Permission.USERS_PERMISSIONS));
+        assertTrue(permissionService.canKey("dashboard.visualizar"));
+    }
 }
