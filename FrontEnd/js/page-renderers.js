@@ -387,7 +387,7 @@
 
   async function renderAudit() {
     const snapshot = periodLoadSnapshot();
-    const rows = await safeApi("/audit" + periodQuery(), []);
+    const rows = normalizeAuditRows(await safeApi("/audit" + periodQuery(), []));
     if (isStalePeriodLoad(snapshot)) return false;
     const risky = rows.filter((row) => auditTone(row) !== "info").length;
     const critical = rows.filter((row) => normalizeAuditLevel(row).includes("crit") || auditTone(row) === "danger").length;
@@ -405,12 +405,12 @@
         <section class="panel"><div class="panel-title"><div><h3>Ações críticas</h3><span>Eventos que merecem atenção administrativa</span></div></div>${criticalEventsHtml(rows)}</section>
       </div>
       <div style="margin-top: 16px">
-        ${dataTableHtml("Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows, (row) => [
+        ${dataTableHtml("Auditoria", ["Loja", "Ação", "Data e hora", "Usuário", "Descrição", "Nível"], rows, (row) => [
           row.store, tag(row.action), row.dateTime || row.createdAt || row.time || "-", row.user || "-", `${row.module || "Sistema"} - ${row.description || "-"}`, row.riskLevel || row.level || row.value || "-"
         ], exportId)}
       </div>
     `);
-    setupCsvExport(exportId, "Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows.map((row) => [
+    setupCsvExport(exportId, "Auditoria", ["Loja", "Ação", "Data e hora", "Usuário", "Descrição", "Nível"], rows.map((row) => [
       row.store, row.action, row.dateTime || row.createdAt || row.time || "-", row.user || "-", `${row.module || "Sistema"} - ${row.description || "-"}`, row.riskLevel || row.level || row.value || "-"
     ]));
   }
@@ -426,6 +426,150 @@
         <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.module || "Sistema")} - ${esc(row.description || row.value || "Registro de auditoria")}</span></div>
         <strong>${esc(row.dateTime || row.time || "-")}</strong>
       </div>`).join("")}</div>`;
+  }
+
+  function normalizeAuditRows(rows) {
+    return (Array.isArray(rows) ? rows : []).map((row) => {
+      const actionCode = row.actionCode || row.acao || row.action;
+      const entityType = row.entityType || row.entity_type;
+      const dateText = auditDateTime(row);
+      const translatedAction = auditActionLabel(actionCode);
+      const module = row.module || auditEntityLabel(entityType);
+      const description = auditDescription(translatedAction, module, row.entityId || row.entity_id, row.description || row.value);
+      return {
+        ...row,
+        action: translatedAction,
+        module,
+        description,
+        riskLevel: auditLevelLabel(row.riskLevel || row.level || row.risk_level),
+        level: auditLevelLabel(row.riskLevel || row.level || row.risk_level),
+        origin: auditOriginLabel(row.origin),
+        dateTime: dateText,
+        date: row.date || (dateText.includes(" ") ? dateText.split(" ")[0] : dateText),
+        time: row.time && !String(row.time).includes("-") ? row.time : (dateText.includes(" ") ? dateText.split(" ")[1] : row.time || "-")
+      };
+    });
+  }
+
+  function auditActionLabel(action) {
+    const value = String(action || "").trim().toUpperCase();
+    const labels = {
+      LOGIN_SUCCESS: "Login realizado",
+      LOGIN_REALIZADO: "Login realizado",
+      LOGIN_FAILED: "Login recusado",
+      LOGIN_REJECTED: "Login recusado",
+      LOGIN_RECUSADO: "Login recusado",
+      LOGOUT: "Logout realizado",
+      PRODUCT_CREATED: "Produto cadastrado",
+      PRODUCT_UPDATED: "Produto atualizado",
+      PRODUCT_UPSERT: "Produto atualizado",
+      PRODUCT_PRICE_CHANGED: "Preco de produto alterado",
+      PRODUCT_DEACTIVATED: "Produto inativado",
+      PRODUCT_REACTIVATED: "Produto reativado",
+      PRODUCT_STOCK_CHANGED: "Estoque movimentado",
+      STOCK_ADJUSTED: "Estoque movimentado",
+      CLIENT_CREATED: "Cliente cadastrado",
+      CLIENT_UPDATED: "Cliente atualizado",
+      CLIENT_UPSERT: "Cliente atualizado",
+      CLIENT_DEACTIVATED: "Cliente inativado",
+      CLIENT_REACTIVATED: "Cliente reativado",
+      USER_CREATED: "Funcionario cadastrado",
+      USER_UPDATED: "Funcionario atualizado",
+      USER_UPSERT: "Funcionario atualizado",
+      USER_DEACTIVATED: "Funcionario inativado",
+      USER_REACTIVATED: "Funcionario reativado",
+      PERMISSION_UPDATED: "Permissoes atualizadas",
+      USER_PERMISSIONS_CHANGED: "Permissoes atualizadas",
+      CASH_OPENED: "Caixa aberto",
+      CASH_CLOSED: "Caixa fechado",
+      CASH_SESSION_CLOSED: "Caixa fechado",
+      CASH_DIVERGENCE: "Diferenca no caixa",
+      CASH_WITHDRAWAL: "Sangria registrada",
+      CASH_SUPPLY: "Suprimento registrado",
+      SALE_CREATED: "Venda registrada",
+      SALE_CANCELLED: "Venda cancelada",
+      SALE_CANCELLATION: "Venda cancelada",
+      FINANCIAL_CREATED: "Lancamento financeiro cadastrado",
+      FINANCIAL_UPDATED: "Lancamento financeiro atualizado",
+      FINANCIAL_CANCELLED: "Lancamento financeiro cancelado",
+      BACKUP_CREATED: "Backup gerado",
+      BACKUP_FAILED: "Falha ao gerar backup",
+      BACKUP_RESTORE_REJECTED: "Restauracao de backup recusada",
+      BACKUP_RESTORE_BLOCKED: "Restauracao de backup bloqueada",
+      BACKUP_RESTORE_STAGED: "Restauracao preparada",
+      BACKUP_RESTORE_APPLIED: "Backup restaurado",
+      SETTINGS_UPDATED: "Configuracoes atualizadas",
+      SYNC_SUCCESS: "Dados recebidos com sucesso",
+      SYNC_ERROR: "Falha ao receber dados"
+    };
+    return labels[value] || humanizeAuditCode(value || "EVENTO");
+  }
+
+  function auditEntityLabel(entityType) {
+    const value = String(entityType || "").trim().toLowerCase();
+    const labels = {
+      products: "Produtos",
+      clients: "Clientes",
+      users: "Funcionarios",
+      cash_sessions: "Caixa",
+      cash_movements: "Movimentacoes de caixa",
+      sales: "Vendas",
+      sale_cancellations: "Cancelamentos",
+      stock_movements: "Estoque",
+      financial_entries: "Financeiro",
+      backup_runs: "Backups",
+      backup_restore_staging: "Backups",
+      app_settings: "Configuracoes",
+      sync_runs: "Eventos do sistema",
+      audit_log: "Auditoria"
+    };
+    return labels[value] || humanizeAuditCode(value || "Sistema");
+  }
+
+  function auditLevelLabel(level) {
+    const value = String(level || "").trim().toUpperCase();
+    if (["CRITICO", "CRÍTICO", "CRITICAL", "DANGER"].includes(value)) return "Critico";
+    if (["ALERTA", "WARNING", "WARN"].includes(value)) return "Alerta";
+    if (["INFO", "INFORMATION", "INFORMACAO"].includes(value)) return "Informacao";
+    return value ? humanizeAuditCode(value) : "Informacao";
+  }
+
+  function auditOriginLabel(origin) {
+    const value = String(origin || "").trim().toUpperCase();
+    if (["WEB", "PAINEL", "APPGESTAO"].includes(value)) return "Painel Web";
+    if (value === "PDV") return "Zentrix PDV";
+    if (["SISTEMA", "SYSTEM"].includes(value)) return "Sistema interno";
+    return value ? humanizeAuditCode(value) : "Sistema interno";
+  }
+
+  function auditDescription(action, module, entityId, details) {
+    const text = String(details || "").trim();
+    if (text && !/^[A-Z_]+$/.test(text)) return text;
+    const target = entityId ? `${module} #${entityId}` : module;
+    return `${action} em ${target}.`;
+  }
+
+  function auditDateTime(row) {
+    const value = row.dateTime || row.createdAt || row.created_at || "";
+    if (value) {
+      const text = String(value).trim();
+      const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+      if (match) {
+        return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(text)) {
+        return text.slice(0, 16);
+      }
+    }
+    if (row.date && row.time) {
+      return `${row.date} ${String(row.time).slice(0, 5)}`;
+    }
+    return row.time ? `Data nao informada ${String(row.time).slice(0, 5)}` : "-";
+  }
+
+  function humanizeAuditCode(code) {
+    const text = String(code || "").replace(/[_-]+/g, " ").trim().toLowerCase();
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : "-";
   }
 
   function normalizeAuditText(row) {
