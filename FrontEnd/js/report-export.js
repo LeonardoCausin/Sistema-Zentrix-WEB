@@ -59,7 +59,7 @@
         .diag{margin:0;padding-left:18px;color:#45556b}.footer{margin-top:18px;color:#64748b;font-size:12px}
         @media print{body{background:#fff}.page{padding:0}.card,.panel{box-shadow:none}.no-print{display:none}}
       </style></head><body><main class="page">
-        <section class="hero"><h1>${esc(title, context)}</h1><p>Zentrix AppGestão conectado ao Zentrix PDV | ${esc(periodLabel(context), context)} | ${esc(activeStoreName(context), context)}</p></section>
+        <section class="hero"><h1>${esc(title, context)}</h1><p>Zentrix AppGestão | ${esc(periodLabel(context), context)} | ${esc(activeStoreName(context), context)}</p></section>
         <section class="grid">${cards.slice(0, 4).map((card) => `<article class="card"><span>${esc(card.label, context)}</span><strong>${esc(card.value, context)}</strong><small>${esc(card.description || card.note || "", context)}</small></article>`).join("")}</section>
         ${sections.map((section) => `<section class="panel"><h2>${esc(section.title, context)}</h2>${reportTableHtml(section.rows, context)}</section>`).join("") || `<section class="panel"><h2>Dados do relatório</h2>${emptyState("Este relatório ainda não tem dados no período escolhido.", context)}</section>`}
         ${diagnostics.length ? `<section class="panel"><h2>Diagnóstico</h2><ul class="diag">${diagnostics.map((item) => `<li>${esc(item, context)}</li>`).join("")}</ul></section>` : ""}

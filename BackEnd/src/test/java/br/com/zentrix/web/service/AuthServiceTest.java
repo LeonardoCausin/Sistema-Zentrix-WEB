@@ -74,6 +74,18 @@ class AuthServiceTest {
     }
 
     @Test
+    void issuesTokenForMasterAdminUser() {
+        jdbcTemplate.addQueryResult(List.of(user("master", "MASTER_ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)))));
+        jdbcTemplate.addQueryResult(List.of());
+
+        var response = authService.login(new LoginRequest("master", "senha"));
+
+        assertEquals("token-123", response.token());
+        assertEquals("tenant-1", response.companyId());
+        assertEquals(1, authTokenService.issuedCount);
+    }
+
+    @Test
     void legacyAdminUsesLatestOfficialScopeForSameSource() {
         Map<String, Object> legacyAdmin = user("admin", "ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)));
         legacyAdmin.put("tenant_id", "legacy");

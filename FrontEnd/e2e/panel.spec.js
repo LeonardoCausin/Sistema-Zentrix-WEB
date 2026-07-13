@@ -101,6 +101,10 @@ test("dashboard loads an authenticated management flow", async ({ page }) => {
   await expect(page.getByText("Faturamento")).toBeVisible();
   await expect(page.locator(".metric-value", { hasText: "R$ 1.250,00" })).toBeVisible();
   await expect(page.getByText("Produtos mais vendidos")).toBeVisible();
+  await expect(page.locator(".nav-list").getByText("Sincronização")).toHaveCount(0);
+  await expect(page.getByText("PDV conectado")).toHaveCount(0);
+  await expect(page.getByText("PDV desconectado")).toHaveCount(0);
+  await expect(page.getByText("Última sincronização")).toHaveCount(0);
 });
 
 test("authenticated top bar shows notifications and account menu", async ({ page }) => {
@@ -131,12 +135,13 @@ test("theme preference lives in settings", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("audit page shows the PDV status monitor", async ({ page }) => {
+test("audit page shows administrative audit instead of sync monitor", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/auditoria.html");
-  await expect(page.getByText("Status do PDV")).toBeVisible();
-  await expect(page.getByText("Envios ao PDV")).toBeVisible();
-  await expect(page.locator(".list-title", { hasText: "DELIVERED" })).toBeVisible();
+  await expect(page.getByText("Timeline de auditoria")).toBeVisible();
+  await expect(page.getByText("Ações críticas")).toBeVisible();
+  await expect(page.getByText("Status do PDV")).toHaveCount(0);
+  await expect(page.getByText("Envios ao PDV")).toHaveCount(0);
 });
 
 

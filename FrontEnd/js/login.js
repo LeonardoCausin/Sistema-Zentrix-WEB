@@ -150,7 +150,7 @@
       previewStatus.className = 'status-pill ' + (health.status === 'UP' ? 'success' : 'warning');
       previewStatus.textContent = health.status === 'UP' ? 'Sistema online' : 'Sistema iniciando';
       if (previewService) previewService.textContent = 'Zentrix AppGestão';
-      previewLastSync.textContent = health.lastSync || 'Aguardando contato do PDV';
+      previewLastSync.textContent = health.status === 'UP' ? 'Painel administrativo disponível' : 'Aguardando inicialização';
     } catch (error) {
       previewStatus.className = 'status-pill warning';
       previewStatus.textContent = 'Sistema offline';

@@ -64,4 +64,21 @@ class PermissionServiceTest {
         assertTrue(permissionService.can(Permission.MANAGE_FINANCE));
         assertFalse(permissionService.can(Permission.MANAGE_USERS));
     }
+
+    @Test
+    void masterAdminHasFullAdministrativeAccess() {
+        AuthContext.set(new AuthTokenService.SessionToken(
+                "master",
+                "Master",
+                "MASTER_ADMIN",
+                "tenant-1",
+                Set.of(),
+                Instant.now(),
+                Instant.now().plusSeconds(300)
+        ));
+
+        assertTrue(permissionService.can(Permission.MANAGE_SETTINGS));
+        assertTrue(permissionService.can(Permission.RESTORE_BACKUP));
+        assertTrue(permissionService.can(Permission.MANAGE_USERS));
+    }
 }

@@ -66,9 +66,7 @@
     return;
   }
 
-  if (storedTheme === "dark" || storedTheme === "light") {
-    root.dataset.theme = storedTheme;
-  }
+  root.dataset.theme = storedTheme === "light" ? "light" : "dark";
 
   enhanceChrome();
 
@@ -994,23 +992,23 @@
     const action = button.dataset.action === "sync-dead-letter" ? "dead-letter" : "retry";
     const store = button.dataset.storeId || currentStore || "all";
     if (!id) {
-      renderToast("Não encontramos esse envio ao PDV. Atualize a tela e tente novamente.", "warning");
+      renderToast("Não encontramos esse evento técnico. Atualize a tela e tente novamente.", "warning");
       return;
     }
     const previousText = button.textContent;
     button.disabled = true;
-    button.textContent = action === "retry" ? "Enviando novamente..." : "Pausando...";
+    button.textContent = action === "retry" ? "Tentando novamente..." : "Pausando...";
     try {
       await window.zentrixApi("/sync/outbox/" + encodeURIComponent(id) + "/" + action + "?store=" + encodeURIComponent(store), {
         method: "POST",
         cache: "no-store",
-        body: JSON.stringify({ reason: action === "retry" ? "Reenvio solicitado pelo painel" : "Item pausado pelo painel para não travar os próximos envios" })
+        body: JSON.stringify({ reason: action === "retry" ? "Nova tentativa solicitada pelo painel" : "Item pausado pelo painel para não travar os próximos eventos" })
       });
       clearApiCache();
-      renderToast(action === "retry" ? "Item colocado novamente para envio ao PDV." : "Item pausado para não travar os próximos envios.", "success");
+      renderToast(action === "retry" ? "Evento colocado novamente para processamento." : "Evento pausado para não travar os próximos processos.", "success");
       loadPageData({ fresh: true });
     } catch (error) {
-      renderToast(error.message || "Não conseguimos atualizar o envio ao PDV agora. Tente novamente.", "danger");
+      renderToast(error.message || "Não conseguimos atualizar esse evento agora. Tente novamente.", "danger");
     } finally {
       button.disabled = false;
       button.textContent = previousText;
@@ -1514,7 +1512,7 @@
       estoque: { renderer: "renderStock", endpoints: ["/admin/produtos?limit=500", "/stock/alerts", "/stock/movements"], query: "store" },
       clientes: { renderer: "renderClients", endpoints: ["/admin/clientes"], query: "store" },
       funcionarios: { renderer: "renderEmployees", endpoints: ["/employees"], query: "store" },
-      auditoria: { renderer: "renderAudit", endpoints: ["/audit", "/sync/monitor"], query: "period" },
+      auditoria: { renderer: "renderAudit", endpoints: ["/audit"], query: "period" },
       relatorios: { renderer: "renderReports", endpoints: ["/reports"], query: "period" },
       backups: { renderer: "renderBackups", endpoints: ["/backups"], query: "store" },
       configuracoes: { renderer: "renderOwnerSettings", endpoints: ["/settings"], query: "store" }
@@ -1599,8 +1597,6 @@
       storeTabsHtml,
       storesListHtml,
       sumMoney,
-      syncAlertOwnerHtml,
-      syncStatusLabel,
       tag,
       metricFilterCard,
       employeePermissions,
@@ -1619,7 +1615,7 @@
   }
 
   function renderError(message) {
-    const detail = message ? friendlyMessage(message) : "Verifique se o Zentrix PDV e o serviço online estão abertos.";
+    const detail = message ? friendlyMessage(message) : "Verifique se o servidor do Zentrix está ligado.";
     viewHost.innerHTML = `<section class="state-box"><div><strong>Não conseguimos mostrar os dados agora</strong><p>${esc(detail)}</p></div></section>`;
   }
 
@@ -1659,7 +1655,7 @@
       <div class="metric-top"><span class="metric-icon ${toneValue || "info"}">${esc(icon || "#")}</span><span class="tag ${tone(toneValue)}">${esc(trend || "Atual")}</span></div>
       <span class="metric-label">${esc(label)}</span>
       <strong class="metric-value">${esc(value)}</strong>
-      <span class="metric-note">${esc(note || "Atualizado pelo Zentrix PDV.")}</span>
+      <span class="metric-note">${esc(note || "Atualizado pelo Zentrix.")}</span>
     </article>`;
   }
 
@@ -1705,7 +1701,7 @@
       <div class="metric-top"><span class="metric-icon ${toneValue || "info"}">${esc(icon || "#")}</span><span class="tag ${tone(toneValue)}">${esc(trend || "Atual")}</span></div>
       <span class="metric-label">${esc(label)}</span>
       <strong class="metric-value">${esc(value)}</strong>
-      <span class="metric-note">${esc(note || "Atualizado pelo Zentrix PDV.")}</span>
+      <span class="metric-note">${esc(note || "Atualizado pelo Zentrix.")}</span>
     </button>`;
   }
 
@@ -1846,7 +1842,7 @@
       { label: "Lucro estimado", value: "Em análise", note: "Depende do custo cadastrado", tone: "warning", icon: "%", trend: "Estimativa" },
       { label: "Ticket médio", value: ticket.value || "R$ 0,00", note: "Média por venda concluída", tone: "info", icon: "~", trend: ticket.trend || periodLabel() },
       { label: "Produtos vendidos", value: productsSold ? String(Math.round(productsSold)) : "0", note: "Itens presentes no ranking", tone: "success", icon: "#", trend: "Top itens" },
-      { label: "Caixa atual", value: syncStatusLabel(data), note: "Status atual do Zentrix PDV", tone: data.pdvConnected ? "success" : "warning", icon: "PDV", trend: data.pdvConnected ? "Online" : "Offline" },
+      { label: "Caixa atual", value: data.cashStatus || "Operacional", note: "Status operacional da loja", tone: "success", icon: "CX", trend: "Loja" },
       { label: "Estoque crítico", value: stock.value || "0", note: stock.trend || "Produtos em atenção", tone: "danger", icon: "!", trend: "Crítico" }
     ];
   }
@@ -1893,7 +1889,7 @@
       <strong>${esc(row.name || "Cliente")}</strong>
       <div class="entity-meta">
         <div><span>?ltima compra</span><strong>Em análise</strong></div>
-        <div><span>Total gasto</span><strong>PDV</strong></div>
+        <div><span>Total gasto</span><strong>Em análise</strong></div>
         <div><span>Frequência</span><strong>Atualizada</strong></div>
         <div><span>Telefone</span><strong>${esc(row.phone || "-")}</strong></div>
       </div>
@@ -1982,7 +1978,7 @@
   }
 
   function reportMetricCard(row) {
-    return metricCard(row.label || "Indicador", row.value || "0", row.description || row.note || "Atualizado pelo Zentrix PDV.", row.tone || "info", initials(row.label || "#"), row.trend || periodLabel());
+    return metricCard(row.label || "Indicador", row.value || "0", row.description || row.note || "Atualizado pelo Zentrix.", row.tone || "info", initials(row.label || "#"), row.trend || periodLabel());
   }
 
   function reportSummaryPanel(title, report) {
@@ -1990,8 +1986,8 @@
     const diagnostics = report && Array.isArray(report.diagnostics) ? report.diagnostics : [];
     return `<section class="panel"><div class="panel-title"><div><h3>${esc(title)}</h3><span>Resumo profissional</span></div></div>
       <div class="stack-list">
-        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatório")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("Relatório aguardando dados do PDV.")}
-        ${diagnostics.slice(0, 2).map((item) => `<div class="list-item"><span class="list-icon warning">!</span><div><span class="list-title">Diagnóstico</span><span class="list-subtitle">${esc(item)}</span></div><strong>PDV</strong></div>`).join("")}
+        ${cards.slice(0, 4).map((card) => `<div class="list-item"><span class="list-icon ${tone(card.tone)}">${esc(initials(card.label || title))}</span><div><span class="list-title">${esc(card.label)}</span><span class="list-subtitle">${esc(card.description || card.note || "Indicador do relatório")}</span></div><strong>${esc(card.value)}</strong></div>`).join("") || emptyState("Relatório aguardando dados da loja.")}
+        ${diagnostics.slice(0, 2).map((item) => `<div class="list-item"><span class="list-icon warning">!</span><div><span class="list-title">Diagnóstico</span><span class="list-subtitle">${esc(item)}</span></div><strong>Loja</strong></div>`).join("")}
       </div>
     </section>`;
   }
@@ -2187,7 +2183,7 @@
 
   function diagnosticsHtml(rows) {
     const list = Array.isArray(rows) && rows.length ? rows : ["Dados atualizados e relatórios prontos para análise."];
-    return list.map((item, index) => `<div class="list-item"><span class="list-icon ${index ? "info" : "warning"}">${index ? "IN" : "PDV"}</span><div><span class="list-title">${index ? "Observação" : "Diagnóstico"}</span><span class="list-subtitle">${esc(item)}</span></div><strong>${index ? "OK" : "Sync"}</strong></div>`).join("");
+    return list.map((item, index) => `<div class="list-item"><span class="list-icon ${index ? "info" : "warning"}">${index ? "IN" : "LO"}</span><div><span class="list-title">${index ? "Observação" : "Diagnóstico"}</span><span class="list-subtitle">${esc(item)}</span></div><strong>${index ? "OK" : "Loja"}</strong></div>`).join("");
   }
 
   function paymentsHtml(rows) {
@@ -2368,30 +2364,15 @@
   }
 
   function compactSalesList(rows) {
-    return rows.slice(0, 4).map((row) => `<div class="list-item"><span class="list-icon success">$</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(row.sales ? row.sales + " vendas" : "Loja atualizada")}</span></div><strong>${esc(row.display || row.value || "0")}</strong></div>`).join("") || emptyState("Aguardando vendas do PDV.");
+    return rows.slice(0, 4).map((row) => `<div class="list-item"><span class="list-icon success">$</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">${esc(row.sales ? row.sales + " vendas" : "Loja atualizada")}</span></div><strong>${esc(row.display || row.value || "0")}</strong></div>`).join("") || emptyState("Nenhuma venda encontrada para o período selecionado.");
   }
 
   function statusRowsHtml(rows) {
     return rows.map((row) => `<div class="list-item"><span class="list-icon ${tone(row.tone)}">${esc(row.display)}</span><div><span class="list-title">${esc(row.label)}</span><span class="list-subtitle">Status atual dos produtos</span></div><strong>${esc(row.display)}</strong></div>`).join("") || emptyState("Ainda não há produtos para acompanhar.");
   }
 
-  function syncAlertOwnerHtml(data) {
-    const status = data && data.syncStatus ? data.syncStatus : {};
-    const synced = data && (data.pdvConnected === true || status.connected === true);
-    const title = synced ? "PDV conectado" : "PDV desconectado";
-    const subtitle = data && (data.pdvLastSeen || status.lastSeenAt || data.lastSync) ? (data.pdvLastSeen || status.lastSeenAt || data.lastSync) : "Aguardando contato do PDV";
-    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${esc(title)}</span><span class="list-subtitle">${esc(subtitle)}</span></div><strong>${esc(synced ? "Online" : "Offline")}</strong></div>`;
-  }
-
-  function syncAlertHtml(data) {
-    const status = data && data.syncStatus ? data.syncStatus : {};
-    const synced = data && (data.pdvConnected === true || status.connected === true);
-    const lastSeen = data && (data.pdvLastSeen || status.lastSeenAt || data.lastSync);
-    return `<div class="list-item"><span class="list-icon ${synced ? "success" : "warning"}">${synced ? "OK" : "!"}</span><div><span class="list-title">${synced ? "PDV conectado" : "PDV desconectado"}</span><span class="list-subtitle">${esc(lastSeen || "Aguardando contato do PDV")}</span></div><strong>${esc(synced ? "Online" : "Offline")}</strong></div>`;
-  }
-
   function storesListHtml(rows) {
-    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">Loja conectada ao Zentrix PDV</span></div><strong>${esc(row.lastSync || "Aguardando atualização")}</strong></div>`).join("") || emptyState("Nenhuma loja conectada ao painel.");
+    return rows.filter((row) => !row.isAll).map((row) => `<div class="list-item"><span class="list-icon info">LJ</span><div><span class="list-title">${esc(row.name)}</span><span class="list-subtitle">Loja vinculada ao painel</span></div><strong>${esc(row.status || "Ativa")}</strong></div>`).join("") || emptyState("Nenhuma loja vinculada ao painel.");
   }
 
   function storeTabsHtml() {
@@ -2400,7 +2381,7 @@
     return `<div class="store-tabs" role="tablist" aria-label="Lojas">${stores.map((store) => `
       <button class="${store.id === currentStore ? "active" : ""}" type="button" data-store-id="${esc(store.id)}" role="tab" aria-selected="${store.id === currentStore ? "true" : "false"}">
         <span>${esc(store.name)}</span>
-        <small>${esc(store.isAll ? "Todas as lojas" : "Loja conectada")}</small>
+        <small>${esc(store.isAll ? "Todas as lojas" : "Loja vinculada")}</small>
       </button>
     `).join("")}</div>`;
   }
@@ -2429,12 +2410,12 @@
   }
 
   function emptyState(message) {
-    return `<div class="empty-state"><strong>${esc(message || "Ainda não há informações para mostrar.")}</strong><span>Quando o PDV enviar novos dados, esta área será atualizada automaticamente.</span></div>`;
+    return `<div class="empty-state"><strong>${esc(message || "Ainda não há informações para mostrar.")}</strong><span>Os dados aparecerão aqui assim que houver registros para o filtro atual.</span></div>`;
   }
 
   function friendlyMessage(message) {
     const text = normalizeText(String(message || ""));
-    if (!text) return "Verifique se o Zentrix PDV e o painel online estão abertos.";
+    if (!text) return "Verifique se o servidor do Zentrix está ligado.";
     if (text.toLowerCase().includes("failed to fetch") || text.toLowerCase().includes("network")) {
       return "Não conseguimos conectar ao Zentrix agora. Verifique a internet ou se o servidor está ligado.";
     }
@@ -2542,10 +2523,9 @@
     const companyName = active && active.name ? String(active.name) : "Geral";
     const lastSync = data && data.lastSync ? String(data.lastSync) : "";
     const apiOnline = Boolean(data);
-    const syncStatus = data && data.syncStatus ? data.syncStatus : {};
-    const pdvConnected = Boolean(data && (data.pdvConnected === true || syncStatus.connected === true));
-    const pdvLastSeen = data && (data.pdvLastSeen || syncStatus.lastSeenAt || lastSync);
-    const progress = Math.max(0, Math.min(100, Number((data && data.syncProgress) || (pdvConnected ? 100 : 0))));
+    const storeStatus = data && (data.storeStatus || (data.activeStore && data.activeStore.status)) || "Ativa";
+    const planStatus = data && (data.planStatus || data.subscriptionStatus || data.billingStatus) || "Em dia";
+    const progress = apiOnline ? 100 : 0;
     const title = "Zentrix AppGestão - " + companyName;
 
     setText(".window-title span:last-child", title);
@@ -2554,15 +2534,15 @@
       statusPill.className = "status-pill " + (apiOnline ? "success" : "warning");
       statusPill.textContent = apiOnline ? "Online" : "Atualizando";
     }
-    updateNotifications(apiOnline, pdvConnected, lastSync);
+    updateNotifications(apiOnline, apiOnline, lastSync);
 
-    setText(".sidebar-status strong", pdvConnected ? "PDV conectado" : "PDV desconectado");
-    setText(".sidebar-status span", pdvLastSeen ? "?ltimo contato: " + pdvLastSeen : "Aguardando contato do PDV");
+    setText(".sidebar-status strong", "Loja " + storeStatus);
+    setText(".sidebar-status span", "Plano " + planStatus);
     setText(".sidebar-status .button", "Histórico");
     const progressBar = document.querySelector(".sidebar-status .progress-track span");
     if (progressBar) progressBar.style.width = progress + "%";
-    setText(".sidebar-status strong", pdvConnected ? "PDV conectado" : "PDV desconectado");
-    setText(".sidebar-status span", pdvLastSeen ? "?ltimo contato: " + pdvLastSeen : "Aguardando contato do PDV");
+    setText(".sidebar-status strong", "Loja " + storeStatus);
+    setText(".sidebar-status span", "Plano " + planStatus);
     setText(".sidebar-status .button", "Ver histórico");
   }
 
@@ -2579,7 +2559,7 @@
   function enhanceChrome() {
     document.title = normalizeText(document.title).replace("Zentrix Web", "Zentrix AppGestão");
     setText(".window-title span:last-child", "Zentrix AppGestão");
-    setText(".sidebar-brand span", "Gestão online conectada ao Zentrix PDV");
+    setText(".sidebar-brand span", "Gestão comercial Zentrix");
     if (menuButton) menuButton.setAttribute("aria-label", "Abrir menu");
     if (closeSidebarButton) {
       closeSidebarButton.textContent = "x";
@@ -2630,7 +2610,7 @@
     wireTopbarIconFallbacks(toolbar);
   }
 
-  function updateNotifications(apiOnline, pdvConnected, lastSync, alerts) {
+  function updateNotifications(apiOnline, storeUpdated, lastSync, alerts) {
     const button = document.querySelector(".notification-button");
     const menu = document.querySelector(".notification-menu");
     if (!button || !menu) return;
@@ -2640,12 +2620,12 @@
       return level === "danger" || level === "warning";
     });
     const visibleAlerts = items.slice(0, 5);
-    const hasAttention = !apiOnline || !pdvConnected || importantAlerts.length > 0;
+    const hasAttention = !apiOnline || !storeUpdated || importantAlerts.length > 0;
     const badge = button.querySelector(".notification-count");
     button.classList.toggle("has-alert", hasAttention);
     button.setAttribute("aria-label", hasAttention ? "Notificações com atenção" : "Notificações");
     if (badge) {
-      const count = importantAlerts.length || (!apiOnline || !pdvConnected ? 1 : 0);
+      const count = importantAlerts.length || (!apiOnline || !storeUpdated ? 1 : 0);
       badge.hidden = count <= 0;
       badge.textContent = String(Math.min(count, 9));
     }
@@ -2659,8 +2639,8 @@
       return;
     }
     menu.innerHTML = hasAttention
-      ? `<strong>Atenção</strong><span>${esc(apiOnline ? "Aguardando atualização do PDV." : "Conexão instável no momento.")}</span>`
-      : `<strong>Tudo certo</strong><span>${esc(lastSync ? "?ltima atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
+      ? `<strong>Atenção</strong><span>${esc(apiOnline ? "Aguardando atualização da loja." : "Conexão instável no momento.")}</span>`
+      : `<strong>Tudo certo</strong><span>${esc(lastSync ? "Última atualização: " + lastSync : "Sistema acompanhando a loja.")}</span>`;
   }
 
   async function refreshAccountToolbar() {
@@ -2741,6 +2721,10 @@
     const role = account && (account.role || account.cargo || account.profile);
     const key = normalizeKey(role || "").toUpperCase();
     const labels = {
+      SUPER_ADMIN: "Master",
+      SUPERADMIN: "Master",
+      MASTER_ADMIN: "Master",
+      MASTERADMIN: "Master",
       ADMIN: "Administrador",
       ADMINISTRADOR: "Administrador",
       ADMINISTRATOR: "Administrador",
@@ -2976,11 +2960,6 @@
     const stores = storesCache || [];
     const active = stores.find((store) => store.id === currentStore);
     return active ? active.name : "Todas as lojas";
-  }
-
-  function syncStatusLabel(data) {
-    const status = data && data.syncStatus ? data.syncStatus : {};
-    return data && (data.pdvConnected === true || status.connected === true) ? "PDV conectado" : "PDV desconectado";
   }
 
   function percentWidth(value) {

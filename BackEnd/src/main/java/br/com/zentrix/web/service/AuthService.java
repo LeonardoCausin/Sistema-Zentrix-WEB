@@ -200,7 +200,8 @@ public class AuthService {
 
     private boolean isWebAdminRole(String role) {
         return switch (normalizeRole(role)) {
-            case "ADMIN", "ADMINISTRADOR", "ADMINISTRATOR", "DONO", "OWNER" -> true;
+            case "SUPER_ADMIN", "SUPERADMIN", "MASTER_ADMIN", "MASTERADMIN",
+                    "ADMIN", "ADMINISTRADOR", "ADMINISTRATOR", "DONO", "OWNER" -> true;
             default -> false;
         };
     }

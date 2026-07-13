@@ -42,6 +42,8 @@ public class PermissionService {
     private static final Map<Permission, Set<String>> PERMISSION_KEYS = new EnumMap<>(Permission.class);
 
     static {
+        ROLE_PERMISSIONS.put(Role.SUPER_ADMIN, EnumSet.allOf(Permission.class));
+        ROLE_PERMISSIONS.put(Role.MASTER_ADMIN, EnumSet.allOf(Permission.class));
         ROLE_PERMISSIONS.put(Role.DONO, EnumSet.allOf(Permission.class));
         ROLE_PERMISSIONS.put(Role.ADMIN, EnumSet.allOf(Permission.class));
         ROLE_PERMISSIONS.put(Role.GERENTE, EnumSet.of(
@@ -135,7 +137,7 @@ public class PermissionService {
 
     public boolean can(String role, Set<String> customPermissions, Permission permission) {
         Role normalizedRole = normalizeRole(role);
-        if (normalizedRole == Role.DONO) {
+        if (normalizedRole == Role.SUPER_ADMIN || normalizedRole == Role.MASTER_ADMIN || normalizedRole == Role.DONO) {
             return true;
         }
         if (customPermissions != null && !customPermissions.isEmpty()) {
@@ -161,6 +163,8 @@ public class PermissionService {
     public Role normalizeRole(String role) {
         String value = normalize(role);
         return switch (value) {
+            case "SUPER_ADMIN", "SUPERADMIN" -> Role.SUPER_ADMIN;
+            case "MASTER_ADMIN", "MASTERADMIN" -> Role.MASTER_ADMIN;
             case "DONO", "OWNER" -> Role.DONO;
             case "ADMIN", "ADMINISTRADOR", "ADMINISTRATOR" -> Role.ADMIN;
             case "GERENTE", "MANAGER" -> Role.GERENTE;
@@ -182,6 +186,8 @@ public class PermissionService {
     }
 
     public enum Role {
+        SUPER_ADMIN,
+        MASTER_ADMIN,
         DONO,
         ADMIN,
         GERENTE,

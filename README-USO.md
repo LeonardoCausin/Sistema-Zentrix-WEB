@@ -1,6 +1,6 @@
 # Zentrix Web - uso local
 
-Este projeto e o painel web do Zentrix PDV. O usuario final nao precisa abrir terminal nem conhecer detalhes tecnicos.
+Este projeto e o painel web de gestao do Zentrix AppGestao. O usuario final nao precisa abrir terminal nem conhecer detalhes tecnicos.
 
 ## Como abrir
 
@@ -18,16 +18,23 @@ Evite depender de Live Server/VS Code para uso normal, porque outra pasta aberta
 
 Use o usuario criado no banco do Zentrix Web. Se o acesso falhar muitas vezes seguidas, o sistema bloqueia novas tentativas por alguns minutos para proteger a conta.
 
-## Sincronizacao
+## Auditoria e eventos
 
-O Zentrix PDV deve enviar os dados para o Zentrix Web pela fila de sincronizacao. Se o computador do PDV ficar sem internet, a fila guarda os envios e manda tudo quando a conexao voltar.
+O painel principal da loja exibe Auditoria, eventos do sistema, alertas, backups e indicadores comerciais. A tela de Auditoria mostra acoes sensiveis, alteracoes manuais, cancelamentos, falhas e registros importantes para operacao.
 
-No painel, abra `Sincronizacao` para acompanhar:
+## Modelo comercial e permissoes
 
-- itens pendentes Web -> PDV;
-- itens entregues aguardando ACK;
-- erros com retry;
-- dead-letter para mudancas que nao devem travar a fila.
+O painel da loja e voltado ao dono, administrador ou equipe autorizada da empresa contratante. Ele deve mostrar apenas recursos de uso diario: dashboard, vendas, produtos, estoque, clientes, caixa, financeiro, funcionarios, auditoria, relatorios, backups, configuracoes e alertas.
+
+A criacao de empresas, criacao de lojas, ativacao, suspensao, bloqueio, cancelamento, reativacao, plano, vencimento, valor mensal e cobranca sao responsabilidades do painel master/administrativo. Usuario comum da loja nao deve criar loja nem alterar status comercial da assinatura.
+
+Perfis master, como `SUPER_ADMIN` e `MASTER_ADMIN`, devem ser usados somente para administracao do sistema, empresas, lojas, planos, cobrancas, usuarios master, auditoria geral e eventos tecnicos. Dados tecnicos sensiveis nao devem aparecer no painel comum da loja.
+
+## Sincronizacao interna
+
+A sincronizacao continua existindo internamente no backend para integracao tecnica. Nao remova controllers, services, DTOs, tabelas, filas ou endpoints de sincronizacao sem analise especifica.
+
+O usuario comum da loja nao possui menu visual de Sincronizacao. Dados tecnicos de fila, ACK, retry, dead-letter e monitoramento devem ficar restritos a area administrativa/master ou suporte tecnico.
 
 Cada chamada da API tambem recebe `X-Request-Id`, que aparece no log do backend e ajuda a localizar falhas em producao.
 
