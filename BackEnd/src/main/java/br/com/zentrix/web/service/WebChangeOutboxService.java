@@ -3,11 +3,15 @@ package br.com.zentrix.web.service;
 import br.com.zentrix.web.dto.SyncAckRequest;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,6 +122,10 @@ public class WebChangeOutboxService {
                 "primaryKey", "Mapa da chave primaria do registro",
                 "revision", "updated_at, date_time ou created_at quando existir"
         ));
+        response.put("integrity", Map.of(
+                "payloadHash", "SHA-256 do payload_json enviado em cada item.",
+                "batchHash", "SHA-256 calculado com id:payloadHash de todos os itens do lote, na ordem recebida."
+        ));
         return response;
     }
 
@@ -222,9 +230,12 @@ public class WebChangeOutboxService {
         markDelivered(safeTenant, safeStore, page);
 
         List<Map<String, Object>> changes = new ArrayList<>();
+        List<String> batchParts = new ArrayList<>();
         long nextCursor = Math.max(0L, afterId);
         for (Map<String, Object> row : page) {
             long id = ((Number) row.get("id")).longValue();
+            String payloadJson = String.valueOf(row.get("payload_json"));
+            String payloadHash = sha256(payloadJson);
             nextCursor = id;
             Map<String, Object> change = new LinkedHashMap<>();
             change.put("id", id);
@@ -245,7 +256,9 @@ public class WebChangeOutboxService {
             change.put("deliveredAt", row.get("delivered_at"));
             change.put("nextAttemptAt", row.get("next_attempt_at"));
             change.put("payload", fromJson(row.get("payload_json")));
+            change.put("payloadHash", payloadHash);
             changes.add(change);
+            batchParts.add(id + ":" + payloadHash);
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -260,6 +273,7 @@ public class WebChangeOutboxService {
         response.put("hasMore", hasMore);
         response.put("count", changes.size());
         response.put("changes", changes);
+        response.put("batchHash", sha256(String.join("|", batchParts)));
         response.put("supportedEntityTypes", SUPPORTED_ENTITY_TYPES);
         response.put("unsupportedEntityTypes", UNSUPPORTED_ENTITY_TYPES);
         response.put("statusPolicy", statusPolicy());
@@ -677,6 +691,15 @@ public class WebChangeOutboxService {
         }
         String clean = error.trim();
         return clean.length() <= 500 ? clean : clean.substring(0, 500);
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 indisponivel no runtime Java.", e);
+        }
     }
 
     private String placeholders(int count) {

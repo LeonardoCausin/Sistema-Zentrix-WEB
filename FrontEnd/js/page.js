@@ -2324,10 +2324,11 @@
     if (!rows.length) return emptyState("Nenhuma ação importante registrada no período.");
     return `<div class="timeline">${rows.slice(0, 10).map((row) => {
       const level = auditTone(row);
+      const dateText = row.dateTime || [row.date, row.time].filter(Boolean).join(" ") || "-";
       return `<div class="timeline-item">
         <span class="list-icon ${level}">${level === "danger" ? "!" : level === "warning" ? "AT" : "IN"}</span>
         <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.user || "Usuário")} - ${esc(row.description || "-")}</span></div>
-        <strong>${esc(row.time || "-")}</strong>
+        <strong>${esc(dateText)}</strong>
       </div>`;
     }).join("")}</div>`;
   }

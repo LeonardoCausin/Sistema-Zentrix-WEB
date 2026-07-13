@@ -243,6 +243,42 @@ Tabelas aceitas: `users`, `suppliers`, `clients`, `products`, `stock_movements`,
 
 Na tabela `users`, o Web aceita somente usuarios administrativos. Registros com perfil padrao/operador devem ser ignorados pelo sincronizador do PDV e, se chegarem por engano, tambem serao descartados pelo Web. Perfis aceitos para acesso web: `ADMIN`, `ADMINISTRADOR` ou `ADMINISTRATOR`.
 
+### Pull/Ack Web -> PDV com integridade
+
+O PDV deve puxar alteracoes com `GET /api/sync/pull` informando `tenantId`, `storeId`, `sourceId` e `deviceId`. Cada item retornado possui:
+
+- `payload`: envelope completo da alteracao.
+- `payloadHash`: SHA-256 do JSON original salvo no outbox.
+- `batchHash`: SHA-256 do lote no formato `id:payloadHash|id:payloadHash`.
+
+O PDV deve aplicar cada item de forma idempotente, gravar o maior `id` recebido somente depois de processar o lote e confirmar com:
+
+```http
+POST /api/sync/ack?tenantId=...&storeId=...&sourceId=...&deviceId=...
+Content-Type: application/json
+X-Zentrix-Sync-Key: sua-chave-de-sync
+```
+
+```json
+{
+  "ids": [101, 102],
+  "status": "ACKED"
+}
+```
+
+Se um item falhar, o PDV deve confirmar erro para aquele item sem parar os proximos:
+
+```json
+{
+  "ids": [103],
+  "status": "ERROR",
+  "error": "Motivo claro da falha",
+  "retryable": true
+}
+```
+
+O Web aplica retry com backoff e envia para `DEAD` apos repetidas falhas, evitando travar a fila.
+
 ## Seguranca
 
 - `GET /api/health` fica publico para diagnostico.

@@ -406,12 +406,12 @@
       </div>
       <div style="margin-top: 16px">
         ${dataTableHtml("Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows, (row) => [
-          row.store, tag(row.action), row.time, row.user || "-", row.description, row.value || "-"
+          row.store, tag(row.action), row.dateTime || row.createdAt || row.time || "-", row.user || "-", `${row.module || "Sistema"} - ${row.description || "-"}`, row.riskLevel || row.level || row.value || "-"
         ], exportId)}
       </div>
     `);
     setupCsvExport(exportId, "Auditoria", ["Loja", "Ação", "Horário", "Usuário", "Descrição", "Detalhes"], rows.map((row) => [
-      row.store, row.action, row.time, row.user || "-", row.description, row.value || "-"
+      row.store, row.action, row.dateTime || row.createdAt || row.time || "-", row.user || "-", `${row.module || "Sistema"} - ${row.description || "-"}`, row.riskLevel || row.level || row.value || "-"
     ]));
   }
 
@@ -423,8 +423,8 @@
     return `<div class="stack-list">${events.map((row) => `
       <div class="list-item">
         <span class="list-icon ${auditTone(row)}">!</span>
-        <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.description || row.value || "Registro de auditoria")}</span></div>
-        <strong>${esc(row.time || "-")}</strong>
+        <div><span class="list-title">${esc(row.action || "Evento")}</span><span class="list-subtitle">${esc(row.module || "Sistema")} - ${esc(row.description || row.value || "Registro de auditoria")}</span></div>
+        <strong>${esc(row.dateTime || row.time || "-")}</strong>
       </div>`).join("")}</div>`;
   }
 

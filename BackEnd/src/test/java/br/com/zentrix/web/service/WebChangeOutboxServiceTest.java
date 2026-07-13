@@ -2,6 +2,7 @@ package br.com.zentrix.web.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import br.com.zentrix.web.dto.SyncAckRequest;
@@ -48,6 +49,10 @@ class WebChangeOutboxServiceTest {
         assertEquals(1, response.get("count"));
         assertFalse((Boolean) response.get("hasMore"));
         assertEquals(1, jdbcTemplate.deliveredUpdates);
+        assertNotNull(response.get("batchHash"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> changes = (List<Map<String, Object>>) response.get("changes");
+        assertNotNull(changes.get(0).get("payloadHash"));
     }
 
     @Test

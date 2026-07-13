@@ -10,7 +10,9 @@ import java.security.NoSuchAlgorithmException;
 import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
@@ -30,6 +32,9 @@ public class WebDataService {
     private static final Duration PANEL_CACHE_TTL = Duration.ofSeconds(20);
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Sao_Paulo");
     private static final int PDV_ONLINE_WINDOW_MINUTES = 3;
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
@@ -295,17 +300,32 @@ public class WebDataService {
                 LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
             Map<String, Object> row = new LinkedHashMap<>();
+            LocalDateTime createdAt = rs.getTimestamp("created_at") == null ? null : rs.getTimestamp("created_at").toLocalDateTime();
+            String actionCode = rs.getString("acao");
+            String entityType = rs.getString("entity_type");
+            String entityId = rs.getString("entity_id");
+            String riskLevel = auditLevelLabel(rs.getString("risk_level"));
+            String module = auditEntityLabel(entityType);
+            String details = rs.getString("details");
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
             row.put("tenantId", rs.getString("tenant_id"));
             row.put("storeId", rs.getString("store_id"));
-            row.put("action", rs.getString("acao"));
-            row.put("time", rs.getTimestamp("created_at") == null ? "-" : rs.getTimestamp("created_at").toLocalDateTime().toLocalTime().toString());
+            row.put("action", auditActionLabel(actionCode));
+            row.put("actionCode", actionCode);
+            row.put("module", module);
+            row.put("date", createdAt == null ? "-" : createdAt.format(DATE_FORMAT));
+            row.put("time", createdAt == null ? "-" : createdAt.format(TIME_FORMAT));
+            row.put("dateTime", createdAt == null ? "-" : createdAt.format(DATE_TIME_FORMAT));
+            row.put("createdAt", createdAt == null ? null : createdAt.toString());
             row.put("user", rs.getString("usuario"));
-            row.put("description", rs.getString("entity_type") + " " + rs.getString("entity_id"));
-            row.put("value", rs.getString("details"));
-            row.put("riskLevel", rs.getString("risk_level"));
+            row.put("description", auditDescription(actionCode, module, entityId, details));
+            row.put("entityType", entityType);
+            row.put("entityId", entityId);
+            row.put("value", details);
+            row.put("riskLevel", riskLevel);
+            row.put("level", riskLevel);
             row.put("reason", rs.getString("reason"));
-            row.put("origin", rs.getString("origin"));
+            row.put("origin", auditOriginLabel(rs.getString("origin")));
             return row;
         }, pagedArgs(filter, safeLimit, safeOffset));
     }
@@ -1013,9 +1033,110 @@ public class WebDataService {
         return switch (period.trim().toLowerCase(Locale.ROOT)) {
             case "7d", "7", "week" -> "7d";
             case "month", "mes", "30d", "30dias", "30 dias" -> "month";
-            case "year", "ano" -> "year";
+            case "year", "ano", "1ano", "1 ano", "365d", "365 dias" -> "year";
             default -> "today";
         };
+    }
+
+    private String auditActionLabel(String action) {
+        String value = action == null ? "" : action.trim().toUpperCase(Locale.ROOT);
+        return switch (value) {
+            case "LOGIN_SUCCESS", "LOGIN_REALIZADO" -> "Login realizado";
+            case "LOGIN_FAILED", "LOGIN_REJECTED", "LOGIN_RECUSADO" -> "Login recusado";
+            case "LOGOUT" -> "Logout realizado";
+            case "PRODUCT_CREATED" -> "Produto cadastrado";
+            case "PRODUCT_UPDATED", "PRODUCT_UPSERT" -> "Produto atualizado";
+            case "PRODUCT_PRICE_CHANGED" -> "Preço de produto alterado";
+            case "PRODUCT_DEACTIVATED" -> "Produto inativado";
+            case "PRODUCT_REACTIVATED" -> "Produto reativado";
+            case "PRODUCT_STOCK_CHANGED", "STOCK_ADJUSTED" -> "Estoque movimentado";
+            case "CLIENT_CREATED" -> "Cliente cadastrado";
+            case "CLIENT_UPDATED", "CLIENT_UPSERT" -> "Cliente atualizado";
+            case "CLIENT_DEACTIVATED" -> "Cliente inativado";
+            case "CLIENT_REACTIVATED" -> "Cliente reativado";
+            case "USER_CREATED" -> "Funcionário cadastrado";
+            case "USER_UPDATED", "USER_UPSERT" -> "Funcionário atualizado";
+            case "USER_DEACTIVATED" -> "Funcionário inativado";
+            case "USER_REACTIVATED" -> "Funcionário reativado";
+            case "PERMISSION_UPDATED", "USER_PERMISSIONS_CHANGED" -> "Permissões atualizadas";
+            case "CASH_OPENED" -> "Caixa aberto";
+            case "CASH_CLOSED", "CASH_SESSION_CLOSED" -> "Caixa fechado";
+            case "CASH_DIVERGENCE" -> "Diferença no caixa";
+            case "CASH_WITHDRAWAL" -> "Sangria registrada";
+            case "CASH_SUPPLY" -> "Suprimento registrado";
+            case "SALE_CREATED" -> "Venda registrada";
+            case "SALE_CANCELLED", "SALE_CANCELLATION" -> "Venda cancelada";
+            case "FINANCIAL_CREATED" -> "Lançamento financeiro cadastrado";
+            case "FINANCIAL_UPDATED" -> "Lançamento financeiro atualizado";
+            case "FINANCIAL_CANCELLED" -> "Lançamento financeiro cancelado";
+            case "BACKUP_CREATED" -> "Backup gerado";
+            case "BACKUP_FAILED" -> "Falha ao gerar backup";
+            case "BACKUP_RESTORE_REJECTED" -> "Restauração de backup recusada";
+            case "BACKUP_RESTORE_BLOCKED" -> "Restauração de backup bloqueada";
+            case "BACKUP_RESTORE_STAGED" -> "Restauração preparada";
+            case "BACKUP_RESTORE_APPLIED" -> "Backup restaurado";
+            case "SETTINGS_UPDATED" -> "Configurações atualizadas";
+            case "SYNC_SUCCESS" -> "Dados recebidos pelo sistema";
+            case "SYNC_ERROR" -> "Falha ao receber dados";
+            default -> humanizeCode(value.isBlank() ? "EVENTO" : value);
+        };
+    }
+
+    private String auditEntityLabel(String entityType) {
+        String value = entityType == null ? "" : entityType.trim().toLowerCase(Locale.ROOT);
+        return switch (value) {
+            case "products" -> "Produtos";
+            case "clients" -> "Clientes";
+            case "users" -> "Funcionários";
+            case "cash_sessions" -> "Caixa";
+            case "cash_movements" -> "Movimentações de caixa";
+            case "sales" -> "Vendas";
+            case "sale_cancellations" -> "Cancelamentos";
+            case "stock_movements" -> "Estoque";
+            case "financial_entries" -> "Financeiro";
+            case "backup_runs", "backup_restore_staging" -> "Backups";
+            case "app_settings" -> "Configurações";
+            case "sync_runs" -> "Eventos do sistema";
+            case "audit_log" -> "Auditoria";
+            default -> humanizeCode(value.isBlank() ? "Sistema" : value);
+        };
+    }
+
+    private String auditLevelLabel(String riskLevel) {
+        String value = riskLevel == null ? "" : riskLevel.trim().toUpperCase(Locale.ROOT);
+        return switch (value) {
+            case "CRITICO", "CRITICAL", "DANGER" -> "Crítico";
+            case "ALERTA", "WARNING", "WARN" -> "Alerta";
+            case "INFO", "INFORMATION" -> "Informação";
+            default -> value.isBlank() ? "Informação" : humanizeCode(value);
+        };
+    }
+
+    private String auditOriginLabel(String origin) {
+        String value = origin == null ? "" : origin.trim().toUpperCase(Locale.ROOT);
+        return switch (value) {
+            case "WEB", "PAINEL", "APPGESTAO" -> "Painel Web";
+            case "PDV" -> "Zentrix PDV";
+            case "SISTEMA", "SYSTEM" -> "Sistema interno";
+            default -> value.isBlank() ? "Sistema interno" : humanizeCode(value);
+        };
+    }
+
+    private String auditDescription(String actionCode, String module, String entityId, String details) {
+        String detail = details == null || details.isBlank() ? "" : details.trim();
+        if (!detail.isBlank()) {
+            return detail;
+        }
+        String target = entityId == null || entityId.isBlank() ? module : module + " #" + entityId;
+        return auditActionLabel(actionCode) + " em " + target + ".";
+    }
+
+    private String humanizeCode(String code) {
+        String text = code == null ? "" : code.trim().replace('_', ' ').replace('-', ' ').toLowerCase(PT_BR);
+        if (text.isBlank()) {
+            return "-";
+        }
+        return Character.toUpperCase(text.charAt(0)) + text.substring(1);
     }
 
     private String periodLabel(String period) {
