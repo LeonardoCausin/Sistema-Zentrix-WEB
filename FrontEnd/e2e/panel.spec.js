@@ -185,8 +185,9 @@ test("audit page shows administrative audit instead of sync monitor", async ({ p
   await expect(page.getByText("Ações críticas")).toBeVisible();
   await expect(page.getByText("Status do PDV")).toHaveCount(0);
   await expect(page.getByText("Envios ao PDV")).toHaveCount(0);
-  await expect(page.getByText("Dados recebidos com sucesso").first()).toBeVisible();
+  await expect(page.getByText("Venda registrada").first()).toBeVisible();
   await expect(page.getByText("02/07/2026 18:00").first()).toBeVisible();
+  await expect(page.getByText("Dados recebidos com sucesso")).toHaveCount(0);
   await expect(page.getByText("SYNC_SUCCESS")).toHaveCount(0);
 });
 
@@ -462,13 +463,24 @@ function auditPayload() {
   return [
     {
       store: "Loja Web",
+      action: "SALE_FINALIZED",
+      time: "2026-07-02 18:00",
+      createdAt: "2026-07-02 18:00:00",
+      entityType: "sales",
+      entityId: "103",
+      user: "PDV",
+      description: "Venda 103 finalizada.",
+      value: "R$ 45,70"
+    },
+    {
+      store: "Loja Web",
       action: "SYNC_SUCCESS",
       time: "2026-07-02 18:00",
       createdAt: "2026-07-02 18:00:00",
       entityType: "sync_runs",
       entityId: "10",
       user: "PDV",
-      description: "Dados recebidos.",
+      description: "Registro tecnico interno.",
       value: "5 registros"
     }
   ];

@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260713-audit-timezone";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260713-audit-events";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];

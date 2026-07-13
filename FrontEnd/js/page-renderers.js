@@ -429,7 +429,7 @@
   }
 
   function normalizeAuditRows(rows) {
-    return (Array.isArray(rows) ? rows : []).map((row) => {
+    return (Array.isArray(rows) ? rows : []).filter((row) => !isTechnicalAuditRow(row)).map((row) => {
       const actionCode = row.actionCode || row.acao || row.action;
       const entityType = row.entityType || row.entity_type;
       const dateText = auditDateTime(row);
@@ -487,6 +487,8 @@
       CASH_WITHDRAWAL: "Sangria registrada",
       CASH_SUPPLY: "Suprimento registrado",
       SALE_CREATED: "Venda registrada",
+      SALE_FINALIZED: "Venda registrada",
+      VENDA_FINALIZADA: "Venda registrada",
       SALE_CANCELLED: "Venda cancelada",
       SALE_CANCELLATION: "Venda cancelada",
       FINANCIAL_CREATED: "Lancamento financeiro cadastrado",
@@ -524,6 +526,12 @@
       audit_log: "Auditoria"
     };
     return labels[value] || humanizeAuditCode(value || "Sistema");
+  }
+
+  function isTechnicalAuditRow(row) {
+    const entityType = String(row && (row.entityType || row.entity_type) || "").trim().toLowerCase();
+    const action = String(row && (row.actionCode || row.acao || row.action) || "").trim().toUpperCase();
+    return entityType === "sync_runs" || action === "SYNC_SUCCESS" || action === "SYNC_ERROR";
   }
 
   function auditLevelLabel(level) {

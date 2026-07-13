@@ -962,7 +962,8 @@ public class WebDataService {
         String normalizedStore = normalizeStore(store);
         Filter periodFilter = periodCondition("a.created_at", period, periodAnchor(period, "audit_log", "created_at", tenantId, normalizedStore));
         return scopeFilter(tenantId, normalizedStore, "a")
-                .and(periodFilter.sql(), periodFilter.argsArray());
+                .and(periodFilter.sql(), periodFilter.argsArray())
+                .and("COALESCE(a.entity_type, '') <> ?", "sync_runs");
     }
 
     private Filter scopeFilter(String tenantId, String store, String alias) {
@@ -1064,7 +1065,7 @@ public class WebDataService {
             case "CASH_DIVERGENCE" -> "Diferença no caixa";
             case "CASH_WITHDRAWAL" -> "Sangria registrada";
             case "CASH_SUPPLY" -> "Suprimento registrado";
-            case "SALE_CREATED" -> "Venda registrada";
+            case "SALE_CREATED", "SALE_FINALIZED", "VENDA_FINALIZADA" -> "Venda registrada";
             case "SALE_CANCELLED", "SALE_CANCELLATION" -> "Venda cancelada";
             case "FINANCIAL_CREATED" -> "Lançamento financeiro cadastrado";
             case "FINANCIAL_UPDATED" -> "Lançamento financeiro atualizado";
