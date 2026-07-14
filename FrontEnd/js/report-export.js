@@ -13,7 +13,7 @@
       return;
     }
     if (normalizedFormat === "JSON") {
-      downloadBlob(slug(title, context) + ".json", JSON.stringify(safeReportData, null, 2), "application/json;charset=utf-8");
+      downloadBlob(slug(title, context) + ".json", JSON.stringify(sanitizeReportData(reportData, true), null, 2), "application/json;charset=utf-8");
       return;
     }
     downloadCsvReport(title, safeReportData, context);
@@ -153,7 +153,7 @@
       if (value == null) {
         output[reportFieldLabel(key)] = "";
       } else if (typeof value === "object") {
-        output[reportFieldLabel(key)] = JSON.stringify(sanitizeReportData(value));
+        output[reportFieldLabel(key)] = JSON.stringify(sanitizeReportData(value, true));
       } else {
         output[reportFieldLabel(key)] = normalizeText(String(value).replace(/<[^>]+>/g, ""), context);
       }
@@ -161,9 +161,9 @@
     return output;
   }
 
-  function sanitizeReportData(value) {
+  function sanitizeReportData(value, translateKeys = false) {
     if (Array.isArray(value)) {
-      return value.map((item) => sanitizeReportData(item));
+      return value.map((item) => sanitizeReportData(item, translateKeys));
     }
     if (!value || typeof value !== "object") {
       return value;
@@ -171,7 +171,7 @@
     const output = {};
     Object.entries(value).forEach(([key, item]) => {
       if (isHiddenReportField(key)) return;
-      output[key] = sanitizeReportData(item);
+      output[translateKeys ? reportFieldLabel(key) : key] = sanitizeReportData(item, translateKeys);
     });
     return output;
   }
@@ -204,37 +204,174 @@
   }
 
   function reportFieldLabel(key) {
+    const normalized = normalizeReportKey(key);
     const labels = {
       title: "Relatório",
-      generatedAt: "Gerado em",
+      generatedat: "Gerado em",
+      finishedat: "Finalizado em",
+      updatedat: "Atualizado em",
+      createdat: "Criado em",
+      startsat: "Início",
+      expiresat: "Vencimento",
+      lastseenat: "Última atividade",
+      lastloginat: "Último login",
+      lastpurchase: "Última compra",
       period: "Período",
-      periodLabel: "Período",
+      periodlabel: "Período",
       formats: "Formatos",
       action: "Ação",
-      actionCode: "Ação",
+      actioncode: "Ação",
       module: "Módulo",
       date: "Data",
       time: "Hora",
-      dateTime: "Data e hora",
-      createdAt: "Criado em",
-      updatedAt: "Atualizado em",
+      datetime: "Data e hora",
+      entrydate: "Data",
       user: "Usuário",
-      description: "Descrição",
-      riskLevel: "Nível",
-      level: "Nível",
-      status: "Status",
-      value: "Valor",
-      total: "Total",
-      display: "Total",
-      quantity: "Quantidade",
-      paymentMethod: "Pagamento",
+      username: "Usuário",
+      displayname: "Nome",
+      createdby: "Responsável",
       operator: "Operador",
+      responsible: "Responsável",
+      role: "Cargo",
+      permissions: "Permissões",
+      description: "Descrição",
+      details: "Detalhes",
+      message: "Mensagem",
+      reason: "Motivo",
+      observation: "Observação",
+      note: "Observação",
+      notes: "Observações",
+      risklevel: "Nível",
+      level: "Nível",
+      tone: "Nível",
+      status: "Status",
+      active: "Ativo",
+      type: "Tipo",
+      category: "Categoria",
+      subcategory: "Subcategoria",
+      brand: "Marca",
+      supplier: "Fornecedor",
+      suppliername: "Fornecedor",
+      value: "Valor",
+      amount: "Valor",
+      total: "Total",
+      totaldisplay: "Total",
+      display: "Total",
+      revenue: "Faturamento",
+      revenuedisplay: "Faturamento",
+      grossrevenue: "Faturamento bruto",
+      nettotal: "Total líquido",
+      monthtotal: "Total do mês",
+      periodtotal: "Total do período",
+      todaytotal: "Total de hoje",
+      profitestimate: "Lucro estimado",
+      productcost: "Custo dos produtos",
+      operationalbalance: "Saldo operacional",
+      manualrevenue: "Receitas manuais",
+      manualexpenses: "Despesas manuais",
+      pendingreceivable: "Contas a receber",
+      pendingpayable: "Contas a pagar",
+      discounts: "Descontos",
+      discount: "Desconto",
+      surcharge: "Acréscimo",
+      surcharges: "Acréscimos",
+      quantity: "Quantidade",
+      qtd: "Quantidade",
+      sales: "Vendas",
+      salestotal: "Total de vendas",
+      salescount: "Quantidade de vendas",
+      paidsales: "Vendas pagas",
+      cancelledsales: "Vendas canceladas",
+      purchasecount: "Compras",
+      averageticket: "Ticket médio",
+      paymentmethod: "Forma de pagamento",
+      payment: "Pagamento",
+      payments: "Pagamentos",
       customer: "Cliente",
+      client: "Cliente",
+      name: "Nome",
+      cpfcnpj: "CPF/CNPJ",
+      cpf: "CPF",
+      cnpj: "CNPJ",
+      phone: "Telefone",
+      whatsapp: "WhatsApp",
+      email: "E-mail",
+      address: "Endereço",
+      city: "Cidade",
+      state: "Estado",
+      cep: "CEP",
+      birthdate: "Nascimento",
+      loyaltypoints: "Pontos",
+      totalspent: "Total gasto",
       product: "Produto",
-      productCode: "Código do produto",
-      productName: "Produto"
+      products: "Produtos",
+      productcode: "Código do produto",
+      code: "Código",
+      barcode: "Código de barras",
+      productname: "Produto",
+      label: "Nome",
+      unit: "Unidade",
+      price: "Preço",
+      costprice: "Preço de custo",
+      marginpercent: "Margem",
+      stock: "Estoque",
+      currentstock: "Estoque atual",
+      minstock: "Estoque mínimo",
+      minimumstock: "Estoque mínimo",
+      idealstock: "Estoque ideal",
+      previousstock: "Estoque anterior",
+      newstock: "Estoque novo",
+      stockalerts: "Alertas de estoque",
+      stockhealth: "Saúde do estoque",
+      movements: "Movimentações",
+      origin: "Origem",
+      reference: "Referência",
+      referencetype: "Tipo de referência",
+      referenceid: "Referência",
+      cash: "Caixa",
+      cashsessions: "Caixas",
+      cashmovements: "Movimentos de caixa",
+      openingbalance: "Valor inicial",
+      closingbalance: "Valor final",
+      expectedbalance: "Saldo esperado",
+      difference: "Diferença",
+      openedat: "Aberto em",
+      closedat: "Fechado em",
+      closedby: "Fechado por",
+      closereason: "Motivo do fechamento",
+      isopen: "Aberto",
+      rows: "Registros",
+      events: "Eventos",
+      alerts: "Alertas",
+      sessions: "Caixas",
+      summarycards: "Resumo",
+      reportcards: "Relatórios disponíveis",
+      diagnostics: "Diagnóstico",
+      topproducts: "Produtos mais vendidos",
+      revenuechart: "Gráfico de faturamento",
+      salesbystore: "Vendas por loja",
+      availablereports: "Relatórios disponíveis",
+      file: "Arquivo",
+      filename: "Arquivo",
+      size: "Tamanho",
+      filesize: "Tamanho",
+      checksum: "Verificação",
+      checksumvalid: "Verificação OK",
+      integrity: "Integridade",
+      fileexists: "Arquivo encontrado",
+      filevalidated: "Arquivo validado",
+      restoreavailable: "Restauração disponível",
+      warnings: "Avisos",
+      nextstep: "Próximo passo",
+      restoreexecuted: "Restauração executada",
+      totalrows: "Total de registros",
+      rowscount: "Quantidade de registros",
+      planname: "Plano",
+      maxstores: "Limite de lojas",
+      maxdevices: "Limite de dispositivos",
+      legacy: "Legado"
     };
-    return labels[key] || humanizeReportHeader(key);
+    return labels[normalized] || humanizeReportHeader(key);
   }
 
   function humanizeReportHeader(key) {
@@ -244,6 +381,10 @@
       .trim()
       .replace(/\s+/g, " ")
       .replace(/^./, (char) => char.toUpperCase());
+  }
+
+  function normalizeReportKey(key) {
+    return String(key || "").replace(/[_\-\s]+/g, "").toLowerCase();
   }
 
   function reportHeaders(rows) {
