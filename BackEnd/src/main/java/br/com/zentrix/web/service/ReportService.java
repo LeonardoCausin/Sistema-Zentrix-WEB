@@ -242,7 +242,6 @@ public class ReportService {
         response.put("period", normalizePeriod(period));
         response.put("periodLabel", periodLabel(period));
         response.put("store", normalizeStore(store) == null ? "Todas as lojas" : normalizeStore(store));
-        response.put("tenantId", tenantId);
         response.put("formats", List.of("PDF", "XLS", "CSV"));
         return response;
     }

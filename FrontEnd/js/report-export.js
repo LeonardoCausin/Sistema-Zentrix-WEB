@@ -3,19 +3,20 @@
 
   function generateReportFile(format, title, reportData, context) {
     const normalizedFormat = String(format || "CSV").toUpperCase();
+    const safeReportData = sanitizeReportData(reportData);
     if (normalizedFormat === "PDF") {
-      openPrintableReport(title, reportData, context);
+      openPrintableReport(title, safeReportData, context);
       return;
     }
     if (normalizedFormat === "XLS" || normalizedFormat === "EXCEL") {
-      downloadXlsReport(title, reportData, context);
+      downloadXlsReport(title, safeReportData, context);
       return;
     }
     if (normalizedFormat === "JSON") {
-      downloadBlob(slug(title, context) + ".json", JSON.stringify(reportData, null, 2), "application/json;charset=utf-8");
+      downloadBlob(slug(title, context) + ".json", JSON.stringify(safeReportData, null, 2), "application/json;charset=utf-8");
       return;
     }
-    downloadCsvReport(title, reportData, context);
+    downloadCsvReport(title, safeReportData, context);
   }
 
   function downloadCsvReport(title, reportData, context) {
@@ -148,15 +149,101 @@
   function flattenReportRow(row, context) {
     const output = {};
     Object.entries(row || {}).forEach(([key, value]) => {
+      if (isHiddenReportField(key)) return;
       if (value == null) {
-        output[key] = "";
+        output[reportFieldLabel(key)] = "";
       } else if (typeof value === "object") {
-        output[key] = JSON.stringify(value);
+        output[reportFieldLabel(key)] = JSON.stringify(sanitizeReportData(value));
       } else {
-        output[key] = normalizeText(String(value).replace(/<[^>]+>/g, ""), context);
+        output[reportFieldLabel(key)] = normalizeText(String(value).replace(/<[^>]+>/g, ""), context);
       }
     });
     return output;
+  }
+
+  function sanitizeReportData(value) {
+    if (Array.isArray(value)) {
+      return value.map((item) => sanitizeReportData(item));
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+    const output = {};
+    Object.entries(value).forEach(([key, item]) => {
+      if (isHiddenReportField(key)) return;
+      output[key] = sanitizeReportData(item);
+    });
+    return output;
+  }
+
+  function isHiddenReportField(key) {
+    const normalized = String(key || "").trim();
+    const lower = normalized.toLowerCase();
+    return lower === "id"
+      || lower === "tenantid"
+      || lower === "tenant_id"
+      || lower === "store"
+      || lower === "storeid"
+      || lower === "store_id"
+      || lower === "sourceid"
+      || lower === "source_id"
+      || lower === "deviceid"
+      || lower === "device_id"
+      || lower === "entityid"
+      || lower === "entity_id"
+      || lower === "sessionid"
+      || lower === "session_id"
+      || lower === "saleid"
+      || lower === "sale_id"
+      || lower === "runid"
+      || lower === "run_id"
+      || lower === "stagingid"
+      || lower === "staging_id"
+      || lower.endsWith("_id")
+      || /(^|[A-Z_\-\s])Id$/.test(normalized);
+  }
+
+  function reportFieldLabel(key) {
+    const labels = {
+      title: "Relatório",
+      generatedAt: "Gerado em",
+      period: "Período",
+      periodLabel: "Período",
+      formats: "Formatos",
+      action: "Ação",
+      actionCode: "Ação",
+      module: "Módulo",
+      date: "Data",
+      time: "Hora",
+      dateTime: "Data e hora",
+      createdAt: "Criado em",
+      updatedAt: "Atualizado em",
+      user: "Usuário",
+      description: "Descrição",
+      riskLevel: "Nível",
+      level: "Nível",
+      status: "Status",
+      value: "Valor",
+      total: "Total",
+      display: "Total",
+      quantity: "Quantidade",
+      paymentMethod: "Pagamento",
+      operator: "Operador",
+      customer: "Cliente",
+      product: "Produto",
+      productCode: "Código do produto",
+      productName: "Produto"
+    };
+    return labels[key] || humanizeReportHeader(key);
+  }
+
+  function humanizeReportHeader(key) {
+    return String(key || "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/^./, (char) => char.toUpperCase());
   }
 
   function reportHeaders(rows) {
