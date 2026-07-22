@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 if not exist ".env" (
   copy ".env.example" ".env" >nul
@@ -26,8 +26,42 @@ if "%WEB_DB_HOST%"=="" set "WEB_DB_HOST=localhost"
 if "%WEB_DB_PORT%"=="" set "WEB_DB_PORT=3306"
 if "%WEB_DB_USER%"=="" set "WEB_DB_USER=root"
 
+if "%JAVA_HOME%"=="" (
+  for /f "delims=" %%J in ('dir /b /ad "C:\Program Files\Java\jdk-*" 2^>nul ^| sort /r') do (
+    if "!JAVA_HOME!"=="" set "JAVA_HOME=C:\Program Files\Java\%%J"
+  )
+)
+
+if not "%JAVA_HOME%"=="" (
+  if not exist "%JAVA_HOME%\bin\java.exe" (
+    echo.
+    echo JAVA_HOME aponta para uma pasta invalida: %JAVA_HOME%
+    echo Configure JAVA_HOME para um JDK valido antes de iniciar o Zentrix Web.
+    echo.
+    pause
+    exit /b 1
+  )
+  set "PATH=%JAVA_HOME%\bin;%PATH%"
+)
+
+where java >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo Java nao encontrado. Instale um JDK 17 ou superior, ou configure JAVA_HOME.
+  echo.
+  pause
+  exit /b 1
+)
+
 if not exist "target\zentrix-web-api-0.1.0-SNAPSHOT.jar" (
-  "C:\Program Files\NetBeans-25\netbeans\java\maven\bin\mvn.cmd" -q -DskipTests package
+  call ".\mvnw.cmd" -q -DskipTests package
+  if errorlevel 1 (
+    echo.
+    echo Nao foi possivel compilar o backend.
+    echo.
+    pause
+    exit /b 1
+  )
 )
 
 echo.

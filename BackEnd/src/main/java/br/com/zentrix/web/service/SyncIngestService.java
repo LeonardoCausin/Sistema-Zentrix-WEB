@@ -3,6 +3,7 @@ package br.com.zentrix.web.service;
 import br.com.zentrix.web.dto.SyncPushRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -89,16 +90,17 @@ public class SyncIngestService {
 
             Map<String, Object> response = transactionTemplate.execute(status -> {
                 upsertScopeMetadata(syncScope, receivedAt);
+                Map<String, List<Map<String, Object>>> tablesToApply = preserveWebOnlyProductCost(syncScope, normalizedTables);
                 Map<String, Integer> counts = new LinkedHashMap<>();
                 if ("FULL".equals(mode)) {
-                    clearTables(syncScope, normalizedTables.keySet());
+                    clearTables(syncScope, tablesToApply.keySet());
                 }
 
-                List<Map<String, Object>> conflicts = "FULL".equals(mode) ? List.of() : detectConflicts(normalizedTables);
+                List<Map<String, Object>> conflicts = "FULL".equals(mode) ? List.of() : detectConflicts(tablesToApply);
                 Map<String, List<Map<String, Object>>> rowsToApply = conflicts.isEmpty()
-                        ? normalizedTables
-                        : withoutConflicts(normalizedTables, conflicts);
-                for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
+                        ? tablesToApply
+                        : withoutConflicts(tablesToApply, conflicts);
+                for (Map.Entry<String, List<Map<String, Object>>> entry : tablesToApply.entrySet()) {
                     TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
                     counts.put(spec.name(), upsertRows(spec, rowsToApply.getOrDefault(entry.getKey(), List.of())));
                 }
@@ -296,6 +298,41 @@ public class SyncIngestService {
         scoped.put("device_id", scope.deviceId());
         scoped.put("source_id", scope.sourceId());
         return scoped;
+    }
+
+    private Map<String, List<Map<String, Object>>> preserveWebOnlyProductCost(
+            SyncScope scope,
+            Map<String, List<Map<String, Object>>> tables
+    ) {
+        List<Map<String, Object>> products = tables.get("products");
+        if (products == null || products.isEmpty()) {
+            return tables;
+        }
+        Map<String, List<Map<String, Object>>> copy = new LinkedHashMap<>(tables);
+        List<Map<String, Object>> safeProducts = new ArrayList<>();
+        for (Map<String, Object> row : products) {
+            Map<String, Object> safeRow = new LinkedHashMap<>(row);
+            safeRow.put("cost_price", currentWebCostPrice(scope, Objects.toString(row.get("code"), "")));
+            safeProducts.add(safeRow);
+        }
+        copy.put("products", safeProducts);
+        return copy;
+    }
+
+    private Object currentWebCostPrice(SyncScope scope, String code) {
+        if (code == null || code.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT cost_price
+                FROM products
+                WHERE tenant_id = ? AND store_id = ? AND code = ?
+                LIMIT 1
+                """, scope.tenantId(), scope.storeId(), code);
+        if (rows.isEmpty() || rows.get(0).get("cost_price") == null) {
+            return BigDecimal.ZERO;
+        }
+        return rows.get(0).get("cost_price");
     }
 
     private void validateRow(TableSpec spec, Map<String, Object> row) {

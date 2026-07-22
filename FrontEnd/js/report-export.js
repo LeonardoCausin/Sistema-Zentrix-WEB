@@ -106,7 +106,7 @@
     return rows.map((row, index) => flattenReportRow({
       Posicao: index + 1,
       Produto: row.label || row.description || "-",
-      Codigo: row.code || "",
+      "Código de barras": row.code || "",
       "Qtd. vendida": row.display || `${quantityLabel(row.quantity ?? row.value, context)} itens`,
       Vendas: row.sales ?? "",
       Faturamento: row.revenueDisplay || row.totalDisplay || (row.revenue != null ? formatCurrency(row.revenue, context) : row.total || "")
@@ -187,6 +187,7 @@
       || lower === "store_id"
       || lower === "sourceid"
       || lower === "source_id"
+      || lower === "barcode"
       || lower === "deviceid"
       || lower === "device_id"
       || lower === "entityid"
@@ -305,8 +306,8 @@
       totalspent: "Total gasto",
       product: "Produto",
       products: "Produtos",
-      productcode: "Código do produto",
-      code: "Código",
+      productcode: "Código de barras",
+      code: "Código de barras",
       barcode: "Código de barras",
       productname: "Produto",
       label: "Nome",

@@ -282,7 +282,7 @@
         ${metricCard("Inativos", String(inactive), "Sem operação ativa", inactive ? "warning" : "success", "II", "Cadastro")}
         ${metricCard("Sem estoque", String(empty), "Risco de ruptura", empty ? "danger" : "success", "0", "Estoque")}
       </div>
-      ${searchPanelHtml("products", "Buscar produto por nome, codigo, categoria ou codigo de barras", [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["empty", "Sem estoque"]])}
+      ${searchPanelHtml("products", "Buscar produto por nome, código de barras ou categoria", [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["empty", "Sem estoque"]])}
       <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="new-product">Novo produto</button><span class="chip info">Cadastro web habilitado</span></div>
       ${productFormHtml()}
       <div class="entity-grid" data-search-container="products">
@@ -308,7 +308,7 @@
         ${metricCard("Ação manual", "Disponível", "Entrada, saída e ajuste com motivo", "success", "+", "Web")}
       </div>
       <div class="page-actions" style="margin: 16px 0"><button class="button btn-primary" type="button" data-action="new-stock-movement">Movimentar estoque</button><span class="chip info">Motivo obrigatório</span></div>
-      ${searchPanelHtml("stock", "Buscar item por produto, codigo, categoria ou loja", [["all", "Todos"], ["low", "Estoque baixo"], ["critical", "Sem estoque"], ["healthy", "Saudavel"]])}
+      ${searchPanelHtml("stock", "Buscar item por produto, código de barras, categoria ou loja", [["all", "Todos"], ["low", "Estoque baixo"], ["critical", "Sem estoque"], ["healthy", "Saudavel"]])}
       ${stockMovementFormHtml()}
       <div class="entity-grid" data-search-container="stock" style="margin-top: 16px">
         ${rows.map((row) => stockCardHtml(row)).join("") || emptyState("Ainda não há produtos nesta loja.")}

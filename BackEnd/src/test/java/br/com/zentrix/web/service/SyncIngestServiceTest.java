@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import br.com.zentrix.web.dto.SyncPushRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -97,15 +98,41 @@ class SyncIngestServiceTest {
         assertEquals(1, jdbcTemplate.batchCalls);
     }
 
+    @Test
+    void preservesWebOnlyCostPriceWhenPdvPushesProduct() {
+        jdbcTemplate.existingCostPrice = List.of(Map.of("cost_price", new BigDecimal("12.50")));
+        SyncPushRequest request = new SyncPushRequest(
+                "tenant-1", "Tenant", "store-1", "Loja", "device-1", "PDV 1", "pdv-1",
+                "PARTIAL", OffsetDateTime.now(),
+                Map.of("products", List.of(Map.of(
+                        "code", "789123",
+                        "description", "Produto",
+                        "price", "10.00",
+                        "cost_price", "999.99",
+                        "updated_at", "2026-07-02T10:00:00"
+                )))
+        );
+
+        service.ingest(request);
+
+        assertEquals(1, jdbcTemplate.batchCalls);
+        assertEquals(true, jdbcTemplate.lastBatchSql.contains("cost_price"));
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         List<Map<String, Object>> existingRevision = List.of();
+        List<Map<String, Object>> existingCostPrice = List.of();
         int deleteCalls;
         int batchCalls;
+        String lastBatchSql = "";
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
             if (sql.contains("SELECT source_id")) {
                 return existingRevision;
+            }
+            if (sql.contains("SELECT cost_price")) {
+                return existingCostPrice;
             }
             return List.of();
         }
@@ -132,6 +159,7 @@ class SyncIngestServiceTest {
         @Override
         public int[] batchUpdate(String sql, BatchPreparedStatementSetter pss) {
             batchCalls++;
+            lastBatchSql = sql;
             return new int[pss.getBatchSize()];
         }
     }

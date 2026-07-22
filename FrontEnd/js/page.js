@@ -28,7 +28,7 @@
   const VIEW_CACHE_MAX_AGE = pageConfig.viewCacheMaxAge || 10 * 60 * 1000;
   const VIEW_CACHE_PREFIX = pageConfig.viewCachePrefix || "zentrix-view-cache:";
   const VIEW_STATE_PREFIX = pageConfig.viewStatePrefix || "zentrix-view-state:";
-  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260714-report-pt-columns";
+  const CLIENT_CACHE_VERSION = pageConfig.clientCacheVersion || "20260714-product-barcode";
   const pendingApiRefresh = new Set();
   const pendingApiRequests = new Map();
   const PREFETCH_PERIODS = pageConfig.prefetchPeriods || ["today", "7d", "month", "year"];
@@ -843,7 +843,7 @@
       },
       produtos: {
         scope: "products",
-        placeholder: "Buscar produto por nome, codigo, categoria ou codigo de barras",
+        placeholder: "Buscar produto por nome, código de barras ou categoria",
         filters: [["all", "Todos"], ["active", "Ativos"], ["inactive", "Inativos"], ["empty", "Sem estoque"]],
         container: ".entity-grid"
       },
@@ -1048,7 +1048,7 @@
       stock: decimalField(formValue(form, "stock")),
       minStock: decimalField(formValue(form, "minStock")),
       category: formValue(form, "category"),
-      barcode: formValue(form, "barcode"),
+      barcode: formValue(form, "barcode") || formValue(form, "code"),
       active: formValue(form, "active") !== "false"
     };
     const endpoint = mode === "edit"
@@ -1905,7 +1905,7 @@
         <input type="hidden" name="originalCode" />
         <input type="hidden" name="storeId" />
         <input type="hidden" name="active" value="true" />
-        <label class="field"><span>Código interno</span><input class="text-field" name="code" required /></label>
+        <label class="field"><span>Código de barras</span><input class="text-field" name="code" required /></label>
         <label class="field"><span>Nome</span><input class="text-field" name="description" required /></label>
         <label class="field"><span>Unidade</span><input class="text-field" name="unit" value="UN" /></label>
         <label class="field"><span>Preço de venda</span><input class="text-field" name="price" inputmode="decimal" required /></label>
@@ -1913,7 +1913,7 @@
         <label class="field"><span>Estoque inicial</span><input class="text-field" name="stock" inputmode="decimal" /></label>
         <label class="field"><span>Estoque mínimo</span><input class="text-field" name="minStock" inputmode="decimal" /></label>
         <label class="field"><span>Categoria</span><input class="text-field" name="category" /></label>
-        <label class="field full"><span>Código de barras</span><input class="text-field" name="barcode" /></label>
+        <input type="hidden" name="barcode" />
         <div class="form-line full"><button class="button btn-primary" type="submit">Salvar produto</button><button class="button btn-light" type="button" data-action="cancel-admin-form">Cancelar</button></div>
       </form>
     </section>`;
@@ -1941,7 +1941,7 @@
     return `<section class="panel" hidden data-admin-form="stock" style="margin-bottom: 16px">
       <div class="panel-title"><div><h3>Movimentar estoque</h3><span>Registre entrada, saída ou ajuste manual com motivo</span></div></div>
       <form class="form-grid">
-        <label class="field"><span>Código do produto</span><input class="text-field" name="productCode" required /></label>
+        <label class="field"><span>Código de barras</span><input class="text-field" name="productCode" required /></label>
         <label class="field"><span>Tipo</span><select class="select-field" name="type"><option value="ENTRADA">Entrada</option><option value="SAIDA_MANUAL">Saída manual</option><option value="AJUSTE">Ajuste</option></select></label>
         <label class="field"><span>Quantidade</span><input class="text-field" name="quantity" inputmode="decimal" required /></label>
         <label class="field full"><span>Motivo</span><input class="text-field" name="reason" required /></label>
@@ -2036,7 +2036,7 @@
       <div class="stock-meter"><header><span>Estoque</span><strong>${esc(String(row.currentStock))}/${esc(String(row.minimumStock))}</strong></header><div class="progress-track"><span style="width: ${level.width}%"></span></div></div>
       <div class="entity-meta">
         <div><span>Loja</span><strong>${esc(row.store)}</strong></div>
-        <div><span>Código</span><strong>${esc(row.code)}</strong></div>
+        <div><span>Código de barras</span><strong>${esc(row.code)}</strong></div>
         <div><span>Categoria</span><strong>${esc(row.category)}</strong></div>
         <div><span>Preço</span><strong>${esc(row.price)}</strong></div>
       </div>
@@ -2055,7 +2055,7 @@
       <div class="stock-meter"><header><span>Risco de ruptura</span><strong>${esc(level.label)}</strong></header><div class="progress-track"><span style="width: ${level.width}%"></span></div></div>
       <div class="entity-meta">
         <div><span>Loja</span><strong>${esc(row.store)}</strong></div>
-        <div><span>Código</span><strong>${esc(row.code)}</strong></div>
+        <div><span>Código de barras</span><strong>${esc(row.code)}</strong></div>
         <div><span>Estoque mínimo</span><strong>${esc(String(row.minimumStock))}</strong></div>
         <div><span>Preço</span><strong>${esc(row.price)}</strong></div>
       </div>
@@ -2542,11 +2542,11 @@
       const parts = [];
       if (row.sales != null) parts.push(`${quantityLabel(row.sales)} vendas`);
       if (row.revenueDisplay) parts.push(row.revenueDisplay);
-      if (!parts.length && row.code) parts.push(`Código ${row.code}`);
+      if (!parts.length && row.code) parts.push(`Código de barras ${row.code}`);
       return parts.join(" | ") || "Quantidade vendida";
     }
     if (row.sales) return `${row.sales} vendas`;
-    if (row.code) return `Código ${row.code}`;
+    if (row.code) return `Código de barras ${row.code}`;
     return "Período atual";
   }
 

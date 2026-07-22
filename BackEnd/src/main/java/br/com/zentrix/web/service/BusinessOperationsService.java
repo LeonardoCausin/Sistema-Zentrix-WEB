@@ -1395,7 +1395,7 @@ public class BusinessOperationsService {
 
     private Map<String, Object> syncProductRecord(String tenantId, String store, String code) {
         return dbRecord(single("""
-                SELECT tenant_id, store_id, device_id, source_id, code, description, unit, price, cost_price,
+                SELECT tenant_id, store_id, device_id, source_id, code, description, unit, price,
                        stock, supplier_id, category, barcode, min_stock, ideal_stock, active, created_at, updated_at, deleted_at
                 FROM products
                 WHERE tenant_id = ? AND store_id = ? AND code = ?
@@ -1738,7 +1738,7 @@ public class BusinessOperationsService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o nome do produto.");
         }
         if (request.code() == null || request.code().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o codigo do produto.");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o código de barras do produto.");
         }
         if (request.price() == null || request.price().compareTo(BigDecimal.ZERO) < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Preco de venda deve ser maior ou igual a zero.");

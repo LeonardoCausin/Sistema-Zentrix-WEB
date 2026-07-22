@@ -219,6 +219,8 @@ test("product flow creates a product from the web panel", async ({ page }) => {
 
   await expect(page.getByText("Produto cadastrado.")).toBeVisible();
   expect(calls.some((call) => call.method === "POST" && call.url.includes("/api/admin/produtos"))).toBeTruthy();
+  expect(calls.find((call) => call.method === "POST" && call.url.includes("/api/admin/produtos"))?.body)
+    .toMatchObject({ code: "P-E2E", barcode: "P-E2E" });
 });
 
 test("client flow creates a client from the web panel", async ({ page }) => {
