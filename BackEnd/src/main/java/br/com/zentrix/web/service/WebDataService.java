@@ -218,8 +218,32 @@ public class WebDataService {
         return jdbcTemplate.query("""
                 SELECT cs.tenant_id, cs.store_id, cs.source_id, cs.id, cs.cash_id, cs.operator,
                        cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.difference,
-                       cs.opened_at, cs.closed_at, cs.is_open, cs.status
+                       cs.opened_at, cs.closed_at, cs.is_open, cs.status,
+                       COALESCE(cash_sales.cash_sales_total, 0) AS cash_sales_total,
+                       COALESCE(cash_movements.supplies_total, 0) AS supplies_total,
+                       COALESCE(cash_movements.withdrawals_total, 0) AS withdrawals_total
                 FROM cash_sessions cs
+                LEFT JOIN (
+                    SELECT s.tenant_id, s.store_id, s.session_id,
+                           COALESCE(SUM(COALESCE(s.amount_paid, 0)), 0) AS cash_sales_total
+                    FROM sales s
+                    WHERE s.status = 'PAID'
+                      AND UPPER(COALESCE(s.payment_method, '')) IN ('CASH', 'DINHEIRO')
+                    GROUP BY s.tenant_id, s.store_id, s.session_id
+                ) cash_sales
+                  ON cash_sales.tenant_id = cs.tenant_id
+                 AND cash_sales.store_id = cs.store_id
+                 AND cash_sales.session_id = cs.id
+                LEFT JOIN (
+                    SELECT cm.tenant_id, cm.store_id, cm.session_id,
+                           COALESCE(SUM(CASE WHEN UPPER(cm.type) IN ('SUPRIMENTO', 'SUPPLY') THEN cm.value ELSE 0 END), 0) AS supplies_total,
+                           COALESCE(SUM(CASE WHEN UPPER(cm.type) IN ('SANGRIA', 'WITHDRAWAL') THEN cm.value ELSE 0 END), 0) AS withdrawals_total
+                    FROM cash_movements cm
+                    GROUP BY cm.tenant_id, cm.store_id, cm.session_id
+                ) cash_movements
+                  ON cash_movements.tenant_id = cs.tenant_id
+                 AND cash_movements.store_id = cs.store_id
+                 AND cash_movements.session_id = cs.id
                 WHERE %s
                 ORDER BY COALESCE(cs.opened_at, cs.closed_at) DESC, cs.id DESC
                 LIMIT ? OFFSET ?
@@ -228,7 +252,18 @@ public class WebDataService {
                     || !rs.getBoolean("is_open")
                     || "CLOSED".equalsIgnoreCase(rs.getString("status"))
                     || "FECHADO".equalsIgnoreCase(rs.getString("status"));
-            BigDecimal expected = rs.getBigDecimal("expected_balance") == null ? rs.getBigDecimal("opening_balance") : rs.getBigDecimal("expected_balance");
+            BigDecimal expected = calculateExpectedBalance(
+                    rs.getBigDecimal("opening_balance"),
+                    rs.getBigDecimal("expected_balance"),
+                    rs.getBigDecimal("cash_sales_total"),
+                    rs.getBigDecimal("supplies_total"),
+                    rs.getBigDecimal("withdrawals_total")
+            );
+            BigDecimal closing = rs.getBigDecimal("closing_balance");
+            BigDecimal difference = rs.getBigDecimal("difference");
+            if (difference == null && closing != null) {
+                difference = closing.subtract(expected);
+            }
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
             row.put("tenantId", rs.getString("tenant_id"));
@@ -241,10 +276,22 @@ public class WebDataService {
             row.put("statusRaw", rs.getString("status"));
             row.put("expected", currency(expected));
             row.put("openingBalance", currency(rs.getBigDecimal("opening_balance")));
-            row.put("informed", rs.getBigDecimal("closing_balance") == null ? "-" : currency(rs.getBigDecimal("closing_balance")));
-            row.put("difference", rs.getBigDecimal("difference") == null ? "-" : currency(rs.getBigDecimal("difference")));
+            row.put("informed", closing == null ? "-" : currency(closing));
+            row.put("difference", difference == null ? "-" : currency(difference));
             return row;
         }, pagedArgs(filter, safeLimit, safeOffset));
+    }
+
+    static BigDecimal calculateExpectedBalance(BigDecimal openingBalance, BigDecimal syncedExpectedBalance,
+                                               BigDecimal cashSalesTotal, BigDecimal suppliesTotal,
+                                               BigDecimal withdrawalsTotal) {
+        if (syncedExpectedBalance != null) {
+            return syncedExpectedBalance;
+        }
+        return safeMoney(openingBalance)
+                .add(safeMoney(cashSalesTotal))
+                .add(safeMoney(suppliesTotal))
+                .subtract(safeMoney(withdrawalsTotal));
     }
 
     public List<Map<String, Object>> stockAlerts(String tenantId, String store) {
@@ -910,7 +957,7 @@ public class WebDataService {
         return row;
     }
 
-    private BigDecimal safeMoney(BigDecimal value) {
+    private static BigDecimal safeMoney(BigDecimal value) {
         return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
 
