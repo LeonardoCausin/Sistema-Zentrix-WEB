@@ -27,7 +27,8 @@
     storeSelect: document.getElementById("storeSelect"),
     modal: document.getElementById("modal"),
     modalTitle: document.getElementById("modalTitle"),
-    modalBody: document.getElementById("modalBody")
+    modalBody: document.getElementById("modalBody"),
+    modalCloseButton: document.getElementById("modalCloseButton")
   };
 
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -37,6 +38,7 @@
   els.logoutButton.addEventListener("click", logout);
   els.refreshButton.addEventListener("click", () => loadView(true));
   els.storeSelect.addEventListener("change", () => state.view === "support" && loadView(true));
+  els.modalCloseButton.addEventListener("click", closeModal);
 
   boot();
 
