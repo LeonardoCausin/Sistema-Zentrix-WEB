@@ -1359,7 +1359,7 @@ public class WebDataService {
                           AND ok.status = 'SUCCESS'
                           AND COALESCE(ok.source_id, '') = COALESCE(sr.source_id, '')
                   ), TIMESTAMP('1000-01-01 00:00:00'))
-                """, tenantId, normalizedStore, normalizedStore);
+                """, List.of(tenantId, normalizedStore, normalizedStore));
     }
 
     private Object[] withFirstArg(Object first, Object[] rest) {
