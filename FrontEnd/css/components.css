@@ -908,6 +908,16 @@
   line-height: 1.55;
 }
 
+.account-blocked-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.account-blocked-actions .button {
+  min-width: 150px;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

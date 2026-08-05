@@ -146,10 +146,24 @@
         <span class="account-blocked-kicker">Acesso interrompido</span>
         <h1>Loja bloqueada</h1>
         <p>${escapeHtml(safeMessage)}</p>
-        <button class="button btn-primary" type="button" data-account-blocked-logout>Sair do painel</button>
+        <div class="account-blocked-actions">
+          <button class="button btn-primary" type="button" data-account-blocked-payment>Pagar assinatura</button>
+          <button class="button btn-dark" type="button" data-account-blocked-logout>Sair do painel</button>
+        </div>
       </div>
     `;
     document.body.classList.add("account-blocked");
+    const paymentButton = blocker.querySelector("[data-account-blocked-payment]");
+    if (paymentButton) {
+      paymentButton.addEventListener("click", () => {
+        const paymentUrl = window.ZentrixPaymentUrl || "";
+        if (paymentUrl) {
+          window.location.href = paymentUrl;
+          return;
+        }
+        window.alert("Pagamento online sera liberado em breve. Entre em contato com o suporte Zentrix para regularizar a assinatura.");
+      });
+    }
     const logoutButton = blocker.querySelector("[data-account-blocked-logout]");
     if (logoutButton) {
       logoutButton.addEventListener("click", () => {

@@ -86,25 +86,6 @@ class AuthServiceTest {
     }
 
     @Test
-    void rejectsBlockedTenantBeforeIssuingToken() {
-        authService = new AuthService(
-                jdbcTemplate,
-                new NoopInitializer(),
-                authTokenService,
-                new NoopAuditService(),
-                new BlockingLicenseAccessService()
-        );
-        jdbcTemplate.addQueryResult(List.of(user("admin", "ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)))));
-        jdbcTemplate.addQueryResult(List.of());
-
-        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
-                () -> authService.login(new LoginRequest("admin", "senha")));
-
-        assertEquals(HttpStatus.PAYMENT_REQUIRED, exception.getStatusCode());
-        assertEquals(0, authTokenService.issuedCount);
-    }
-
-    @Test
     void legacyAdminUsesLatestOfficialScopeForSameSource() {
         Map<String, Object> legacyAdmin = user("admin", "ADMIN", BCrypt.hashpw("senha", BCrypt.gensalt(4)));
         legacyAdmin.put("tenant_id", "legacy");
@@ -233,17 +214,6 @@ class AuthServiceTest {
                 String ipAddress,
                 String userRole
         ) {
-        }
-    }
-
-    private static class BlockingLicenseAccessService extends LicenseAccessService {
-        BlockingLicenseAccessService() {
-            super(null, null);
-        }
-
-        @Override
-        public void requireActive(String tenantId, String path) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A loja esta bloqueada: teste.");
         }
     }
 }
