@@ -2,6 +2,7 @@ package br.com.zentrix.web.service;
 
 import br.com.zentrix.web.dto.ActivationCodeRequest;
 import br.com.zentrix.web.dto.ProvisionTenantRequest;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -17,9 +18,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ZentrixAdminService {
     private static final List<PlanDefinition> PLANS = List.of(
-            new PlanDefinition("BASICO", "Basico", 1, 1, "Entrada para uma loja com um PDV."),
-            new PlanDefinition("INTERMEDIARIO", "Intermediario", 2, 3, "Operacao em crescimento com mais PDVs."),
-            new PlanDefinition("PRO", "Pro", 5, 10, "Operacao multi-loja com maior escala.")
+            new PlanDefinition("BASICO", "Basico", bd("99.90"), 1, 0, bd("39.90"), bd("29.90"), false, "Acesso somente ao PDV."),
+            new PlanDefinition("INTERMEDIARIO", "Intermediario", bd("169.90"), 1, 1, bd("39.90"), bd("29.90"), true, "PDV + AppGestao essencial."),
+            new PlanDefinition("PRO", "Pro", bd("269.90"), 2, 2, bd("39.90"), bd("29.90"), true, "Gestao completa por loja.")
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -83,8 +84,14 @@ public class ZentrixAdminService {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("code", plan.code());
             row.put("name", plan.name());
-            row.put("maxStores", plan.maxStores());
-            row.put("maxDevices", plan.maxDevices());
+            row.put("monthlyStorePrice", plan.monthlyStorePrice());
+            row.put("includedPdvPerStore", plan.includedPdvPerStore());
+            row.put("includedAppGestaoPerStore", plan.includedAppGestaoPerStore());
+            row.put("extraPdvPrice", plan.extraPdvPrice());
+            row.put("extraAppGestaoPrice", plan.extraAppGestaoPrice());
+            row.put("appGestaoIncluded", plan.appGestaoIncluded());
+            row.put("maxStores", 1);
+            row.put("maxDevices", plan.includedPdvPerStore() + plan.includedAppGestaoPerStore());
             row.put("description", plan.description());
             return row;
         }).toList();
@@ -113,7 +120,7 @@ public class ZentrixAdminService {
         initializer.ensureReady();
         String q = "%" + text(search).toLowerCase() + "%";
         String normalizedStatus = text(status);
-        return jdbcTemplate.queryForList("""
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT t.id AS tenantId, t.name, t.document, t.status,
                        t.block_reason AS blockReason, t.blocked_at AS blockedAt, t.blocked_by AS blockedBy,
                        t.created_at AS createdAt, t.updated_at AS updatedAt,
@@ -140,6 +147,8 @@ public class ZentrixAdminService {
                 ORDER BY t.created_at DESC, t.name
                 LIMIT ?
                 """, q.equals("%%") ? "" : q, q, q, q, normalizedStatus.isBlank() ? "all" : normalizedStatus, normalizedStatus, safeLimit(limit));
+        rows.forEach(row -> addBilling(row, String.valueOf(row.get("tenantId")), String.valueOf(row.getOrDefault("planName", "BASICO"))));
+        return rows;
     }
 
     public Map<String, Object> client(String tenantId) {
@@ -156,6 +165,7 @@ public class ZentrixAdminService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cliente nao encontrado.");
         }
         Map<String, Object> response = new LinkedHashMap<>(tenants.get(0));
+        String latestPlan = "BASICO";
         response.put("licenses", jdbcTemplate.queryForList("""
                 SELECT id, plan_name AS planName, status, starts_at AS startsAt, expires_at AS expiresAt,
                        max_stores AS maxStores, max_devices AS maxDevices, created_at AS createdAt, updated_at AS updatedAt
@@ -163,6 +173,10 @@ public class ZentrixAdminService {
                 WHERE tenant_id = ?
                 ORDER BY id DESC
                 """, tenant));
+        List<Map<String, Object>> licenses = castRows(response.get("licenses"));
+        if (!licenses.isEmpty()) {
+            latestPlan = String.valueOf(licenses.get(0).getOrDefault("planName", "BASICO"));
+        }
         response.put("stores", jdbcTemplate.queryForList("""
                 SELECT id, name, source_id AS sourceId, status, created_at AS createdAt, updated_at AS updatedAt
                 FROM tenant_stores
@@ -170,7 +184,7 @@ public class ZentrixAdminService {
                 ORDER BY created_at DESC, name
                 """, tenant));
         response.put("devices", jdbcTemplate.queryForList("""
-                SELECT store_id AS storeId, id, name, source_id AS sourceId, status, last_seen_at AS lastSeenAt,
+                SELECT store_id AS storeId, id, name, source_id AS sourceId, app_type AS appType, status, last_seen_at AS lastSeenAt,
                        created_at AS createdAt, updated_at AS updatedAt
                 FROM tenant_devices
                 WHERE tenant_id = ?
@@ -184,6 +198,7 @@ public class ZentrixAdminService {
                 ORDER BY created_at DESC
                 LIMIT 20
                 """, tenant));
+        response.put("billing", billingSummary(tenant, latestPlan));
         return response;
     }
 
@@ -225,8 +240,8 @@ public class ZentrixAdminService {
             startsAt = Timestamp.valueOf(LocalDateTime.now());
         }
         Timestamp expiresAt = timestampOrNull(value(request, "expiresAt"));
-        int maxStores = intValue(request.get("maxStores"), planDefinition.maxStores());
-        int maxDevices = intValue(request.get("maxDevices"), planDefinition.maxDevices());
+        int maxStores = intValue(request == null ? null : request.get("maxStores"), 1);
+        int maxDevices = intValue(request == null ? null : request.get("maxDevices"), planDefinition.includedPdvPerStore() + planDefinition.includedAppGestaoPerStore());
         jdbcTemplate.update("""
                 INSERT INTO licenses (tenant_id, plan_name, status, starts_at, expires_at, max_stores, max_devices)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -250,8 +265,63 @@ public class ZentrixAdminService {
                 "startsAt", startsAt.toString(),
                 "expiresAt", expiresAt == null ? "" : expiresAt.toString(),
                 "maxStores", maxStores,
-                "maxDevices", maxDevices
+                "maxDevices", maxDevices,
+                "billing", billingSummary(tenant, plan)
         );
+    }
+
+    public Map<String, Object> billingSummary(String tenantId, String planName) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        PlanDefinition plan = planDefinition(normalizePlan(defaultValue(planName, "BASICO")));
+        long activeStores = number("""
+                SELECT COUNT(*)
+                FROM tenant_stores
+                WHERE tenant_id = ? AND UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+                """, tenant);
+        activeStores = Math.max(activeStores, 1);
+        long pdvApps = number("""
+                SELECT COUNT(*)
+                FROM tenant_devices
+                WHERE tenant_id = ?
+                  AND UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+                  AND UPPER(COALESCE(app_type, 'PDV')) = 'PDV'
+                """, tenant);
+        long appGestaoApps = number("""
+                SELECT COUNT(*)
+                FROM users
+                WHERE tenant_id = ?
+                  AND active = TRUE
+                  AND UPPER(COALESCE(role, '')) IN ('ADMIN', 'ADMINISTRADOR', 'ADMINISTRATOR', 'DONO', 'OWNER', 'MASTER_ADMIN', 'MASTERADMIN', 'SUPER_ADMIN', 'SUPERADMIN')
+                """, tenant);
+        long includedPdv = activeStores * plan.includedPdvPerStore();
+        long includedAppGestao = activeStores * plan.includedAppGestaoPerStore();
+        long extraPdv = Math.max(pdvApps - includedPdv, 0);
+        long extraAppGestao = plan.appGestaoIncluded() ? Math.max(appGestaoApps - includedAppGestao, 0) : 0;
+        BigDecimal storeSubtotal = plan.monthlyStorePrice().multiply(BigDecimal.valueOf(activeStores));
+        BigDecimal extraPdvSubtotal = plan.extraPdvPrice().multiply(BigDecimal.valueOf(extraPdv));
+        BigDecimal extraAppGestaoSubtotal = plan.extraAppGestaoPrice().multiply(BigDecimal.valueOf(extraAppGestao));
+        BigDecimal total = storeSubtotal.add(extraPdvSubtotal).add(extraAppGestaoSubtotal);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("planCode", plan.code());
+        summary.put("planName", plan.name());
+        summary.put("monthlyStorePrice", plan.monthlyStorePrice());
+        summary.put("activeStores", activeStores);
+        summary.put("storeSubtotal", storeSubtotal);
+        summary.put("pdvApps", pdvApps);
+        summary.put("includedPdvApps", includedPdv);
+        summary.put("extraPdvApps", extraPdv);
+        summary.put("extraPdvPrice", plan.extraPdvPrice());
+        summary.put("extraPdvSubtotal", extraPdvSubtotal);
+        summary.put("appGestaoApps", appGestaoApps);
+        summary.put("includedAppGestaoApps", includedAppGestao);
+        summary.put("extraAppGestaoApps", extraAppGestao);
+        summary.put("extraAppGestaoPrice", plan.extraAppGestaoPrice());
+        summary.put("extraAppGestaoSubtotal", extraAppGestaoSubtotal);
+        summary.put("appGestaoIncluded", plan.appGestaoIncluded());
+        summary.put("monthlyTotal", total);
+        return summary;
     }
 
     public List<Map<String, Object>> clientHistory(String tenantId) {
@@ -290,7 +360,7 @@ public class ZentrixAdminService {
                        (SELECT sr.status FROM sync_runs sr WHERE sr.tenant_id = ts.tenant_id AND sr.store_id = ts.id ORDER BY sr.received_at DESC, sr.id DESC LIMIT 1) AS lastSyncStatus,
                        (SELECT br.created_at FROM backup_runs br WHERE br.tenant_id = ts.tenant_id AND br.store_id = ts.id ORDER BY br.created_at DESC, br.id DESC LIMIT 1) AS lastBackupAt,
                        (SELECT br.status FROM backup_runs br WHERE br.tenant_id = ts.tenant_id AND br.store_id = ts.id ORDER BY br.created_at DESC, br.id DESC LIMIT 1) AS lastBackupStatus,
-                       (SELECT COUNT(*) FROM tenant_devices td WHERE td.tenant_id = ts.tenant_id AND td.store_id = ts.id AND UPPER(COALESCE(td.status, 'ACTIVE')) = 'ACTIVE') AS activeDevices,
+                       (SELECT COUNT(*) FROM tenant_devices td WHERE td.tenant_id = ts.tenant_id AND td.store_id = ts.id AND UPPER(COALESCE(td.status, 'ACTIVE')) = 'ACTIVE' AND UPPER(COALESCE(td.app_type, 'PDV')) = 'PDV') AS activeDevices,
                        (SELECT MAX(td.last_seen_at) FROM tenant_devices td WHERE td.tenant_id = ts.tenant_id AND td.store_id = ts.id) AS lastDeviceSeenAt
                 FROM tenant_stores ts
                 WHERE ts.tenant_id = ?
@@ -411,16 +481,21 @@ public class ZentrixAdminService {
         return value == null ? 0 : value;
     }
 
+    private long number(String sql, Object... args) {
+        Long value = jdbcTemplate.queryForObject(sql, Long.class, args);
+        return value == null ? 0 : value;
+    }
+
     private int safeLimit(int limit) {
         return Math.max(1, Math.min(limit <= 0 ? 100 : limit, 300));
     }
 
     private String normalizePlan(String plan) {
         String value = text(plan).toUpperCase().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U");
-        if (value.equals("BASICO") || value.equals("BASIC")) {
+        if (value.equals("BASICO") || value.equals("BASIC") || value.equals("LEGACY") || value.equals("SEM PLANO")) {
             return "BASICO";
         }
-        if (value.equals("INTERMEDIARIO") || value.equals("INTERMEDIARIO")) {
+        if (value.equals("INTERMEDIARIO") || value.equals("INTERMEDIATE")) {
             return "INTERMEDIARIO";
         }
         if (value.equals("PRO") || value.equals("PROFISSIONAL")) {
@@ -453,6 +528,24 @@ public class ZentrixAdminService {
         } catch (RuntimeException ignored) {
             return 0;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> castRows(Object value) {
+        return value instanceof List<?> list ? (List<Map<String, Object>>) list : List.of();
+    }
+
+    private void addBilling(Map<String, Object> row, String tenantId, String planName) {
+        String safePlan = text(planName);
+        if (safePlan.isBlank() || "null".equalsIgnoreCase(safePlan)) {
+            safePlan = "BASICO";
+        }
+        Map<String, Object> billing = billingSummary(tenantId, safePlan);
+        row.put("billing", billing);
+        row.put("monthlyTotal", billing.get("monthlyTotal"));
+        row.put("activeStores", billing.get("activeStores"));
+        row.put("pdvApps", billing.get("pdvApps"));
+        row.put("appGestaoApps", billing.get("appGestaoApps"));
     }
 
     private String value(Map<String, Object> request, String key) {
@@ -510,6 +603,20 @@ public class ZentrixAdminService {
         }
     }
 
-    private record PlanDefinition(String code, String name, int maxStores, int maxDevices, String description) {
+    private static BigDecimal bd(String value) {
+        return new BigDecimal(value);
+    }
+
+    private record PlanDefinition(
+            String code,
+            String name,
+            BigDecimal monthlyStorePrice,
+            int includedPdvPerStore,
+            int includedAppGestaoPerStore,
+            BigDecimal extraPdvPrice,
+            BigDecimal extraAppGestaoPrice,
+            boolean appGestaoIncluded,
+            String description
+    ) {
     }
 }

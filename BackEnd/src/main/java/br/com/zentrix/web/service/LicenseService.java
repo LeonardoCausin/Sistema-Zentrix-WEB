@@ -54,7 +54,7 @@ public class LicenseService {
     public List<Map<String, Object>> devices(String tenantId) {
         initializer.ensureReady();
         return jdbcTemplate.query("""
-                SELECT tenant_id, store_id, id, name, source_id, status, last_seen_at, created_at, updated_at
+                SELECT tenant_id, store_id, id, name, source_id, app_type, status, last_seen_at, created_at, updated_at
                 FROM tenant_devices
                 WHERE tenant_id = ?
                 ORDER BY last_seen_at DESC, store_id, id
@@ -65,6 +65,7 @@ public class LicenseService {
             row.put("id", rs.getString("id"));
             row.put("name", rs.getString("name"));
             row.put("sourceId", rs.getString("source_id"));
+            row.put("appType", rs.getString("app_type"));
             row.put("status", rs.getString("status"));
             row.put("lastSeenAt", rs.getTimestamp("last_seen_at") == null ? null : rs.getTimestamp("last_seen_at").toString());
             row.put("createdAt", rs.getTimestamp("created_at") == null ? null : rs.getTimestamp("created_at").toString());

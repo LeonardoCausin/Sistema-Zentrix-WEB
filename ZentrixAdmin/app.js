@@ -186,8 +186,9 @@
           ${(state.plans || []).map((plan) => `
             <article class="card metric">
               <span>${esc(plan.name)}</span>
-              <strong>${esc(plan.maxStores)} loja(s)</strong>
-              <small class="muted">${esc(plan.maxDevices)} PDV(s) - ${esc(plan.description)}</small>
+              <strong>${money(plan.monthlyStorePrice)}</strong>
+              <small class="muted">Por loja/mês - ${esc(plan.description)}</small>
+              <small class="muted">Inclui ${esc(plan.includedPdvPerStore)} PDV e ${esc(plan.includedAppGestaoPerStore)} AppGestao por loja</small>
             </article>
           `).join("")}
         </div>
@@ -283,14 +284,14 @@
 
   function subscriptionsTable(rows) {
     return `<table>
-      <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Limites</th><th>Acoes</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
           <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.tenantId)}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
-          <td>${esc(row.planName || "Sem plano")}</td>
+          <td>${esc(row.planName || "BASICO")}<br><span class="muted">${planAccessLabel(row.billing)}</span></td>
           <td>${tag(row.status)} ${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}<br><span class="muted">${expirationLabel(row.expiresAt)}</span></td>
-          <td>${esc(row.maxStores || 0)} lojas / ${esc(row.maxDevices || 0)} disp.</td>
+          <td><strong>${money(row.monthlyTotal)}</strong><br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
             <button class="danger" type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
@@ -339,14 +340,14 @@
 
   function clientsTable(rows) {
     return `<table>
-      <thead><tr><th>Cliente</th><th>Status</th><th>Plano</th><th>Vencimento</th><th>Estrutura</th><th>Acoes</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Status</th><th>Plano</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
           <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.document || row.tenantId)}</span></td>
           <td>${tag(row.status)}</td>
-          <td>${esc(row.planName || "Sem plano")}<br>${tag(row.licenseStatus || "-")}</td>
+          <td>${esc(row.planName || "BASICO")}<br>${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}</td>
-          <td>${esc(row.stores || 0)} lojas / ${esc(row.devices || 0)} disp. / ${esc(row.users || 0)} usuarios</td>
+          <td>${money(row.monthlyTotal)}<br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="client-detail" data-tenant="${escAttr(row.tenantId)}">Abrir</button>
             <button type="button" data-action="activation-code" data-tenant="${escAttr(row.tenantId)}">Codigo PDV</button>
@@ -440,8 +441,8 @@
         ${field("adminPassword", "Senha inicial", "password", true)}
         ${planSelect("planName", "Plano", "BASICO")}
         ${field("expiresAt", "Vencimento", "date")}
-        ${field("maxStores", "Max lojas", "number", false, "1")}
-        ${field("maxDevices", "Max dispositivos", "number", false, "1")}
+        ${field("maxStores", "Lojas base cobradas", "number", false, "1")}
+        ${field("maxDevices", "Apps incluidos por loja", "number", false, "1")}
         <label class="full">Motivo<textarea name="reason">Cadastro de novo cliente.</textarea></label>
         <button class="primary full" type="submit">Criar cliente</button>
       </form>
@@ -474,6 +475,13 @@
         ${metric("Status", detail.status, "Conta")}
       </div>
       ${detail.blockReason ? `<section class="notice danger-note"><strong>Cliente bloqueado</strong><span>${esc(detail.blockReason)}</span></section>` : ""}
+      <section class="panel">
+        <div class="panel-title">
+          <div><h3>Resumo de cobranca</h3><span class="muted">Por loja ativa e aplicativos instalados</span></div>
+          <strong>${money(detail.billing && detail.billing.monthlyTotal)}</strong>
+        </div>
+        ${billingDetails(detail.billing)}
+      </section>
       <section class="panel">
         <div class="panel-title">
           <div><h3>Saude por loja</h3><span class="muted">Ultimo sync, backup e PDVs ativos</span></div>
@@ -521,8 +529,8 @@
         </label>
         ${field("startsAt", "Inicio", "date")}
         ${field("expiresAt", "Vencimento", "date")}
-        ${field("maxStores", "Max lojas", "number", false, "1")}
-        ${field("maxDevices", "Max dispositivos", "number", false, "1")}
+        ${field("maxStores", "Lojas base cobradas", "number", false, "1")}
+        ${field("maxDevices", "Apps incluidos por loja", "number", false, "1")}
         <label class="check-field full">
           <input name="activateClient" type="checkbox" value="true" checked />
           Liberar cliente se a assinatura ficar ACTIVE
@@ -711,13 +719,13 @@
 
   function planSelect(name, label, selected) {
     const plans = state.plans && state.plans.length ? state.plans : [
-      { code: "BASICO", name: "Basico", maxStores: 1, maxDevices: 1 },
-      { code: "INTERMEDIARIO", name: "Intermediario", maxStores: 2, maxDevices: 3 },
-      { code: "PRO", name: "Pro", maxStores: 5, maxDevices: 10 }
+      { code: "BASICO", name: "Basico", monthlyStorePrice: 99.90, includedPdvPerStore: 1, includedAppGestaoPerStore: 0 },
+      { code: "INTERMEDIARIO", name: "Intermediario", monthlyStorePrice: 169.90, includedPdvPerStore: 1, includedAppGestaoPerStore: 1 },
+      { code: "PRO", name: "Pro", monthlyStorePrice: 269.90, includedPdvPerStore: 2, includedAppGestaoPerStore: 2 }
     ];
     return `<label>${esc(label)}
       <select name="${escAttr(name)}" data-plan-select>
-        ${plans.map((plan) => `<option value="${escAttr(plan.code)}" ${plan.code === selected ? "selected" : ""}>${esc(plan.name)} - ${esc(plan.maxStores)} loja(s) / ${esc(plan.maxDevices)} PDV(s)</option>`).join("")}
+        ${plans.map((plan) => `<option value="${escAttr(plan.code)}" ${plan.code === selected ? "selected" : ""}>${esc(plan.name)} - ${money(plan.monthlyStorePrice)} por loja</option>`).join("")}
       </select>
     </label>`;
   }
@@ -730,8 +738,8 @@
     const devices = form.querySelector('[name="maxDevices"]');
     const apply = () => {
       const plan = findPlan(select.value);
-      if (stores && plan) stores.value = plan.maxStores;
-      if (devices && plan) devices.value = plan.maxDevices;
+      if (stores && plan) stores.value = 1;
+      if (devices && plan) devices.value = (Number(plan.includedPdvPerStore || 0) + Number(plan.includedAppGestaoPerStore || 0));
     };
     if (select) {
       select.addEventListener("change", apply);
@@ -741,7 +749,49 @@
 
   function findPlan(code) {
     return (state.plans || []).find((plan) => plan.code === code)
-      || { code: "BASICO", maxStores: 1, maxDevices: 1 };
+      || { code: "BASICO", monthlyStorePrice: 99.90, includedPdvPerStore: 1, includedAppGestaoPerStore: 0 };
+  }
+
+  function money(value) {
+    const number = Number(value || 0);
+    return number.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function billingLine(billing) {
+    if (!billing) return "Sem dados de cobranca";
+    return `${billing.activeStores || 0} loja(s), ${billing.pdvApps || 0} PDV(s), ${billing.appGestaoApps || 0} AppGestao`;
+  }
+
+  function planAccessLabel(billing) {
+    if (!billing) return "Plano sem resumo";
+    return billing.appGestaoIncluded ? "PDV + AppGestao" : "Somente PDV";
+  }
+
+  function billingDetails(billing) {
+    if (!billing) return emptyState("Resumo de cobranca indisponivel.");
+    return simpleTable(["Item", "Uso", "Incluido", "Extra", "Subtotal"], [
+      {
+        item: "Lojas",
+        use: billing.activeStores,
+        included: "-",
+        extra: "-",
+        subtotal: billing.storeSubtotal
+      },
+      {
+        item: "PDVs",
+        use: billing.pdvApps,
+        included: billing.includedPdvApps,
+        extra: billing.extraPdvApps,
+        subtotal: billing.extraPdvSubtotal
+      },
+      {
+        item: "AppGestao",
+        use: billing.appGestaoApps,
+        included: billing.includedAppGestaoApps,
+        extra: billing.appGestaoIncluded ? billing.extraAppGestaoApps : "Upgrade",
+        subtotal: billing.extraAppGestaoSubtotal
+      }
+    ], (row) => [row.item, row.use, row.included, row.extra, money(row.subtotal)]);
   }
 
   function timeline(rows) {

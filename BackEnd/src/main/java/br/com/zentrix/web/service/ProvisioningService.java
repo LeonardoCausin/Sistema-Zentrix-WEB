@@ -201,11 +201,12 @@ public class ProvisioningService {
 
     private void upsertDevice(String tenantId, String storeId, String deviceId, String name, String sourceId) {
         jdbcTemplate.update("""
-                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
-                VALUES (?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, app_type, status, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, 'PDV', 'ACTIVE', CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     source_id = VALUES(source_id),
+                    app_type = COALESCE(NULLIF(app_type, ''), 'PDV'),
                     status = 'ACTIVE',
                     last_seen_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP

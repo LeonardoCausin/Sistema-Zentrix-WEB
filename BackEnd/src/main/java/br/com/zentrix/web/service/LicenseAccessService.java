@@ -36,7 +36,7 @@ public class LicenseAccessService {
         }
 
         List<Map<String, Object>> licenses = jdbcTemplate.queryForList("""
-                SELECT status, expires_at AS expiresAt
+                SELECT status, plan_name AS planName, expires_at AS expiresAt
                 FROM licenses
                 WHERE tenant_id = ?
                 ORDER BY id DESC
@@ -54,6 +54,10 @@ public class LicenseAccessService {
         if (expiresAt instanceof Timestamp timestamp && timestamp.toLocalDateTime().isBefore(LocalDateTime.now())) {
             throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A assinatura desta loja esta vencida. Entre em contato com o suporte Zentrix para regularizar o acesso.");
         }
+        String plan = String.valueOf(license.getOrDefault("planName", ""));
+        if (basicPlan(plan) && appGestaoPath(path)) {
+            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Seu plano Basico inclui somente o PDV. Para acessar o AppGestao, altere para o plano Intermediario ou Pro.");
+        }
     }
 
     private String blockedMessage(Object reason) {
@@ -69,6 +73,19 @@ public class LicenseAccessService {
         return value.startsWith("/api/zentrix-admin")
                 || value.startsWith("/api/local-admin")
                 || value.startsWith("/api/auth");
+    }
+
+    private boolean appGestaoPath(String path) {
+        String value = path == null ? "" : path;
+        return value.startsWith("/api/")
+                && !value.startsWith("/api/pdv/")
+                && !value.startsWith("/api/sync/")
+                && !isAdminPath(value);
+    }
+
+    private boolean basicPlan(String plan) {
+        String value = plan == null ? "" : plan.trim().toUpperCase();
+        return value.equals("BASICO") || value.equals("BASIC");
     }
 
     private boolean blocked(String status) {

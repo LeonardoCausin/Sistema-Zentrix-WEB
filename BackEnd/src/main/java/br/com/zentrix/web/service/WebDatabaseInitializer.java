@@ -149,11 +149,13 @@ public class WebDatabaseInitializer {
                     id VARCHAR(120) NOT NULL,
                     name VARCHAR(180),
                     source_id VARCHAR(120),
+                    app_type VARCHAR(30) NOT NULL DEFAULT 'PDV',
                     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
                     last_seen_at DATETIME NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (tenant_id, store_id, id),
+                    INDEX idx_tenant_devices_app_type (tenant_id, store_id, app_type, status),
                     INDEX idx_tenant_devices_source (tenant_id, store_id, source_id),
                     INDEX idx_tenant_devices_seen (tenant_id, store_id, last_seen_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -568,6 +570,8 @@ public class WebDatabaseInitializer {
         ensureColumn("users", "updated_at", "DATETIME NULL", "AFTER created_at");
         ensureColumn("users", "last_login_at", "DATETIME NULL", "AFTER updated_at");
         ensureColumn("users", "permissions_json", "TEXT NULL", "AFTER last_login_at");
+        ensureColumn("tenant_devices", "app_type", "VARCHAR(30) NOT NULL DEFAULT 'PDV'", "AFTER source_id");
+        jdbcTemplate.update("UPDATE tenant_devices SET app_type = 'PDV' WHERE app_type IS NULL OR app_type = ''");
 
         ensureColumn("cash_sessions", "closing_balance", "DECIMAL(15,2) NULL", "AFTER opening_balance");
         ensureColumn("cash_sessions", "expected_balance", "DECIMAL(15,2) NULL", "AFTER closing_balance");
@@ -661,6 +665,7 @@ public class WebDatabaseInitializer {
         ensureIndex("cash_movements", "idx_cash_movements_date", List.of("tenant_id", "store_id", "date_time"));
         ensureIndex("audit_log", "idx_audit_log_created_id", List.of("tenant_id", "store_id", "created_at", "id"));
         ensureIndex("sync_runs", "idx_sync_runs_status_received", List.of("tenant_id", "store_id", "status", "received_at", "id"));
+        ensureIndex("tenant_devices", "idx_tenant_devices_app_type", List.of("tenant_id", "store_id", "app_type", "status"));
     }
 
     private void migrationSyncReconciliation() {
@@ -791,9 +796,9 @@ public class WebDatabaseInitializer {
                     updated_at = CURRENT_TIMESTAMP
                 """);
         jdbcTemplate.update("""
-                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, status, last_seen_at)
+                INSERT INTO tenant_devices (tenant_id, store_id, id, name, source_id, app_type, status, last_seen_at)
                 SELECT tenant_id, store_id, COALESCE(NULLIF(device_id, ''), 'legacy-device'),
-                       COALESCE(NULLIF(device_id, ''), 'legacy-device'), MAX(source_id), 'ACTIVE', MAX(received_at)
+                       COALESCE(NULLIF(device_id, ''), 'legacy-device'), MAX(source_id), 'PDV', 'ACTIVE', MAX(received_at)
                 FROM sync_runs
                 WHERE tenant_id IS NOT NULL AND tenant_id <> ''
                   AND store_id IS NOT NULL AND store_id <> ''
