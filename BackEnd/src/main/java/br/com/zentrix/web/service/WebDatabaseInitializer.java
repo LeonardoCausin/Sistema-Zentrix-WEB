@@ -537,6 +537,13 @@ public class WebDatabaseInitializer {
         ensureColumn("clients", "updated_at", "DATETIME NULL", "AFTER loyalty_points");
         ensureColumn("clients", "deleted_at", "DATETIME NULL", "AFTER updated_at");
 
+        ensureColumn("suppliers", "birth_date", "DATE NULL", "AFTER created_at");
+        ensureColumn("suppliers", "active", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER birth_date");
+        ensureColumn("suppliers", "notes", "TEXT NULL", "AFTER active");
+        ensureColumn("suppliers", "loyalty_points", "INT NOT NULL DEFAULT 0", "AFTER notes");
+        ensureColumn("suppliers", "updated_at", "DATETIME NULL", "AFTER loyalty_points");
+        ensureColumn("suppliers", "deleted_at", "DATETIME NULL", "AFTER updated_at");
+
         ensureColumn("users", "created_at", "DATETIME NULL", "AFTER active");
         ensureColumn("users", "updated_at", "DATETIME NULL", "AFTER created_at");
         ensureColumn("users", "last_login_at", "DATETIME NULL", "AFTER updated_at");
@@ -554,6 +561,8 @@ public class WebDatabaseInitializer {
         ensureColumn("stock_movements", "origin", "VARCHAR(80) NULL", "AFTER new_stock");
         ensureColumn("stock_movements", "reference_type", "VARCHAR(80) NULL", "AFTER origin");
         ensureColumn("stock_movements", "reference_id", "VARCHAR(80) NULL", "AFTER reference_type");
+
+        ensureColumn("comandas", "mesa", "VARCHAR(80) NULL", "AFTER client_id");
 
         ensureColumn("financial_entries", "updated_at", "DATETIME NULL", "AFTER created_at");
         ensureColumn("financial_entries", "origin", "VARCHAR(40) NOT NULL DEFAULT 'APPGESTAO'", "AFTER updated_at");

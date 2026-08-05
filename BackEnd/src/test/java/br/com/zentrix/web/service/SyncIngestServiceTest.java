@@ -119,12 +119,47 @@ class SyncIngestServiceTest {
         assertEquals(true, jdbcTemplate.lastBatchSql.contains("cost_price"));
     }
 
+    @Test
+    void acceptsCurrentPdvSupplierAndComandaColumns() {
+        SyncPushRequest request = new SyncPushRequest(
+                "tenant-1", "Tenant", "store-1", "Loja", "device-1", "PDV 1", "pdv-1",
+                "PARTIAL", OffsetDateTime.now(),
+                Map.of(
+                        "suppliers", List.of(Map.of(
+                                "id", 1,
+                                "name", "Fornecedor",
+                                "created_at", "2026-08-05T08:00:00",
+                                "birth_date", "2026-08-05",
+                                "active", true,
+                                "notes", "Cadastro PDV",
+                                "loyalty_points", 0,
+                                "updated_at", "2026-08-05T08:10:00",
+                                "deleted_at", ""
+                        )),
+                        "comandas", List.of(Map.of(
+                                "id", 10,
+                                "nome_cliente", "Mesa 10",
+                                "mesa", "10",
+                                "aberta", true,
+                                "data_abertura", "2026-08-05T08:00:00"
+                        ))
+                )
+        );
+
+        service.ingest(request);
+
+        assertEquals(2, jdbcTemplate.batchCalls);
+        assertEquals(true, jdbcTemplate.batchSqls.stream().anyMatch(sql -> sql.contains("`birth_date`")));
+        assertEquals(true, jdbcTemplate.batchSqls.stream().anyMatch(sql -> sql.contains("`mesa`")));
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         List<Map<String, Object>> existingRevision = List.of();
         List<Map<String, Object>> existingCostPrice = List.of();
         int deleteCalls;
         int batchCalls;
         String lastBatchSql = "";
+        List<String> batchSqls = new java.util.ArrayList<>();
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
@@ -160,6 +195,7 @@ class SyncIngestServiceTest {
         public int[] batchUpdate(String sql, BatchPreparedStatementSetter pss) {
             batchCalls++;
             lastBatchSql = sql;
+            batchSqls.add(sql);
             return new int[pss.getBatchSize()];
         }
     }

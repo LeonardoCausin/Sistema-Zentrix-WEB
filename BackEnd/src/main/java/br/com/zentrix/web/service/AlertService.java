@@ -30,7 +30,23 @@ public class AlertService {
         Number emptyStock = count("SELECT COUNT(*) FROM products WHERE tenant_id = ? AND (? = 'all' OR store_id = ?) AND stock <= 0", tenantId, normalizeStore(storeId), normalizeStore(storeId));
         Number openCash = count("SELECT COUNT(*) FROM cash_sessions WHERE tenant_id = ? AND (? = 'all' OR store_id = ?) AND closed_at IS NULL AND (is_open = TRUE OR UPPER(COALESCE(status, '')) IN ('OPEN', 'ABERTO')) AND COALESCE(opened_at, NOW()) < DATE_SUB(NOW(), INTERVAL 12 HOUR)", tenantId, normalizeStore(storeId), normalizeStore(storeId));
         Number cancelled = count("SELECT COUNT(*) FROM sales WHERE tenant_id = ? AND (? = 'all' OR store_id = ?) AND status = 'CANCELLED' AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)", tenantId, normalizeStore(storeId), normalizeStore(storeId));
-        Number syncFailures = count("SELECT COUNT(*) FROM sync_runs WHERE tenant_id = ? AND (? = 'all' OR store_id = ?) AND status <> 'SUCCESS' AND received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)", tenantId, normalizeStore(storeId), normalizeStore(storeId));
+        Number syncFailures = count("""
+                SELECT COUNT(*)
+                FROM sync_runs sr
+                WHERE sr.tenant_id = ?
+                  AND (? = 'all' OR sr.store_id = ?)
+                  AND sr.status <> 'SUCCESS'
+                  AND sr.received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                  AND sr.received_at > COALESCE((
+                        SELECT MAX(ok.received_at)
+                        FROM sync_runs ok
+                        WHERE ok.tenant_id = sr.tenant_id
+                          AND ok.store_id = sr.store_id
+                          AND ok.mode = sr.mode
+                          AND ok.status = 'SUCCESS'
+                          AND COALESCE(ok.source_id, '') = COALESCE(sr.source_id, '')
+                  ), TIMESTAMP('1000-01-01 00:00:00'))
+                """, tenantId, normalizeStore(storeId), normalizeStore(storeId));
 
         if (emptyStock.intValue() > 0) {
             alerts.add(alert("stock_empty", "danger", "Estoque zerado", emptyStock + " produto(s) sem estoque.", "Ver estoque", "/estoque.html", tenantId, storeId));
@@ -45,7 +61,7 @@ public class AlertService {
             alerts.add(alert("cancelled_sales", "warning", "Cancelamentos elevados", cancelled + " venda(s) canceladas nos últimos 7 dias.", "Ver vendas", "/vendas.html", tenantId, storeId));
         }
         if (syncFailures.intValue() > 0) {
-            alerts.add(alert("sync_failures", "danger", "Falhas de sincronização", syncFailures + " falha(s) recentes de sincronização.", "Ver backups", "/backups.html", tenantId, storeId));
+            alerts.add(alert("sync_failures", "danger", "Falhas de sincronização", syncFailures + " falha(s) recentes de sincronização ainda sem sucesso posterior.", "Ver auditoria", "/auditoria.html", tenantId, storeId));
         }
 
         Map<String, Object> license = licenseService.current(tenantId);
