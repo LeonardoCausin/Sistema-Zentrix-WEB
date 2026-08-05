@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -31,13 +32,26 @@ public class AuthService {
     private final WebDatabaseInitializer initializer;
     private final AuthTokenService authTokenService;
     private final AuditService auditService;
+    private final LicenseAccessService licenseAccessService;
     private final Map<String, LoginAttempt> attempts = new ConcurrentHashMap<>();
 
     public AuthService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, AuthTokenService authTokenService, AuditService auditService) {
+        this(jdbcTemplate, initializer, authTokenService, auditService, null);
+    }
+
+    @Autowired
+    public AuthService(
+            JdbcTemplate jdbcTemplate,
+            WebDatabaseInitializer initializer,
+            AuthTokenService authTokenService,
+            AuditService auditService,
+            LicenseAccessService licenseAccessService
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
         this.authTokenService = authTokenService;
         this.auditService = auditService;
+        this.licenseAccessService = licenseAccessService;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -77,6 +91,9 @@ public class AuthService {
             String storeId = String.valueOf(sessionScope.get("store_id"));
             String sourceId = String.valueOf(sessionScope.get("source_id"));
             List<String> permissions = permissionsFrom(user.get("permissions_json"));
+            if (licenseAccessService != null) {
+                licenseAccessService.requireActive(tenantId, "/api/dashboard");
+            }
 
             attempts.remove(loginName.toLowerCase());
             jdbcTemplate.update("""
