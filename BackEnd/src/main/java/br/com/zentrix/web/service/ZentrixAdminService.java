@@ -74,7 +74,9 @@ public class ZentrixAdminService {
         String q = "%" + text(search).toLowerCase() + "%";
         String normalizedStatus = text(status);
         return jdbcTemplate.queryForList("""
-                SELECT t.id AS tenantId, t.name, t.document, t.status, t.created_at AS createdAt, t.updated_at AS updatedAt,
+                SELECT t.id AS tenantId, t.name, t.document, t.status,
+                       t.block_reason AS blockReason, t.blocked_at AS blockedAt, t.blocked_by AS blockedBy,
+                       t.created_at AS createdAt, t.updated_at AS updatedAt,
                        l.id AS licenseId, l.plan_name AS planName, l.status AS licenseStatus,
                        l.starts_at AS startsAt, l.expires_at AS expiresAt, l.max_stores AS maxStores, l.max_devices AS maxDevices,
                        COALESCE(stores.count, 0) AS stores,
@@ -103,7 +105,13 @@ public class ZentrixAdminService {
     public Map<String, Object> client(String tenantId) {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");
-        List<Map<String, Object>> tenants = jdbcTemplate.queryForList("SELECT id AS tenantId, name, document, status, created_at AS createdAt, updated_at AS updatedAt FROM tenants WHERE id = ?", tenant);
+        List<Map<String, Object>> tenants = jdbcTemplate.queryForList("""
+                SELECT id AS tenantId, name, document, status, block_reason AS blockReason,
+                       blocked_at AS blockedAt, blocked_by AS blockedBy,
+                       created_at AS createdAt, updated_at AS updatedAt
+                FROM tenants
+                WHERE id = ?
+                """, tenant);
         if (tenants.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cliente nao encontrado.");
         }
@@ -183,6 +191,13 @@ public class ZentrixAdminService {
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, tenant, plan, status, startsAt, expiresAt, maxStores, maxDevices);
         Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        if (boolValue(request == null ? null : request.get("activateClient")) && "ACTIVE".equalsIgnoreCase(status)) {
+            jdbcTemplate.update("""
+                    UPDATE tenants
+                    SET status = 'ACTIVE', block_reason = NULL, blocked_at = NULL, blocked_by = NULL
+                    WHERE id = ?
+                    """, tenant);
+        }
         auditService.recordCurrent("ZENTRIX_ADMIN_LICENSE_CREATED", "licenses", String.valueOf(id),
                 "Assinatura criada/renovada pelo painel administrativo Zentrix.", "ALERTA", value(request, "reason"));
         panelCacheService.clear();
@@ -203,7 +218,22 @@ public class ZentrixAdminService {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");
         String status = required(value(request, "status"), "status").toUpperCase();
-        int updated = jdbcTemplate.update("UPDATE tenants SET status = ? WHERE id = ?", status, tenant);
+        if (!validStatus(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status invalido.");
+        }
+        boolean restricted = restrictedStatus(status);
+        String reason = text(value(request, "reason"));
+        if (restricted && reason.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo do bloqueio.");
+        }
+        String operator = AuthContext.current()
+                .map(AuthTokenService.SessionToken::username)
+                .orElse("zentrix-admin");
+        int updated = jdbcTemplate.update("""
+                UPDATE tenants
+                SET status = ?, block_reason = ?, blocked_at = ?, blocked_by = ?
+                WHERE id = ?
+                """, status, restricted ? reason : null, restricted ? Timestamp.valueOf(LocalDateTime.now()) : null, restricted ? operator : null, tenant);
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cliente nao encontrado.");
         }
@@ -217,9 +247,14 @@ public class ZentrixAdminService {
                     """, status, tenant);
         }
         auditService.recordCurrent("ZENTRIX_ADMIN_CLIENT_STATUS_UPDATED", "tenants", tenant,
-                "Status do cliente alterado para " + status + ".", "CRITICO", value(request, "reason"));
+                "Status do cliente alterado para " + status + ".", "CRITICO", reason);
         panelCacheService.clear();
-        return Map.of("tenantId", tenant, "status", status, "updated", updated);
+        return Map.of(
+                "tenantId", tenant,
+                "status", status,
+                "updated", updated,
+                "blockReason", restricted ? reason : ""
+        );
     }
 
     @Transactional
@@ -257,6 +292,14 @@ public class ZentrixAdminService {
         return Math.max(1, Math.min(limit <= 0 ? 100 : limit, 300));
     }
 
+    private boolean validStatus(String status) {
+        return List.of("ACTIVE", "BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE").contains(status);
+    }
+
+    private boolean restrictedStatus(String status) {
+        return !"ACTIVE".equalsIgnoreCase(status);
+    }
+
     private String value(Map<String, Object> request, String key) {
         return request == null || request.get(key) == null ? "" : String.valueOf(request.get(key)).trim();
     }
@@ -287,6 +330,14 @@ public class ZentrixAdminService {
         } catch (NumberFormatException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Numero invalido.");
         }
+    }
+
+    private boolean boolValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        String text = String.valueOf(value == null ? "" : value).trim();
+        return "true".equalsIgnoreCase(text) || "1".equals(text) || "on".equalsIgnoreCase(text);
     }
 
     private Timestamp timestampOrNull(String value) {

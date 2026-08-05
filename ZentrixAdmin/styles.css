@@ -64,6 +64,11 @@ button.danger {
   color: #ffc8c8;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: .68;
+}
+
 input,
 select,
 textarea {
@@ -201,6 +206,10 @@ label {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.compact-grid {
+  margin-bottom: 14px;
+}
+
 .card,
 .panel {
   background: var(--panel);
@@ -314,6 +323,75 @@ th {
   flex-wrap: wrap;
 }
 
+.danger-text {
+  color: #ffc8c8;
+}
+
+.notice {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .03);
+}
+
+.notice span {
+  color: var(--muted);
+}
+
+.danger-note {
+  border-color: rgba(239, 83, 80, .55);
+}
+
+.success-note {
+  border-color: rgba(54, 194, 161, .45);
+}
+
+.check-field {
+  align-content: center;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  color: var(--text);
+}
+
+.check-field input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
+.skeleton-line,
+.skeleton-grid span {
+  display: block;
+  min-height: 18px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--panel-2), #1a304c, var(--panel-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.1s linear infinite;
+}
+
+.skeleton-line {
+  width: 46%;
+  margin-bottom: 12px;
+}
+
+.skeleton-line.wide {
+  width: 72%;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.skeleton-grid span {
+  min-height: 82px;
+}
+
 .toast {
   position: fixed;
   right: 20px;
@@ -336,6 +414,15 @@ dialog {
 
 dialog::backdrop {
   background: rgba(0, 0, 0, .6);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .modal-card {

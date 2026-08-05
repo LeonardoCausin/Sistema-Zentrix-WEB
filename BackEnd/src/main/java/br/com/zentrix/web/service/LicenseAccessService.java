@@ -24,14 +24,15 @@ public class LicenseAccessService {
             return;
         }
         initializer.ensureReady();
-        String tenantStatus = jdbcTemplate.query("""
-                SELECT status
+        Map<String, Object> tenant = jdbcTemplate.queryForList("""
+                SELECT status, block_reason AS blockReason
                 FROM tenants
                 WHERE id = ?
                 LIMIT 1
-                """, (rs, rowNum) -> rs.getString(1), tenantId).stream().findFirst().orElse("ACTIVE");
+                """, tenantId).stream().findFirst().orElse(Map.of("status", "ACTIVE"));
+        String tenantStatus = String.valueOf(tenant.getOrDefault("status", "ACTIVE"));
         if (blocked(tenantStatus)) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Cliente bloqueado. Regularize a assinatura para acessar o painel.");
+            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, blockedMessage(tenant.get("blockReason")));
         }
 
         List<Map<String, Object>> licenses = jdbcTemplate.queryForList("""
@@ -47,12 +48,20 @@ public class LicenseAccessService {
         Map<String, Object> license = licenses.get(0);
         String status = String.valueOf(license.get("status"));
         if (blocked(status)) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Assinatura bloqueada ou vencida.");
+            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A assinatura desta loja esta bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.");
         }
         Object expiresAt = license.get("expiresAt");
         if (expiresAt instanceof Timestamp timestamp && timestamp.toLocalDateTime().isBefore(LocalDateTime.now())) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Assinatura vencida.");
+            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A assinatura desta loja esta vencida. Entre em contato com o suporte Zentrix para regularizar o acesso.");
         }
+    }
+
+    private String blockedMessage(Object reason) {
+        String text = reason == null ? "" : String.valueOf(reason).trim();
+        if (text.isBlank()) {
+            return "A loja esta bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.";
+        }
+        return "A loja esta bloqueada: " + text + ". Entre em contato com o suporte Zentrix para regularizar o acesso.";
     }
 
     private boolean isAdminPath(String path) {

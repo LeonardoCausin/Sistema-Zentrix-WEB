@@ -69,6 +69,11 @@ public class ApiExceptionHandler {
         if (exception.getStatusCode().value() == HttpStatus.FORBIDDEN.value()) {
             return exception.getReason() == null ? "Você não tem permissão para fazer isso." : exception.getReason();
         }
+        if (exception.getStatusCode().value() == HttpStatus.PAYMENT_REQUIRED.value()) {
+            return exception.getReason() == null
+                    ? "A assinatura desta loja precisa ser regularizada para acessar o painel."
+                    : exception.getReason();
+        }
         if (exception.getStatusCode().value() == HttpStatus.BAD_REQUEST.value()
                 || exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
             return exception.getReason() == null ? "Confira os dados informados." : exception.getReason();

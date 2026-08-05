@@ -868,6 +868,46 @@
   animation: skeleton-sweep 1.25s infinite;
 }
 
+.account-blocked-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 17, 31, 0.92);
+}
+
+.account-blocked-card {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 40%);
+  border-left: 5px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.account-blocked-kicker {
+  color: var(--danger);
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: 0.76rem;
+}
+
+.account-blocked-card h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.account-blocked-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

@@ -9,7 +9,8 @@
     session: readSession(),
     overview: null,
     clients: [],
-    support: null
+    support: null,
+    viewRequestId: 0
   };
 
   const els = {
@@ -35,7 +36,7 @@
   els.loginForm.addEventListener("submit", login);
   els.logoutButton.addEventListener("click", logout);
   els.refreshButton.addEventListener("click", () => loadView(true));
-  els.storeSelect.addEventListener("change", () => state.view === "support" && loadSupport());
+  els.storeSelect.addEventListener("change", () => state.view === "support" && loadView(true));
 
   boot();
 
@@ -110,20 +111,31 @@
   }
 
   async function loadView(fresh) {
+    const requestId = ++state.viewRequestId;
+    renderLoading();
+    setBusy(true);
     try {
       if (state.view === "dashboard") await loadDashboard(fresh);
       if (state.view === "clients") await loadClients(fresh);
       if (state.view === "subscriptions") await loadSubscriptions(fresh);
       if (state.view === "support") await loadSupport();
     } catch (error) {
+      if (requestId === state.viewRequestId) {
+        renderLoadError(error);
+      }
       toast(error.message, true);
+    } finally {
+      if (requestId === state.viewRequestId) {
+        setBusy(false);
+      }
     }
   }
 
   async function loadStores() {
     try {
       const stores = await api("/stores");
-      els.storeSelect.innerHTML = stores.map((store) => `<option value="${escAttr(store.id)}">${esc(store.name || store.id)}</option>`).join("");
+      const options = [{ id: "all", name: "Todas as lojas" }, ...(Array.isArray(stores) ? stores : []).filter((store) => store && store.id !== "all")];
+      els.storeSelect.innerHTML = options.map((store) => `<option value="${escAttr(store.id)}">${esc(store.name || store.id)}</option>`).join("");
     } catch (error) {
       els.storeSelect.innerHTML = '<option value="all">Todas as lojas</option>';
     }
@@ -186,27 +198,68 @@
     }
     els.viewHost.innerHTML = `
       <section class="panel" style="margin-top:0">
-        <div class="panel-title"><div><h2>Assinaturas</h2><span class="muted">Controle comercial dos clientes</span></div></div>
-        <table>
-          <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Limites</th><th>Acoes</th></tr></thead>
-          <tbody>${state.clients.map((row) => `
-            <tr>
-              <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.tenantId)}</span></td>
-              <td>${esc(row.planName || "Sem plano")}</td>
-              <td>${tag(row.licenseStatus || row.status)}</td>
-              <td>${date(row.expiresAt)}</td>
-              <td>${esc(row.maxStores || 0)} lojas / ${esc(row.maxDevices || 0)} disp.</td>
-              <td class="actions">
-                <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
-                <button type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
-                <button type="button" data-action="activate-client" data-tenant="${escAttr(row.tenantId)}">Liberar</button>
-              </td>
-            </tr>
-          `).join("") || emptyRow(6)}</tbody>
-        </table>
+        <div class="panel-title">
+          <div><h2>Assinaturas</h2><span class="muted">Controle comercial dos clientes</span></div>
+          <div class="toolbar">
+            <input id="subscriptionSearch" placeholder="Buscar cliente" />
+            <select id="subscriptionFilter" aria-label="Filtrar status">
+              <option value="all">Todos</option>
+              <option value="active">Ativos</option>
+              <option value="attention">Vencendo</option>
+              <option value="blocked">Bloqueados</option>
+              <option value="expired">Vencidos</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid two compact-grid">
+          ${metric("Bloqueados", state.clients.filter((row) => restrictedStatus(row.status) || restrictedStatus(row.licenseStatus)).length, "Clientes sem acesso")}
+          ${metric("Vencendo", state.clients.filter((row) => daysUntil(row.expiresAt) >= 0 && daysUntil(row.expiresAt) <= 7).length, "Proximos 7 dias")}
+        </div>
+        <div id="subscriptionsTable">${subscriptionsTable(state.clients)}</div>
       </section>
     `;
+    document.getElementById("subscriptionSearch").addEventListener("input", filterSubscriptions);
+    document.getElementById("subscriptionFilter").addEventListener("change", filterSubscriptions);
     wireCommonActions();
+  }
+
+  function filterSubscriptions() {
+    const q = document.getElementById("subscriptionSearch").value.trim().toLowerCase();
+    const filter = document.getElementById("subscriptionFilter").value;
+    const rows = state.clients.filter((row) => {
+      const searchable = [row.name, row.document, row.tenantId, row.planName].some((value) => String(value || "").toLowerCase().includes(q));
+      if (!searchable) return false;
+      const status = String(row.licenseStatus || row.status || "").toUpperCase();
+      const tenantStatus = String(row.status || "").toUpperCase();
+      const days = daysUntil(row.expiresAt);
+      if (filter === "active") return tenantStatus === "ACTIVE" && status === "ACTIVE";
+      if (filter === "attention") return days >= 0 && days <= 7;
+      if (filter === "blocked") return restrictedStatus(tenantStatus) || restrictedStatus(status);
+      if (filter === "expired") return status === "EXPIRED" || days < 0;
+      return true;
+    });
+    document.getElementById("subscriptionsTable").innerHTML = subscriptionsTable(rows);
+    wireCommonActions();
+  }
+
+  function subscriptionsTable(rows) {
+    return `<table>
+      <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Limites</th><th>Acoes</th></tr></thead>
+      <tbody>${rows.map((row) => `
+        <tr>
+          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.tenantId)}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
+          <td>${esc(row.planName || "Sem plano")}</td>
+          <td>${tag(row.status)} ${tag(row.licenseStatus || "-")}</td>
+          <td>${date(row.expiresAt)}<br><span class="muted">${expirationLabel(row.expiresAt)}</span></td>
+          <td>${esc(row.maxStores || 0)} lojas / ${esc(row.maxDevices || 0)} disp.</td>
+          <td class="actions">
+            <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
+            <button class="danger" type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
+            <button type="button" data-action="activate-client" data-tenant="${escAttr(row.tenantId)}">Liberar</button>
+          </td>
+        </tr>
+      `).join("") || emptyRow(6)}</tbody>
+    </table>`;
   }
 
   async function loadSupport() {
@@ -284,7 +337,19 @@
 
   function wireCommonActions() {
     document.querySelectorAll("[data-action]").forEach((button) => {
-      button.onclick = () => handleAction(button);
+      button.onclick = async () => {
+        if (button.dataset.busy === "true") return;
+        button.dataset.busy = "true";
+        button.disabled = true;
+        try {
+          await handleAction(button);
+        } catch (error) {
+          toast(error.message, true);
+        } finally {
+          button.dataset.busy = "false";
+          button.disabled = false;
+        }
+      };
     });
   }
 
@@ -294,8 +359,8 @@
     if (action === "client-detail") return showClientDetail(button.dataset.tenant);
     if (action === "renew-license") return showLicenseForm(button.dataset.tenant);
     if (action === "activation-code") return showActivationForm(button.dataset.tenant);
-    if (action === "block-client") return updateClientStatus(button.dataset.tenant, "BLOCKED");
-    if (action === "activate-client") return updateClientStatus(button.dataset.tenant, "ACTIVE");
+    if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
+    if (action === "activate-client") return showStatusForm(button.dataset.tenant, "ACTIVE");
     if (action === "normalize-cash") return reasonAction("Normalizar caixas", "/local-admin/cash/normalize-statuses?store=" + encodeURIComponent(els.storeSelect.value), "POST");
     if (action === "clear-sync") return reasonAction("Limpar falhas de sincronizacao", "/local-admin/sync/clear-failures?store=" + encodeURIComponent(els.storeSelect.value), "POST", { days: 7 });
     if (action === "clear-backups") return reasonAction("Limpar backups com erro", "/local-admin/backups/clear-errors?store=" + encodeURIComponent(els.storeSelect.value), "POST");
@@ -324,12 +389,16 @@
     `);
     document.getElementById("clientForm").onsubmit = async (event) => {
       event.preventDefault();
-      await api("/zentrix-admin/clients", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-      closeModal();
-      state.clients = [];
-      state.overview = null;
-      await loadView(true);
-      toast("Cliente criado.");
+      try {
+        await api("/zentrix-admin/clients", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+        closeModal();
+        state.clients = [];
+        state.overview = null;
+        await loadView(true);
+        toast("Cliente criado.");
+      } catch (error) {
+        toast(error.message, true);
+      }
     };
   }
 
@@ -340,6 +409,7 @@
         ${metric("Empresa", detail.name, detail.tenantId)}
         ${metric("Status", detail.status, "Conta")}
       </div>
+      ${detail.blockReason ? `<section class="notice danger-note"><strong>Cliente bloqueado</strong><span>${esc(detail.blockReason)}</span></section>` : ""}
       <section class="panel">
         <h3>Assinaturas</h3>
         ${simpleTable(["Plano", "Status", "Inicio", "Fim", "Limites"], detail.licenses || [], (row) => [row.planName, tag(row.status), date(row.startsAt), date(row.expiresAt), `${row.maxStores} lojas / ${row.maxDevices} disp.`])}
@@ -364,17 +434,28 @@
         ${field("expiresAt", "Vencimento", "date")}
         ${field("maxStores", "Max lojas", "number", false, "1")}
         ${field("maxDevices", "Max dispositivos", "number", false, "1")}
+        <label class="check-field full">
+          <input name="activateClient" type="checkbox" value="true" checked />
+          Liberar cliente se a assinatura ficar ACTIVE
+        </label>
         <label class="full">Motivo<textarea name="reason">Renovacao de assinatura.</textarea></label>
         <button class="primary full" type="submit">Salvar assinatura</button>
       </form>
     `);
     document.getElementById("licenseForm").onsubmit = async (event) => {
       event.preventDefault();
-      await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/licenses`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-      closeModal();
-      state.clients = [];
-      await loadView(true);
-      toast("Assinatura atualizada.");
+      try {
+        const data = formData(event.currentTarget);
+        data.activateClient = data.activateClient === "true";
+        await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/licenses`, { method: "POST", body: JSON.stringify(data) });
+        closeModal();
+        state.clients = [];
+        state.overview = null;
+        await loadView(true);
+        toast("Assinatura atualizada.");
+      } catch (error) {
+        toast(error.message, true);
+      }
     };
   }
 
@@ -391,20 +472,57 @@
     `);
     document.getElementById("activationForm").onsubmit = async (event) => {
       event.preventDefault();
-      const result = await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/activation-codes`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-      document.getElementById("activationResult").innerHTML = `<section class="panel"><h3>Codigo gerado</h3><strong style="font-size:32px">${esc(result.code)}</strong><p class="muted">Expira em ${date(result.expiresAt)}</p></section>`;
-      state.clients = [];
+      try {
+        const result = await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/activation-codes`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+        document.getElementById("activationResult").innerHTML = `<section class="panel"><h3>Codigo gerado</h3><strong style="font-size:32px">${esc(result.code)}</strong><p class="muted">Expira em ${date(result.expiresAt)}</p></section>`;
+        state.clients = [];
+      } catch (error) {
+        toast(error.message, true);
+      }
     };
   }
 
-  async function updateClientStatus(tenantId, status) {
-    const reason = prompt("Motivo da alteracao:");
-    if (!reason) return;
+  function showStatusForm(tenantId, status) {
+    const blocking = restrictedStatus(status);
+    openModal(blocking ? "Bloquear cliente" : "Liberar cliente", `
+      <form id="statusForm" class="form-grid">
+        <section class="notice ${blocking ? "danger-note" : "success-note"} full">
+          <strong>${blocking ? "A loja ficara sem acesso ao AppGestao." : "A loja voltara a acessar o AppGestao."}</strong>
+          <span>${blocking ? "O motivo informado sera exibido na tela do cliente." : "O motivo anterior de bloqueio sera removido."}</span>
+        </section>
+        <label>Status
+          <select name="status">
+            <option value="${escAttr(status)}">${esc(status)}</option>
+          </select>
+        </label>
+        <label class="check-field">
+          <input name="updateLicense" type="checkbox" value="true" checked />
+          Atualizar tambem a assinatura mais recente
+        </label>
+        <label class="full">Motivo<textarea name="reason" required>${blocking ? "Bloqueio administrativo por pendencia de assinatura." : "Liberacao administrativa apos regularizacao."}</textarea></label>
+        <button class="primary full" type="submit">${blocking ? "Bloquear cliente" : "Liberar cliente"}</button>
+      </form>
+    `);
+    document.getElementById("statusForm").onsubmit = async (event) => {
+      event.preventDefault();
+      const data = formData(event.currentTarget);
+      data.updateLicense = data.updateLicense === "true";
+      try {
+        await updateClientStatus(tenantId, data);
+        closeModal();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    };
+  }
+
+  async function updateClientStatus(tenantId, data) {
     await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/status`, {
       method: "PUT",
-      body: JSON.stringify({ status, updateLicense: true, reason })
+      body: JSON.stringify(data)
     });
     state.clients = [];
+    state.overview = null;
     await loadView(true);
     toast("Status atualizado.");
   }
@@ -421,10 +539,14 @@
     `);
     document.getElementById("closeCashForm").onsubmit = async (event) => {
       event.preventDefault();
-      await api(`/local-admin/cash/${encodeURIComponent(id)}/close?store=${encodeURIComponent(store)}`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
-      closeModal();
-      await loadSupport();
-      toast("Caixa fechado.");
+      try {
+        await api(`/local-admin/cash/${encodeURIComponent(id)}/close?store=${encodeURIComponent(store)}`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+        closeModal();
+        await loadSupport();
+        toast("Caixa fechado.");
+      } catch (error) {
+        toast(error.message, true);
+      }
     };
   }
 
@@ -447,6 +569,23 @@
   function setHeading(title, subtitle) {
     els.pageTitle.textContent = title;
     els.pageSubtitle.textContent = subtitle;
+  }
+
+  function setBusy(busy) {
+    els.refreshButton.disabled = Boolean(busy);
+    els.viewHost.setAttribute("aria-busy", String(Boolean(busy)));
+  }
+
+  function renderLoading() {
+    els.viewHost.innerHTML = `
+      <section class="panel" style="margin-top:0">
+        <div class="skeleton-line wide"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-grid">
+          <span></span><span></span><span></span>
+        </div>
+      </section>
+    `;
   }
 
   function metric(label, value, note) {
@@ -510,12 +649,15 @@
         const body = await response.json();
         message = body.message || body.error || message;
       } catch (error) {
-        // Mantem mensagem padrao.
+        message = await response.text().catch(() => message) || message;
       }
-      throw new Error(message);
+      const apiError = new Error(message);
+      apiError.status = response.status;
+      throw apiError;
     }
     if (response.status === 204) return null;
-    return response.json();
+    const contentType = response.headers.get("Content-Type") || "";
+    return contentType.toLowerCase().includes("application/json") ? response.json() : response.text();
   }
 
   function renderLoadError(error) {
@@ -545,6 +687,29 @@
   function date(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").replace(".0", "");
+  }
+
+  function daysUntil(value) {
+    if (!value) return 999999;
+    const expires = new Date(String(value).replace(" ", "T"));
+    if (Number.isNaN(expires.getTime())) return 999999;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expires.setHours(0, 0, 0, 0);
+    return Math.ceil((expires.getTime() - today.getTime()) / 86400000);
+  }
+
+  function expirationLabel(value) {
+    const days = daysUntil(value);
+    if (days === 999999) return "Sem vencimento";
+    if (days < 0) return "Vencido ha " + Math.abs(days) + " dia(s)";
+    if (days === 0) return "Vence hoje";
+    return "Faltam " + days + " dia(s)";
+  }
+
+  function restrictedStatus(value) {
+    const status = String(value || "").toUpperCase();
+    return ["BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE"].includes(status);
   }
 
   function emptyRow(cols) {

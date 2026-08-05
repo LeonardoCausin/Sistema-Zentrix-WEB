@@ -119,6 +119,9 @@ public class WebDatabaseInitializer {
                     name VARCHAR(180) NOT NULL,
                     document VARCHAR(40),
                     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    block_reason VARCHAR(255) NULL,
+                    blocked_at DATETIME NULL,
+                    blocked_by VARCHAR(80) NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (id),
@@ -526,6 +529,10 @@ public class WebDatabaseInitializer {
     }
 
     private void migrateDomainColumns() {
+        ensureColumn("tenants", "block_reason", "VARCHAR(255) NULL", "AFTER status");
+        ensureColumn("tenants", "blocked_at", "DATETIME NULL", "AFTER block_reason");
+        ensureColumn("tenants", "blocked_by", "VARCHAR(80) NULL", "AFTER blocked_at");
+
         ensureColumn("audit_log", "risk_level", "VARCHAR(30) NULL", "AFTER created_at");
         ensureColumn("audit_log", "previous_value", "TEXT NULL", "AFTER risk_level");
         ensureColumn("audit_log", "new_value", "TEXT NULL", "AFTER previous_value");

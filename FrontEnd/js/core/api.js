@@ -74,7 +74,12 @@
     }
     if (!response.ok) {
       const message = await errorMessage(response);
-      throw new Error(message || "Não conseguimos carregar as informações agora. Tente novamente.");
+      const error = new Error(message || "Não conseguimos carregar as informações agora. Tente novamente.");
+      error.status = response.status;
+      if (response.status === 402) {
+        showAccountBlocked(error.message);
+      }
+      throw error;
     }
     if (response.status === 204) {
       return null;
@@ -122,6 +127,46 @@
       return "Este endereço ainda não foi liberado para acessar o sistema. Peça ao responsável para liberar o domínio no Zentrix Web.";
     }
     return text;
+  }
+
+  function showAccountBlocked(message) {
+    const safeMessage = friendlyServerMessage(message)
+      || "A assinatura desta loja precisa ser regularizada para acessar o painel.";
+    let blocker = document.getElementById("zentrixAccountBlocked");
+    if (!blocker) {
+      blocker = document.createElement("section");
+      blocker.id = "zentrixAccountBlocked";
+      blocker.className = "account-blocked-screen";
+      blocker.setAttribute("role", "alertdialog");
+      blocker.setAttribute("aria-modal", "true");
+      document.body.appendChild(blocker);
+    }
+    blocker.innerHTML = `
+      <div class="account-blocked-card">
+        <span class="account-blocked-kicker">Acesso interrompido</span>
+        <h1>Loja bloqueada</h1>
+        <p>${escapeHtml(safeMessage)}</p>
+        <button class="button btn-primary" type="button" data-account-blocked-logout>Sair do painel</button>
+      </div>
+    `;
+    document.body.classList.add("account-blocked");
+    const logoutButton = blocker.querySelector("[data-account-blocked-logout]");
+    if (logoutButton) {
+      logoutButton.addEventListener("click", () => {
+        clearSession();
+        window.location.replace(loginPath());
+      });
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[char]));
   }
 
   function withJson(method, path, data, options) {
