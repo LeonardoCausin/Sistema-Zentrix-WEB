@@ -63,7 +63,6 @@ public class LocalAdminService {
                         FROM sync_runs ok
                         WHERE ok.tenant_id = sr.tenant_id
                           AND ok.store_id = sr.store_id
-                          AND ok.mode = sr.mode
                           AND ok.status = 'SUCCESS'
                           AND COALESCE(ok.source_id, '') = COALESCE(sr.source_id, '')
                   ), TIMESTAMP('1000-01-01 00:00:00'))
@@ -115,7 +114,6 @@ public class LocalAdminService {
                         FROM sync_runs ok
                         WHERE ok.tenant_id = sr.tenant_id
                           AND ok.store_id = sr.store_id
-                          AND ok.mode = sr.mode
                           AND ok.status = 'SUCCESS'
                           AND COALESCE(ok.source_id, '') = COALESCE(sr.source_id, '')
                   ), TIMESTAMP('1000-01-01 00:00:00'))
