@@ -45,23 +45,40 @@
       return;
     }
     showApp();
-    await Promise.all([loadStores(), loadView(true)]);
+    await initializeAppData();
   }
 
   async function login(event) {
     event.preventDefault();
     const data = formData(event.currentTarget);
+    let session;
     try {
-      const session = await rawRequest("/auth/login", {
+      session = await rawRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify(data)
       });
-      state.session = session;
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      showApp();
-      await Promise.all([loadStores(), loadView(true)]);
-      toast("Acesso liberado.");
     } catch (error) {
+      toast(error.message, true);
+      return;
+    }
+
+    state.session = session;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    showApp();
+    await initializeAppData();
+    toast("Acesso liberado.");
+  }
+
+  async function initializeAppData() {
+    try {
+      await loadStores();
+    } catch (error) {
+      els.storeSelect.innerHTML = '<option value="all">Todas as lojas</option>';
+    }
+    try {
+      await loadView(true);
+    } catch (error) {
+      renderLoadError(error);
       toast(error.message, true);
     }
   }
@@ -470,14 +487,19 @@
   }
 
   async function rawRequest(path, options) {
-    const response = await fetch(API_BASE + path, {
-      credentials: "include",
-      ...(options || {}),
-      headers: {
-        "Content-Type": "application/json",
-        ...((options && options.headers) || {})
-      }
-    });
+    let response;
+    try {
+      response = await fetch(API_BASE + path, {
+        credentials: "include",
+        ...(options || {}),
+        headers: {
+          "Content-Type": "application/json",
+          ...((options && options.headers) || {})
+        }
+      });
+    } catch (error) {
+      throw new Error("Nao consegui conectar a API do Zentrix. Verifique se o servidor esta online.");
+    }
     if (response.status === 401) {
       logout();
       throw new Error("Sessao expirada.");
@@ -494,6 +516,18 @@
     }
     if (response.status === 204) return null;
     return response.json();
+  }
+
+  function renderLoadError(error) {
+    els.viewHost.innerHTML = `
+      <section class="panel" style="margin-top:0">
+        <div class="panel-title">
+          <div><h2>Não foi possível carregar os dados</h2><span class="muted">${esc(error.message)}</span></div>
+          <button class="primary" type="button" id="retryLoadButton">Tentar novamente</button>
+        </div>
+      </section>
+    `;
+    document.getElementById("retryLoadButton").addEventListener("click", () => loadView(true));
   }
 
   function readSession() {

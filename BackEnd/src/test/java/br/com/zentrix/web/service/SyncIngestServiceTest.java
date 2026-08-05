@@ -153,6 +153,34 @@ class SyncIngestServiceTest {
         assertEquals(true, jdbcTemplate.batchSqls.stream().anyMatch(sql -> sql.contains("`mesa`")));
     }
 
+    @Test
+    void acceptsCurrentPdvFullPayloadWithoutWebOnlyFinancialEntries() {
+        SyncPushRequest request = new SyncPushRequest(
+                "tenant-1", "Tenant", "store-1", "Loja", "device-1", "PDV 1", "pdv-1",
+                "FULL", OffsetDateTime.now(),
+                Map.ofEntries(
+                        Map.entry("users", List.of(Map.of("username", "admin", "password", "x", "display_name", "Admin"))),
+                        Map.entry("suppliers", List.of()),
+                        Map.entry("clients", List.of()),
+                        Map.entry("products", List.of(Map.of("code", "P1", "description", "Produto", "price", "10.00"))),
+                        Map.entry("stock_movements", List.of()),
+                        Map.entry("cash_sessions", List.of(Map.of("id", 1, "cash_id", "001", "operator", "Admin", "opening_balance", "0.00"))),
+                        Map.entry("cash_movements", List.of()),
+                        Map.entry("sales", List.of()),
+                        Map.entry("sale_items", List.of()),
+                        Map.entry("sale_cancellations", List.of()),
+                        Map.entry("comandas", List.of()),
+                        Map.entry("comanda_itens", List.of()),
+                        Map.entry("audit_log", List.of())
+                )
+        );
+
+        service.ingest(request);
+
+        assertEquals(3, jdbcTemplate.batchCalls);
+        assertEquals(13, jdbcTemplate.deleteCalls);
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         List<Map<String, Object>> existingRevision = List.of();
         List<Map<String, Object>> existingCostPrice = List.of();

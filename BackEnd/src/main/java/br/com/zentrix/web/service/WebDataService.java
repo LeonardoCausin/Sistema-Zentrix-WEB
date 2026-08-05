@@ -847,7 +847,7 @@ public class WebDataService {
         Map<String, Object> summary = rows.isEmpty() ? new LinkedHashMap<>() : rows.get(0);
         summary.putIfAbsent("status", "WAITING");
         summary.putIfAbsent("progress", 0);
-        summary.put("recentFailures", number("SELECT COUNT(*) FROM sync_runs WHERE status <> 'SUCCESS' AND " + filter.sql() + " AND received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)", filter.args()));
+        summary.put("recentFailures", unresolvedSyncFailures(tenantId, store));
         Filter deviceFilter = scopeFilter(tenantId, store, "td");
         List<Map<String, Object>> devices = jdbcTemplate.query("""
                 SELECT td.source_id, td.id AS device_id, td.last_seen_at,
@@ -1339,6 +1339,27 @@ public class WebDataService {
                 LIMIT 1
                 """.formatted(filter.sql()), (rs, rowNum) -> rs.getString(1), filter.argsArray());
         return result.isEmpty() ? null : result.get(0);
+    }
+
+    private Number unresolvedSyncFailures(String tenantId, String store) {
+        String normalizedStore = normalizeStore(store);
+        return number("""
+                SELECT COUNT(*)
+                FROM sync_runs sr
+                WHERE sr.tenant_id = ?
+                  AND (? IS NULL OR sr.store_id = ?)
+                  AND sr.status <> 'SUCCESS'
+                  AND sr.received_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                  AND sr.received_at > COALESCE((
+                        SELECT MAX(ok.received_at)
+                        FROM sync_runs ok
+                        WHERE ok.tenant_id = sr.tenant_id
+                          AND ok.store_id = sr.store_id
+                          AND ok.mode = sr.mode
+                          AND ok.status = 'SUCCESS'
+                          AND COALESCE(ok.source_id, '') = COALESCE(sr.source_id, '')
+                  ), TIMESTAMP('1000-01-01 00:00:00'))
+                """, tenantId, normalizedStore, normalizedStore);
     }
 
     private Object[] withFirstArg(Object first, Object[] rest) {

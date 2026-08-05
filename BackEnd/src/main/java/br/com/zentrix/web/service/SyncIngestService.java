@@ -49,7 +49,7 @@ public class SyncIngestService {
             .collect(Collectors.toUnmodifiableMap(TableSpec::name, spec -> spec));
     private static final Set<String> FULL_REQUIRED_TABLES = Set.of(
             "users", "clients", "products", "stock_movements", "cash_sessions", "cash_movements",
-            "sales", "sale_items", "sale_cancellations", "financial_entries"
+            "sales", "sale_items", "sale_cancellations"
     );
 
     private final JdbcTemplate jdbcTemplate;
