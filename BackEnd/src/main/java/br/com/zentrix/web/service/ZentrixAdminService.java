@@ -4,6 +4,7 @@ import br.com.zentrix.web.dto.ActivationCodeRequest;
 import br.com.zentrix.web.dto.ProvisionTenantRequest;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ZentrixAdminService {
+    private static final List<PlanDefinition> PLANS = List.of(
+            new PlanDefinition("BASICO", "Basico", 1, 1, "Entrada para uma loja com um PDV."),
+            new PlanDefinition("INTERMEDIARIO", "Intermediario", 2, 3, "Operacao em crescimento com mais PDVs."),
+            new PlanDefinition("PRO", "Pro", 5, 10, "Operacao multi-loja com maior escala.")
+    );
+
     private final JdbcTemplate jdbcTemplate;
     private final WebDatabaseInitializer initializer;
     private final ProvisioningService provisioningService;
@@ -66,7 +73,40 @@ public class ZentrixAdminService {
         response.put("stores", number("SELECT COUNT(*) FROM tenant_stores"));
         response.put("devices", number("SELECT COUNT(*) FROM tenant_devices"));
         response.put("recentClients", clients("", "all", 8));
+        response.put("expirationAlerts", expirationAlerts());
+        response.put("plans", plans());
         return response;
+    }
+
+    public List<Map<String, Object>> plans() {
+        return PLANS.stream().map(plan -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("code", plan.code());
+            row.put("name", plan.name());
+            row.put("maxStores", plan.maxStores());
+            row.put("maxDevices", plan.maxDevices());
+            row.put("description", plan.description());
+            return row;
+        }).toList();
+    }
+
+    public List<Map<String, Object>> expirationAlerts() {
+        initializer.ensureReady();
+        return jdbcTemplate.queryForList("""
+                SELECT t.id AS tenantId, t.name, l.plan_name AS planName, l.expires_at AS expiresAt,
+                       DATEDIFF(DATE(l.expires_at), CURRENT_DATE()) AS daysLeft
+                FROM licenses l
+                JOIN (
+                    SELECT tenant_id, MAX(id) AS id
+                    FROM licenses
+                    GROUP BY tenant_id
+                ) latest ON latest.id = l.id
+                JOIN tenants t ON t.id = l.tenant_id
+                WHERE UPPER(l.status) = 'ACTIVE'
+                  AND l.expires_at IS NOT NULL
+                  AND DATEDIFF(DATE(l.expires_at), CURRENT_DATE()) IN (1, 3, 7)
+                ORDER BY l.expires_at ASC, t.name
+                """);
     }
 
     public List<Map<String, Object>> clients(String search, String status, int limit) {
@@ -177,15 +217,16 @@ public class ZentrixAdminService {
     public Map<String, Object> createLicense(String tenantId, Map<String, Object> request) {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");
-        String plan = defaultValue(value(request, "planName"), "BASICO");
+        String plan = normalizePlan(defaultValue(value(request, "planName"), "BASICO"));
+        PlanDefinition planDefinition = planDefinition(plan);
         String status = defaultValue(value(request, "licenseStatus"), defaultValue(value(request, "status"), "ACTIVE"));
         Timestamp startsAt = timestampOrNull(value(request, "startsAt"));
         if (startsAt == null) {
             startsAt = Timestamp.valueOf(LocalDateTime.now());
         }
         Timestamp expiresAt = timestampOrNull(value(request, "expiresAt"));
-        int maxStores = intValue(request.get("maxStores"), 1);
-        int maxDevices = intValue(request.get("maxDevices"), 1);
+        int maxStores = intValue(request.get("maxStores"), planDefinition.maxStores());
+        int maxDevices = intValue(request.get("maxDevices"), planDefinition.maxDevices());
         jdbcTemplate.update("""
                 INSERT INTO licenses (tenant_id, plan_name, status, starts_at, expires_at, max_stores, max_devices)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -211,6 +252,88 @@ public class ZentrixAdminService {
                 "maxStores", maxStores,
                 "maxDevices", maxDevices
         );
+    }
+
+    public List<Map<String, Object>> clientHistory(String tenantId) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        ensureTenantExists(tenant);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.addAll(jdbcTemplate.queryForList("""
+                SELECT 'Assinatura' AS type, CONCAT('Plano ', plan_name, ' - ', status) AS title,
+                       CONCAT('Limites: ', max_stores, ' loja(s) / ', max_devices, ' PDV(s)') AS description,
+                       created_at AS createdAt
+                FROM licenses
+                WHERE tenant_id = ?
+                ORDER BY created_at DESC
+                LIMIT 20
+                """, tenant));
+        rows.addAll(jdbcTemplate.queryForList("""
+                SELECT 'Auditoria' AS type, acao AS title, COALESCE(details, reason, '-') AS description,
+                       created_at AS createdAt
+                FROM audit_log
+                WHERE entity_id = ? OR details LIKE ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 20
+                """, tenant, "%" + tenant + "%"));
+        rows.sort((left, right) -> String.valueOf(right.get("createdAt")).compareTo(String.valueOf(left.get("createdAt"))));
+        return rows.stream().limit(30).toList();
+    }
+
+    public Map<String, Object> clientHealth(String tenantId) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        ensureTenantExists(tenant);
+        List<Map<String, Object>> stores = jdbcTemplate.queryForList("""
+                SELECT ts.id AS storeId, ts.name, ts.source_id AS sourceId, ts.status,
+                       (SELECT sr.received_at FROM sync_runs sr WHERE sr.tenant_id = ts.tenant_id AND sr.store_id = ts.id ORDER BY sr.received_at DESC, sr.id DESC LIMIT 1) AS lastSyncAt,
+                       (SELECT sr.status FROM sync_runs sr WHERE sr.tenant_id = ts.tenant_id AND sr.store_id = ts.id ORDER BY sr.received_at DESC, sr.id DESC LIMIT 1) AS lastSyncStatus,
+                       (SELECT br.created_at FROM backup_runs br WHERE br.tenant_id = ts.tenant_id AND br.store_id = ts.id ORDER BY br.created_at DESC, br.id DESC LIMIT 1) AS lastBackupAt,
+                       (SELECT br.status FROM backup_runs br WHERE br.tenant_id = ts.tenant_id AND br.store_id = ts.id ORDER BY br.created_at DESC, br.id DESC LIMIT 1) AS lastBackupStatus,
+                       (SELECT COUNT(*) FROM tenant_devices td WHERE td.tenant_id = ts.tenant_id AND td.store_id = ts.id AND UPPER(COALESCE(td.status, 'ACTIVE')) = 'ACTIVE') AS activeDevices,
+                       (SELECT MAX(td.last_seen_at) FROM tenant_devices td WHERE td.tenant_id = ts.tenant_id AND td.store_id = ts.id) AS lastDeviceSeenAt
+                FROM tenant_stores ts
+                WHERE ts.tenant_id = ?
+                ORDER BY ts.name
+                """, tenant);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("tenantId", tenant);
+        response.put("stores", stores);
+        response.put("storeCount", stores.size());
+        response.put("activeDevices", stores.stream().mapToLong(row -> longValue(row.get("activeDevices"))).sum());
+        response.put("storesWithoutSync", stores.stream().filter(row -> row.get("lastSyncAt") == null).count());
+        response.put("storesWithoutBackup", stores.stream().filter(row -> row.get("lastBackupAt") == null).count());
+        return response;
+    }
+
+    public Map<String, Object> testClientAccess(String tenantId) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        Map<String, Object> client = client(tenant);
+        String tenantStatus = String.valueOf(client.getOrDefault("status", "ACTIVE"));
+        if (restrictedStatus(tenantStatus)) {
+            return Map.of("allowed", false, "tenantId", tenant, "message", "Cliente bloqueado: " + client.getOrDefault("blockReason", "sem motivo informado."));
+        }
+        List<Map<String, Object>> licenses = jdbcTemplate.queryForList("""
+                SELECT status, expires_at AS expiresAt
+                FROM licenses
+                WHERE tenant_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, tenant);
+        if (licenses.isEmpty()) {
+            return Map.of("allowed", true, "tenantId", tenant, "message", "Cliente sem assinatura cadastrada. Acesso permitido por compatibilidade.");
+        }
+        Map<String, Object> license = licenses.get(0);
+        String licenseStatus = String.valueOf(license.get("status"));
+        Object expiresAt = license.get("expiresAt");
+        if (restrictedStatus(licenseStatus)) {
+            return Map.of("allowed", false, "tenantId", tenant, "message", "Assinatura bloqueada: " + licenseStatus + ".");
+        }
+        if (expiresAt instanceof Timestamp timestamp && timestamp.toLocalDateTime().isBefore(LocalDateTime.now())) {
+            return Map.of("allowed", false, "tenantId", tenant, "message", "Assinatura vencida em " + timestamp + ".");
+        }
+        return Map.of("allowed", true, "tenantId", tenant, "message", "Acesso liberado para o cliente.");
     }
 
     @Transactional
@@ -292,12 +415,44 @@ public class ZentrixAdminService {
         return Math.max(1, Math.min(limit <= 0 ? 100 : limit, 300));
     }
 
+    private String normalizePlan(String plan) {
+        String value = text(plan).toUpperCase().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U");
+        if (value.equals("BASICO") || value.equals("BASIC")) {
+            return "BASICO";
+        }
+        if (value.equals("INTERMEDIARIO") || value.equals("INTERMEDIARIO")) {
+            return "INTERMEDIARIO";
+        }
+        if (value.equals("PRO") || value.equals("PROFISSIONAL")) {
+            return "PRO";
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Plano invalido.");
+    }
+
+    private PlanDefinition planDefinition(String plan) {
+        return PLANS.stream()
+                .filter(item -> item.code().equalsIgnoreCase(plan))
+                .findFirst()
+                .orElse(PLANS.get(0));
+    }
+
     private boolean validStatus(String status) {
         return List.of("ACTIVE", "BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE").contains(status);
     }
 
     private boolean restrictedStatus(String status) {
         return !"ACTIVE".equalsIgnoreCase(status);
+    }
+
+    private long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
     }
 
     private String value(Map<String, Object> request, String key) {
@@ -353,5 +508,8 @@ public class ZentrixAdminService {
         } catch (RuntimeException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Data invalida.");
         }
+    }
+
+    private record PlanDefinition(String code, String name, int maxStores, int maxDevices, String description) {
     }
 }

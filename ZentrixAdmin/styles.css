@@ -206,6 +206,10 @@ label {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .compact-grid {
   margin-bottom: 14px;
 }
@@ -323,6 +327,35 @@ th {
   flex-wrap: wrap;
 }
 
+.empty-state {
+  min-height: 82px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.timeline {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline li {
+  display: grid;
+  gap: 4px;
+  border-left: 3px solid var(--primary);
+  padding: 8px 0 8px 12px;
+}
+
+.timeline span {
+  color: var(--muted);
+}
+
 .danger-text {
   color: #ffc8c8;
 }
@@ -427,6 +460,8 @@ dialog::backdrop {
 
 .modal-card {
   width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -456,6 +491,7 @@ dialog::backdrop {
 
   .grid,
   .two,
+  .three,
   .form-grid {
     grid-template-columns: 1fr;
   }

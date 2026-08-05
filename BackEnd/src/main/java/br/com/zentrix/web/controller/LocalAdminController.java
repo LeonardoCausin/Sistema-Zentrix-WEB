@@ -99,6 +99,10 @@ public class LocalAdminController {
 
     private void requireAccess(HttpServletRequest request) {
         accessService.requireLocal(request);
-        permissionService.require(Permission.MANAGE_SETTINGS);
+        permissionService.requireAny(
+                Permission.ZENTRIX_ADMIN_OWNER,
+                Permission.ZENTRIX_ADMIN_SUPPORT,
+                Permission.MANAGE_SETTINGS
+        );
     }
 }

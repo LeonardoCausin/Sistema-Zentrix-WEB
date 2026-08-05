@@ -35,6 +35,9 @@ public class PermissionService {
         USERS_PERMISSIONS,
         MANAGE_SETTINGS,
         MANAGE_LICENSE,
+        ZENTRIX_ADMIN_OWNER,
+        ZENTRIX_ADMIN_FINANCE,
+        ZENTRIX_ADMIN_SUPPORT,
         RESTORE_BACKUP,
         HIGH_DISCOUNT
     }
@@ -122,6 +125,9 @@ public class PermissionService {
         map(Permission.USERS_PERMISSIONS, "funcionarios.permissoes");
         map(Permission.MANAGE_SETTINGS, "configuracoes.editar");
         map(Permission.MANAGE_LICENSE, "configuracoes.editar");
+        map(Permission.ZENTRIX_ADMIN_OWNER, "zentrix.dono", "zentrix.admin");
+        map(Permission.ZENTRIX_ADMIN_FINANCE, "zentrix.financeiro", "zentrix.admin");
+        map(Permission.ZENTRIX_ADMIN_SUPPORT, "zentrix.suporte", "zentrix.admin");
         map(Permission.RESTORE_BACKUP, "backups.restaurar");
         map(Permission.HIGH_DISCOUNT, "vendas.cancelar");
     }
@@ -191,6 +197,15 @@ public class PermissionService {
         if (!can(permission)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não tem permissão para executar esta ação.");
         }
+    }
+
+    public void requireAny(Permission... permissions) {
+        for (Permission permission : permissions) {
+            if (can(permission)) {
+                return;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Voce nao tem permissao para acessar esta area.");
     }
 
     public void requireKey(String permissionKey) {

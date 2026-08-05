@@ -9,6 +9,7 @@
     session: readSession(),
     overview: null,
     clients: [],
+    plans: [],
     support: null,
     viewRequestId: 0
   };
@@ -120,6 +121,7 @@
       if (state.view === "dashboard") await loadDashboard(fresh);
       if (state.view === "clients") await loadClients(fresh);
       if (state.view === "subscriptions") await loadSubscriptions(fresh);
+      if (state.view === "permissions") await loadPermissions();
       if (state.view === "support") await loadSupport();
     } catch (error) {
       if (requestId === state.viewRequestId) {
@@ -143,12 +145,21 @@
     }
   }
 
+  async function loadPlans(fresh) {
+    if (fresh || !state.plans.length) {
+      state.plans = await api("/zentrix-admin/plans");
+    }
+    return state.plans;
+  }
+
   async function loadDashboard(fresh) {
     setHeading("Dashboard", "Visao geral da operacao Zentrix.");
     if (fresh || !state.overview) {
       state.overview = await api("/zentrix-admin/overview");
     }
     const data = state.overview;
+    state.plans = data.plans || state.plans;
+    const alerts = data.expirationAlerts || [];
     els.viewHost.innerHTML = `
       <div class="grid">
         ${metric("Clientes", data.clients, "Empresas cadastradas")}
@@ -156,6 +167,31 @@
         ${metric("Assinaturas", data.activeSubscriptions, "Planos ativos")}
         ${metric("Vencendo", data.expiringSoon, "Proximos 7 dias")}
       </div>
+      <section class="panel">
+        <div class="panel-title">
+          <div><h2>Avisos de vencimento</h2><span class="muted">Alertas automaticos em 7, 3 e 1 dia antes</span></div>
+        </div>
+        ${alerts.length ? simpleTable(["Cliente", "Plano", "Vencimento", "Aviso"], alerts, (row) => [
+          row.name,
+          row.planName,
+          date(row.expiresAt),
+          `${row.daysLeft} dia(s)`
+        ]) : emptyState("Nenhum vencimento em 7, 3 ou 1 dia.")}
+      </section>
+      <section class="panel">
+        <div class="panel-title">
+          <div><h2>Planos</h2><span class="muted">Basico, Intermediario e Pro</span></div>
+        </div>
+        <div class="grid three">
+          ${(state.plans || []).map((plan) => `
+            <article class="card metric">
+              <span>${esc(plan.name)}</span>
+              <strong>${esc(plan.maxStores)} loja(s)</strong>
+              <small class="muted">${esc(plan.maxDevices)} PDV(s) - ${esc(plan.description)}</small>
+            </article>
+          `).join("")}
+        </div>
+      </section>
       <section class="panel">
         <div class="panel-title">
           <div><h2>Clientes recentes</h2><span class="muted">Ultimas empresas cadastradas</span></div>
@@ -198,6 +234,7 @@
     if (fresh || !state.clients.length) {
       state.clients = await api("/zentrix-admin/clients?limit=150");
     }
+    await loadPlans(fresh).catch(() => []);
     els.viewHost.innerHTML = `
       <section class="panel" style="margin-top:0">
         <div class="panel-title">
@@ -258,6 +295,7 @@
             <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
             <button class="danger" type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
             <button type="button" data-action="activate-client" data-tenant="${escAttr(row.tenantId)}">Liberar</button>
+            <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
           </td>
         </tr>
       `).join("") || emptyRow(6)}</tbody>
@@ -312,6 +350,7 @@
           <td class="actions">
             <button type="button" data-action="client-detail" data-tenant="${escAttr(row.tenantId)}">Abrir</button>
             <button type="button" data-action="activation-code" data-tenant="${escAttr(row.tenantId)}">Codigo PDV</button>
+            <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
           </td>
         </tr>
       `).join("") || emptyRow(6)}</tbody>
@@ -363,6 +402,7 @@
     if (action === "activation-code") return showActivationForm(button.dataset.tenant);
     if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
     if (action === "activate-client") return showStatusForm(button.dataset.tenant, "ACTIVE");
+    if (action === "test-access") return testClientAccess(button.dataset.tenant);
     if (action === "normalize-cash") return reasonAction("Normalizar caixas", "/local-admin/cash/normalize-statuses?store=" + encodeURIComponent(els.storeSelect.value), "POST");
     if (action === "clear-sync") return reasonAction("Limpar falhas de sincronizacao", "/local-admin/sync/clear-failures?store=" + encodeURIComponent(els.storeSelect.value), "POST", { days: 7 });
     if (action === "clear-backups") return reasonAction("Limpar backups com erro", "/local-admin/backups/clear-errors?store=" + encodeURIComponent(els.storeSelect.value), "POST");
@@ -371,7 +411,24 @@
     if (action === "delete-cash") return deleteCash(button.dataset.id, button.dataset.store);
   }
 
-  function showClientForm() {
+  async function loadPermissions() {
+    setHeading("Permissoes", "Acessos separados para dono, financeiro e suporte.");
+    els.viewHost.innerHTML = `
+      <section class="panel" style="margin-top:0">
+        <div class="panel-title">
+          <div><h2>Perfis do Zentrix Admin</h2><span class="muted">Use estas chaves no permissions_json do usuario</span></div>
+        </div>
+        <div class="grid three">
+          ${permissionCard("Dono", "zentrix.dono", "Acesso total ao admin local, clientes, assinaturas, saude, suporte e testes.")}
+          ${permissionCard("Financeiro", "zentrix.financeiro", "Cria clientes, renova assinaturas, bloqueia e libera lojas.")}
+          ${permissionCard("Suporte", "zentrix.suporte", "Consulta saude, historico, teste de acesso e gera codigo PDV.")}
+        </div>
+      </section>
+    `;
+  }
+
+  async function showClientForm() {
+    await loadPlans(false).catch(() => []);
     openModal("Novo cliente", `
       <form id="clientForm" class="form-grid">
         ${field("companyName", "Empresa", "text", true)}
@@ -381,7 +438,7 @@
         ${field("adminUsername", "Usuario admin", "text", true)}
         ${field("adminDisplayName", "Nome do admin")}
         ${field("adminPassword", "Senha inicial", "password", true)}
-        ${field("planName", "Plano", "text", false, "BASICO")}
+        ${planSelect("planName", "Plano", "BASICO")}
         ${field("expiresAt", "Vencimento", "date")}
         ${field("maxStores", "Max lojas", "number", false, "1")}
         ${field("maxDevices", "Max dispositivos", "number", false, "1")}
@@ -402,10 +459,15 @@
         toast(error.message, true);
       }
     };
+    wirePlanDefaults("clientForm");
   }
 
   async function showClientDetail(tenantId) {
-    const detail = await api("/zentrix-admin/clients/" + encodeURIComponent(tenantId));
+    const [detail, history, health] = await Promise.all([
+      api("/zentrix-admin/clients/" + encodeURIComponent(tenantId)),
+      api("/zentrix-admin/clients/" + encodeURIComponent(tenantId) + "/history").catch(() => []),
+      api("/zentrix-admin/clients/" + encodeURIComponent(tenantId) + "/health").catch(() => ({ stores: [] }))
+    ]);
     openModal("Cliente", `
       <div class="grid two">
         ${metric("Empresa", detail.name, detail.tenantId)}
@@ -413,8 +475,24 @@
       </div>
       ${detail.blockReason ? `<section class="notice danger-note"><strong>Cliente bloqueado</strong><span>${esc(detail.blockReason)}</span></section>` : ""}
       <section class="panel">
+        <div class="panel-title">
+          <div><h3>Saude por loja</h3><span class="muted">Ultimo sync, backup e PDVs ativos</span></div>
+          <button type="button" data-action="test-access" data-tenant="${escAttr(tenantId)}">Testar acesso</button>
+        </div>
+        ${simpleTable(["Loja", "Sync", "Backup", "PDVs"], health.stores || [], (row) => [
+          `<strong>${esc(row.name || row.storeId)}</strong><br><span class="muted">${esc(row.storeId)}</span>`,
+          `${tag(row.lastSyncStatus || "-")}<br><span class="muted">${date(row.lastSyncAt)}</span>`,
+          `${tag(row.lastBackupStatus || "-")}<br><span class="muted">${date(row.lastBackupAt)}</span>`,
+          `<strong>${esc(row.activeDevices || 0)}</strong><br><span class="muted">${esc(date(row.lastDeviceSeenAt))}</span>`
+        ])}
+      </section>
+      <section class="panel">
         <h3>Assinaturas</h3>
         ${simpleTable(["Plano", "Status", "Inicio", "Fim", "Limites"], detail.licenses || [], (row) => [row.planName, tag(row.status), date(row.startsAt), date(row.expiresAt), `${row.maxStores} lojas / ${row.maxDevices} disp.`])}
+      </section>
+      <section class="panel">
+        <h3>Historico visual</h3>
+        ${timeline(history || [])}
       </section>
       <section class="panel">
         <h3>Lojas</h3>
@@ -425,13 +503,22 @@
         ${simpleTable(["Codigo", "Loja", "Status", "Expira", "Usado"], detail.activationCodes || [], (row) => [row.code, row.storeName, tag(row.status), date(row.expiresAt), date(row.usedAt)])}
       </section>
     `);
+    wireCommonActions();
   }
 
-  function showLicenseForm(tenantId) {
+  async function showLicenseForm(tenantId) {
+    await loadPlans(false).catch(() => []);
     openModal("Renovar assinatura", `
       <form id="licenseForm" class="form-grid">
-        ${field("planName", "Plano", "text", true, "BASICO")}
-        ${field("status", "Status", "text", true, "ACTIVE")}
+        ${planSelect("planName", "Plano", "BASICO")}
+        <label>Status
+          <select name="status">
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="BLOCKED">BLOCKED</option>
+            <option value="SUSPENDED">SUSPENDED</option>
+            <option value="EXPIRED">EXPIRED</option>
+          </select>
+        </label>
         ${field("startsAt", "Inicio", "date")}
         ${field("expiresAt", "Vencimento", "date")}
         ${field("maxStores", "Max lojas", "number", false, "1")}
@@ -459,6 +546,7 @@
         toast(error.message, true);
       }
     };
+    wirePlanDefaults("licenseForm");
   }
 
   function showActivationForm(tenantId) {
@@ -529,6 +617,16 @@
     toast("Status atualizado.");
   }
 
+  async function testClientAccess(tenantId) {
+    const result = await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/access-test`, { method: "POST" });
+    openModal("Teste de acesso", `
+      <section class="notice ${result.allowed ? "success-note" : "danger-note"}">
+        <strong>${result.allowed ? "Acesso liberado" : "Acesso bloqueado"}</strong>
+        <span>${esc(result.message || "-")}</span>
+      </section>
+    `);
+  }
+
   function showCloseCashForm(id, store) {
     openModal("Fechar caixa", `
       <form id="closeCashForm" class="form-grid">
@@ -594,6 +692,14 @@
     return `<article class="card metric"><span>${esc(label)}</span><strong>${esc(value ?? 0)}</strong><small class="muted">${esc(note || "")}</small></article>`;
   }
 
+  function permissionCard(title, key, description) {
+    return `<article class="card metric">
+      <span>${esc(title)}</span>
+      <strong>${esc(key)}</strong>
+      <small class="muted">${esc(description)}</small>
+    </article>`;
+  }
+
   function tag(value) {
     const text = String(value || "-").toUpperCase();
     return `<span class="tag ${escAttr(text)}">${esc(text)}</span>`;
@@ -601,6 +707,56 @@
 
   function field(name, label, type, required, value) {
     return `<label>${esc(label)}<input name="${escAttr(name)}" type="${escAttr(type || "text")}" ${required ? "required" : ""} value="${escAttr(value || "")}" /></label>`;
+  }
+
+  function planSelect(name, label, selected) {
+    const plans = state.plans && state.plans.length ? state.plans : [
+      { code: "BASICO", name: "Basico", maxStores: 1, maxDevices: 1 },
+      { code: "INTERMEDIARIO", name: "Intermediario", maxStores: 2, maxDevices: 3 },
+      { code: "PRO", name: "Pro", maxStores: 5, maxDevices: 10 }
+    ];
+    return `<label>${esc(label)}
+      <select name="${escAttr(name)}" data-plan-select>
+        ${plans.map((plan) => `<option value="${escAttr(plan.code)}" ${plan.code === selected ? "selected" : ""}>${esc(plan.name)} - ${esc(plan.maxStores)} loja(s) / ${esc(plan.maxDevices)} PDV(s)</option>`).join("")}
+      </select>
+    </label>`;
+  }
+
+  function wirePlanDefaults(formId) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    const select = form.querySelector("[data-plan-select]");
+    const stores = form.querySelector('[name="maxStores"]');
+    const devices = form.querySelector('[name="maxDevices"]');
+    const apply = () => {
+      const plan = findPlan(select.value);
+      if (stores && plan) stores.value = plan.maxStores;
+      if (devices && plan) devices.value = plan.maxDevices;
+    };
+    if (select) {
+      select.addEventListener("change", apply);
+      apply();
+    }
+  }
+
+  function findPlan(code) {
+    return (state.plans || []).find((plan) => plan.code === code)
+      || { code: "BASICO", maxStores: 1, maxDevices: 1 };
+  }
+
+  function timeline(rows) {
+    if (!rows.length) return emptyState("Ainda nao ha historico para este cliente.");
+    return `<ol class="timeline">
+      ${rows.map((row) => `<li>
+        <strong>${esc(row.title || row.type || "Evento")}</strong>
+        <span>${esc(row.description || "-")}</span>
+        <small class="muted">${esc(date(row.createdAt))}</small>
+      </li>`).join("")}
+    </ol>`;
+  }
+
+  function emptyState(message) {
+    return `<div class="empty-state">${esc(message)}</div>`;
   }
 
   function openModal(title, body) {

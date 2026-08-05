@@ -35,8 +35,20 @@ public class ZentrixAdminController {
 
     @GetMapping("/overview")
     public Map<String, Object> overview(HttpServletRequest request) {
-        requireAccess(request);
+        requireAnyAdminAccess(request);
         return zentrixAdminService.overview();
+    }
+
+    @GetMapping("/plans")
+    public List<Map<String, Object>> plans(HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.plans();
+    }
+
+    @GetMapping("/expiration-alerts")
+    public List<Map<String, Object>> expirationAlerts(HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.expirationAlerts();
     }
 
     @GetMapping("/clients")
@@ -46,20 +58,38 @@ public class ZentrixAdminController {
             @RequestParam(defaultValue = "100") int limit,
             HttpServletRequest request
     ) {
-        requireAccess(request);
+        requireAnyAdminAccess(request);
         return zentrixAdminService.clients(search, status, limit);
     }
 
     @PostMapping("/clients")
     public Map<String, Object> createClient(@RequestBody Map<String, Object> body, HttpServletRequest request) {
-        requireAccess(request);
+        requireFinanceAccess(request);
         return zentrixAdminService.createClient(body);
     }
 
     @GetMapping("/clients/{tenantId}")
     public Map<String, Object> client(@PathVariable String tenantId, HttpServletRequest request) {
-        requireAccess(request);
+        requireAnyAdminAccess(request);
         return zentrixAdminService.client(tenantId);
+    }
+
+    @GetMapping("/clients/{tenantId}/history")
+    public List<Map<String, Object>> clientHistory(@PathVariable String tenantId, HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.clientHistory(tenantId);
+    }
+
+    @GetMapping("/clients/{tenantId}/health")
+    public Map<String, Object> clientHealth(@PathVariable String tenantId, HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.clientHealth(tenantId);
+    }
+
+    @PostMapping("/clients/{tenantId}/access-test")
+    public Map<String, Object> testClientAccess(@PathVariable String tenantId, HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.testClientAccess(tenantId);
     }
 
     @PutMapping("/clients/{tenantId}/status")
@@ -68,7 +98,7 @@ public class ZentrixAdminController {
             @RequestBody Map<String, Object> body,
             HttpServletRequest request
     ) {
-        requireAccess(request);
+        requireFinanceAccess(request);
         return zentrixAdminService.updateClientStatus(tenantId, body);
     }
 
@@ -78,7 +108,7 @@ public class ZentrixAdminController {
             @RequestBody Map<String, Object> body,
             HttpServletRequest request
     ) {
-        requireAccess(request);
+        requireFinanceAccess(request);
         return zentrixAdminService.createLicense(tenantId, body);
     }
 
@@ -88,12 +118,35 @@ public class ZentrixAdminController {
             @RequestBody Map<String, Object> body,
             HttpServletRequest request
     ) {
-        requireAccess(request);
+        requireSupportAccess(request);
         return zentrixAdminService.createActivationCode(tenantId, body);
     }
 
-    private void requireAccess(HttpServletRequest request) {
+    private void requireAnyAdminAccess(HttpServletRequest request) {
         accessService.requireLocal(request);
-        permissionService.require(Permission.MANAGE_LICENSE);
+        permissionService.requireAny(
+                Permission.ZENTRIX_ADMIN_OWNER,
+                Permission.ZENTRIX_ADMIN_FINANCE,
+                Permission.ZENTRIX_ADMIN_SUPPORT,
+                Permission.MANAGE_LICENSE
+        );
+    }
+
+    private void requireFinanceAccess(HttpServletRequest request) {
+        accessService.requireLocal(request);
+        permissionService.requireAny(
+                Permission.ZENTRIX_ADMIN_OWNER,
+                Permission.ZENTRIX_ADMIN_FINANCE,
+                Permission.MANAGE_LICENSE
+        );
+    }
+
+    private void requireSupportAccess(HttpServletRequest request) {
+        accessService.requireLocal(request);
+        permissionService.requireAny(
+                Permission.ZENTRIX_ADMIN_OWNER,
+                Permission.ZENTRIX_ADMIN_SUPPORT,
+                Permission.MANAGE_LICENSE
+        );
     }
 }
