@@ -53,6 +53,8 @@ public class WebConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/FrontEnd/**")
                 .addResourceLocations("file:../FrontEnd/", "file:FrontEnd/");
+        registry.addResourceHandler("/ZentrixAdmin/**")
+                .addResourceLocations("file:../ZentrixAdmin/", "file:ZentrixAdmin/");
         registry.addResourceHandler("/index.html")
                 .addResourceLocations("file:../", "file:./");
     }
@@ -89,6 +91,8 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/reports",
                         "/api/reports/**",
                         "/api/settings",
+                        "/api/local-admin/**",
+                        "/api/zentrix-admin/**",
                         "/api/stores",
                         "/api/alerts",
                         "/api/observability",

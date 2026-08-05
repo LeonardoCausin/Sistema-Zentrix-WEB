@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zentrix Admin</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <strong>Zentrix Admin</strong>
+        <span>Painel local</span>
+      </div>
+      <nav class="nav">
+        <button class="active" type="button" data-view="dashboard">Dashboard</button>
+        <button type="button" data-view="clients">Clientes</button>
+        <button type="button" data-view="subscriptions">Assinaturas</button>
+        <button type="button" data-view="support">Suporte</button>
+      </nav>
+      <div class="session-box">
+        <span id="sessionName">Desconectado</span>
+        <button type="button" id="logoutButton">Sair</button>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p id="pageSubtitle">Gestao local de clientes, assinaturas e suporte.</p>
+        </div>
+        <div class="top-actions">
+          <select id="storeSelect" aria-label="Loja para suporte">
+            <option value="all">Todas as lojas</option>
+          </select>
+          <button type="button" id="refreshButton">Atualizar</button>
+        </div>
+      </header>
+
+      <section class="login-panel" id="loginPanel">
+        <form id="loginForm" class="login-card">
+          <h2>Acesso administrativo</h2>
+          <label>
+            Usuario
+            <input name="email" autocomplete="username" required />
+          </label>
+          <label>
+            Senha
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Entrar</button>
+          <p class="muted">Este painel so funciona na rede local liberada pelo backend.</p>
+        </form>
+      </section>
+
+      <section id="appView" class="app-view" hidden>
+        <div id="toast" class="toast" hidden></div>
+        <div id="viewHost"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="modal">
+    <form method="dialog" class="modal-card">
+      <header>
+        <h2 id="modalTitle">Acao</h2>
+        <button type="submit" value="cancel">Fechar</button>
+      </header>
+      <div id="modalBody"></div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
