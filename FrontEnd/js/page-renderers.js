@@ -785,7 +785,7 @@
   async function renderBackups() {
     const rows = await safeApi("/backups" + storeQuery(), []);
     const latest = rows.find((row) => String(row.status || "").toUpperCase() === "CONCLUIDO") || rows[0];
-    const failed = rows.filter((row) => String(row.status || "").toUpperCase().includes("FALH")).length;
+    const failed = rows.filter((row) => isFailedBackupStatus(row.status)).length;
     const validBackups = rows.filter((row) => String(row.integrity || "").toLowerCase() === "íntegro").length;
     const completedMissingFile = rows.filter((row) => String(row.status || "").toUpperCase() === "CONCLUIDO" && !row.fileExists).length;
     const latestCanDownload = latest && latest.id && latest.fileExists && latest.checksumValid !== false;
@@ -854,6 +854,15 @@
 
   async function renderSettings() {
     return renderOwnerSettings();
+  }
+
+  function isFailedBackupStatus(status) {
+    const normalized = String(status || "").trim().toUpperCase();
+    return normalized.includes("FALH")
+      || normalized === "ERROR"
+      || normalized === "ERRO"
+      || normalized === "FAILED"
+      || normalized === "FAILURE";
   }
 
   function settingsFormHtml(data) {

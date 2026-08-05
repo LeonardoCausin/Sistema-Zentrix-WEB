@@ -219,6 +219,10 @@ public class BusinessOperationsService {
     }
 
     public List<Map<String, Object>> stockMovements(String tenantId, String storeId) {
+        return stockMovements(tenantId, storeId, 100, 0);
+    }
+
+    public List<Map<String, Object>> stockMovements(String tenantId, String storeId, int limit, int offset) {
         permissionService.requireKey("estoque.visualizar");
         List<Object> args = new ArrayList<>();
         StringBuilder where = new StringBuilder("tenant_id = ?");
@@ -228,13 +232,15 @@ public class BusinessOperationsService {
             where.append(" AND store_id = ?");
             args.add(store);
         }
+        args.add(safeLimit(limit, 100, 500));
+        args.add(Math.max(0, offset));
         return rows("""
                 SELECT id, product_code AS productCode, type, quantity, previous_stock AS previousStock, new_stock AS newStock,
                        origin, reference_type AS referenceType, reference_id AS referenceId, reason, user, created_at AS createdAt
                 FROM stock_movements
                 WHERE %s
                 ORDER BY created_at DESC, id DESC
-                LIMIT 100
+                LIMIT ? OFFSET ?
                 """.formatted(where), args.toArray());
     }
 

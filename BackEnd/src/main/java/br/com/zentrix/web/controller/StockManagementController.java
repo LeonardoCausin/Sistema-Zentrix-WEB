@@ -27,9 +27,13 @@ public class StockManagementController {
     }
 
     @GetMapping("/movements")
-    public List<Map<String, Object>> movements(@RequestParam(defaultValue = "all") String store) {
+    public List<Map<String, Object>> movements(
+            @RequestParam(defaultValue = "all") String store,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return operationsService.stockMovements(AuthContext.tenantId(), store);
+        return operationsService.stockMovements(AuthContext.tenantId(), store, limit, offset);
     }
 
     @PostMapping("/adjust")
