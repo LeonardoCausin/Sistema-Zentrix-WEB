@@ -206,11 +206,12 @@ public class ZentrixAdminService {
     public Map<String, Object> createClient(Map<String, Object> request) {
         initializer.ensureReady();
         String companyName = required(value(request, "companyName"), "companyName");
+        String document = normalizedCpfCnpj(value(request, "document"));
         String adminUsername = required(value(request, "adminUsername"), "adminUsername");
         String adminPassword = required(value(request, "adminPassword"), "adminPassword");
         Map<String, Object> created = provisioningService.bootstrap(new ProvisionTenantRequest(
                 companyName,
-                value(request, "document"),
+                document,
                 defaultValue(value(request, "storeName"), "Loja matriz"),
                 value(request, "sourceId"),
                 value(request, "deviceId"),
@@ -234,11 +235,7 @@ public class ZentrixAdminService {
         String tenant = required(tenantId, "tenantId");
         ensureTenantExists(tenant);
         String name = required(value(request, "name"), "name");
-        String document = required(value(request, "document"), "document");
-        String digits = document.replaceAll("\\D", "");
-        if (digits.length() != 11 && digits.length() != 14) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe um CPF ou CNPJ valido.");
-        }
+        String document = normalizedCpfCnpj(value(request, "document"));
         jdbcTemplate.update("""
                 UPDATE tenants
                 SET name = ?, document = ?
@@ -248,6 +245,38 @@ public class ZentrixAdminService {
                 "Dados de cobranca atualizados pelo painel administrativo.", "ALERTA", value(request, "reason"));
         panelCacheService.clear();
         return Map.of("tenantId", tenant, "name", name, "document", document);
+    }
+
+    static boolean validCpfCnpj(String value) {
+        String digits = value == null ? "" : value.replaceAll("\\D", "");
+        if ((digits.length() != 11 && digits.length() != 14) || digits.chars().distinct().count() == 1) {
+            return false;
+        }
+        if (digits.length() == 11) {
+            int first = checkDigit(digits.substring(0, 9), new int[]{10, 9, 8, 7, 6, 5, 4, 3, 2});
+            int second = checkDigit(digits.substring(0, 9) + first, new int[]{11, 10, 9, 8, 7, 6, 5, 4, 3, 2});
+            return digits.endsWith("" + first + second);
+        }
+        int first = checkDigit(digits.substring(0, 12), new int[]{5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2});
+        int second = checkDigit(digits.substring(0, 12) + first, new int[]{6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2});
+        return digits.endsWith("" + first + second);
+    }
+
+    private static int checkDigit(String digits, int[] weights) {
+        int sum = 0;
+        for (int index = 0; index < weights.length; index++) {
+            sum += Character.digit(digits.charAt(index), 10) * weights[index];
+        }
+        int result = 11 - (sum % 11);
+        return result >= 10 ? 0 : result;
+    }
+
+    private String normalizedCpfCnpj(String value) {
+        String document = required(value, "document").replaceAll("\\D", "");
+        if (!validCpfCnpj(document)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe um CPF ou CNPJ valido.");
+        }
+        return document;
     }
 
     @Transactional

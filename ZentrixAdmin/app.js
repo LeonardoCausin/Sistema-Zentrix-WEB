@@ -288,13 +288,14 @@
       <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
-          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.tenantId)}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
+          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(formatCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
           <td>${esc(row.planName || "BASICO")}<br><span class="muted">${planAccessLabel(row.billing)}</span></td>
           <td>${tag(row.status)} ${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}<br><span class="muted">${expirationLabel(row.expiresAt)}</span></td>
           <td><strong>${money(row.monthlyTotal)}</strong><br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}">Editar CPF/CNPJ</button>
             <button class="danger" type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
             <button type="button" data-action="activate-client" data-tenant="${escAttr(row.tenantId)}">Liberar</button>
             <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
@@ -344,13 +345,14 @@
       <thead><tr><th>Cliente</th><th>Status</th><th>Plano</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
-          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(row.document || row.tenantId)}</span></td>
+          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(formatCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span></td>
           <td>${tag(row.status)}</td>
           <td>${esc(row.planName || "BASICO")}<br>${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}</td>
           <td>${money(row.monthlyTotal)}<br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="client-detail" data-tenant="${escAttr(row.tenantId)}">Abrir</button>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}">Editar CPF/CNPJ</button>
             <button type="button" data-action="activation-code" data-tenant="${escAttr(row.tenantId)}">Codigo PDV</button>
             <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
           </td>
@@ -436,7 +438,7 @@
     openModal("Novo cliente", `
       <form id="clientForm" class="form-grid">
         ${field("companyName", "Empresa", "text", true)}
-        ${field("document", "Documento")}
+        <label>CPF ou CNPJ<input name="document" type="text" inputmode="numeric" maxlength="18" placeholder="000.000.000-00" required /></label>
         ${field("storeName", "Loja inicial")}
         ${field("sourceId", "Nome/origem do PDV")}
         ${field("adminUsername", "Usuario admin", "text", true)}
@@ -463,6 +465,7 @@
         toast(error.message, true);
       }
     };
+    wireCpfCnpjInput("clientForm");
     wirePlanDefaults("clientForm");
   }
 
@@ -552,6 +555,7 @@
         toast(error.message, true);
       }
     };
+    wireCpfCnpjInput("billingProfileForm");
   }
 
   async function showLicenseForm(tenantId) {
@@ -788,6 +792,33 @@
 
   function field(name, label, type, required, value) {
     return `<label>${esc(label)}<input name="${escAttr(name)}" type="${escAttr(type || "text")}" ${required ? "required" : ""} value="${escAttr(value || "")}" /></label>`;
+  }
+
+  function wireCpfCnpjInput(formId) {
+    const input = document.querySelector(`#${formId} [name="document"]`);
+    if (!input) return;
+    const update = () => {
+      input.value = formatCpfCnpj(input.value);
+      const digits = input.value.replace(/\D/g, "");
+      input.setCustomValidity(digits.length === 11 || digits.length === 14 ? "" : "Informe um CPF ou CNPJ completo.");
+    };
+    input.addEventListener("input", update);
+    update();
+  }
+
+  function formatCpfCnpj(value) {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 14);
+    if (digits.length <= 11) {
+      return digits
+        .replace(/^(\d{3})(\d)/, "$1.$2")
+        .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+        .replace(/\.(\d{3})(\d)/, ".$1-$2");
+    }
+    return digits
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\/\d{4})(\d)/, "$1-$2");
   }
 
   function planSelect(name, label, selected) {
