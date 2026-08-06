@@ -400,6 +400,7 @@
     const action = button.dataset.action;
     if (action === "new-client") return showClientForm();
     if (action === "client-detail") return showClientDetail(button.dataset.tenant);
+    if (action === "billing-profile") return showBillingProfileForm(button.dataset.tenant, button.dataset.name, button.dataset.document);
     if (action === "renew-license") return showLicenseForm(button.dataset.tenant);
     if (action === "activation-code") return showActivationForm(button.dataset.tenant);
     if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
@@ -474,13 +475,16 @@
     openModal("Cliente", `
       <div class="grid two">
         ${metric("Empresa", detail.name, detail.tenantId)}
-        ${metric("Status", detail.status, "Conta")}
+        ${metric("Status", detail.status, detail.document || "CPF/CNPJ nao cadastrado")}
       </div>
       ${detail.blockReason ? `<section class="notice danger-note"><strong>Cliente bloqueado</strong><span>${esc(detail.blockReason)}</span></section>` : ""}
       <section class="panel">
         <div class="panel-title">
           <div><h3>Resumo de cobranca</h3><span class="muted">Por loja ativa e aplicativos instalados</span></div>
-          <strong>${money(detail.billing && detail.billing.monthlyTotal)}</strong>
+          <div class="actions">
+            <strong>${money(detail.billing && detail.billing.monthlyTotal)}</strong>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(tenantId)}" data-name="${escAttr(detail.name)}" data-document="${escAttr(detail.document || "")}">Dados de cobranca</button>
+          </div>
         </div>
         ${billingDetails(detail.billing)}
       </section>
@@ -522,6 +526,32 @@
       </section>
     `);
     wireCommonActions();
+  }
+
+  function showBillingProfileForm(tenantId, name, documentValue) {
+    openModal("Dados de cobranca", `
+      <form id="billingProfileForm" class="form-grid">
+        ${field("name", "Razao social ou nome", "text", true, name || "")}
+        ${field("document", "CPF ou CNPJ", "text", true, documentValue || "")}
+        <label class="full">Motivo<textarea name="reason">Atualizacao dos dados usados na cobranca Asaas.</textarea></label>
+        <button class="primary full" type="submit">Salvar dados de cobranca</button>
+      </form>
+    `);
+    document.getElementById("billingProfileForm").onsubmit = async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/billing-profile`, {
+          method: "PUT",
+          body: JSON.stringify(formData(event.currentTarget))
+        });
+        state.clients = [];
+        closeModal();
+        await loadView(true);
+        toast("Dados de cobranca atualizados.");
+      } catch (error) {
+        toast(error.message, true);
+      }
+    };
   }
 
   async function showLicenseForm(tenantId) {

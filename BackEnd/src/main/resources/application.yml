@@ -50,6 +50,13 @@ zentrix:
     dir: ${ZENTRIX_BACKUP_DIR:backups}
   security:
     csp-connect-src: ${ZENTRIX_CSP_CONNECT_SRC:}
+  billing:
+    asaas:
+      enabled: ${ASAAS_ENABLED:false}
+      base-url: ${ASAAS_API_URL:https://api-sandbox.asaas.com/v3}
+      api-key: ${ASAAS_API_KEY:}
+      webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
+      payment-due-days: ${ASAAS_PAYMENT_DUE_DAYS:3}
   cors:
     allow-null-origin: ${ZENTRIX_CORS_ALLOW_NULL_ORIGIN:false}
     allowed-origins-csv: ${ZENTRIX_CORS_ALLOWED_ORIGINS:}

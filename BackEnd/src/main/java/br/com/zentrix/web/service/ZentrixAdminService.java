@@ -229,6 +229,28 @@ public class ZentrixAdminService {
     }
 
     @Transactional
+    public Map<String, Object> updateBillingProfile(String tenantId, Map<String, Object> request) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        ensureTenantExists(tenant);
+        String name = required(value(request, "name"), "name");
+        String document = required(value(request, "document"), "document");
+        String digits = document.replaceAll("\\D", "");
+        if (digits.length() != 11 && digits.length() != 14) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe um CPF ou CNPJ valido.");
+        }
+        jdbcTemplate.update("""
+                UPDATE tenants
+                SET name = ?, document = ?
+                WHERE id = ?
+                """, name, document, tenant);
+        auditService.recordCurrent("ZENTRIX_ADMIN_BILLING_PROFILE_UPDATED", "tenants", tenant,
+                "Dados de cobranca atualizados pelo painel administrativo.", "ALERTA", value(request, "reason"));
+        panelCacheService.clear();
+        return Map.of("tenantId", tenant, "name", name, "document", document);
+    }
+
+    @Transactional
     public Map<String, Object> createLicense(String tenantId, Map<String, Object> request) {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");

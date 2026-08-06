@@ -108,7 +108,8 @@ public class LicenseAccessService {
         String value = path == null ? "" : path;
         return value.startsWith("/api/zentrix-admin")
                 || value.startsWith("/api/local-admin")
-                || value.startsWith("/api/auth");
+                || value.startsWith("/api/auth")
+                || value.startsWith("/api/billing");
     }
 
     private boolean appGestaoPath(String path) {

@@ -101,7 +101,8 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/sync/monitor",
                         "/api/sync/outbox/**",
                         "/api/license",
-                        "/api/devices"
+                        "/api/devices",
+                        "/api/billing/**"
                 );
     }
 

@@ -444,6 +444,55 @@ public class WebDatabaseInitializer {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
                 """
+                CREATE TABLE IF NOT EXISTS billing_customers (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    provider VARCHAR(30) NOT NULL DEFAULT 'ASAAS',
+                    provider_customer_id VARCHAR(80) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, provider),
+                    UNIQUE INDEX uq_billing_customer_provider (provider, provider_customer_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_invoices (
+                    id CHAR(36) NOT NULL,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    provider VARCHAR(30) NOT NULL DEFAULT 'ASAAS',
+                    provider_payment_id VARCHAR(80) NULL,
+                    external_reference VARCHAR(80) NOT NULL,
+                    plan_name VARCHAR(80) NOT NULL,
+                    amount DECIMAL(15,2) NOT NULL,
+                    breakdown_json LONGTEXT NULL,
+                    coverage_start DATE NOT NULL,
+                    coverage_end DATE NOT NULL,
+                    due_date DATE NOT NULL,
+                    status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
+                    checkout_url VARCHAR(500) NULL,
+                    paid_at DATETIME NULL,
+                    license_id BIGINT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE INDEX uq_billing_invoice_payment (provider, provider_payment_id),
+                    UNIQUE INDEX uq_billing_invoice_reference (external_reference),
+                    INDEX idx_billing_invoice_tenant (tenant_id, created_at),
+                    INDEX idx_billing_invoice_status (status, due_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_webhook_events (
+                    provider VARCHAR(30) NOT NULL,
+                    event_id VARCHAR(100) NOT NULL,
+                    event_type VARCHAR(80) NOT NULL,
+                    provider_payment_id VARCHAR(80) NULL,
+                    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    processed_at DATETIME NULL,
+                    PRIMARY KEY (provider, event_id),
+                    INDEX idx_billing_webhook_payment (provider, provider_payment_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
                 CREATE TABLE IF NOT EXISTS backup_runs (
                     id BIGINT NOT NULL AUTO_INCREMENT,
                     tenant_id VARCHAR(80) NOT NULL,

@@ -165,7 +165,7 @@
     document.body.classList.add("account-blocked");
     const paymentButton = blocker.querySelector("[data-account-blocked-payment]");
     if (paymentButton) {
-      paymentButton.addEventListener("click", () => {
+      paymentButton.addEventListener("click", async () => {
         if (typeof window.ZentrixStartPayment === "function") {
           window.ZentrixStartPayment({ reasonCode: normalizedCode, message: safeMessage });
           return;
@@ -175,7 +175,23 @@
           window.location.href = paymentUrl;
           return;
         }
-        window.alert("Pagamento online sera liberado em breve. Entre em contato com o suporte Zentrix para regularizar a assinatura.");
+        const originalLabel = paymentButton.textContent;
+        paymentButton.disabled = true;
+        paymentButton.textContent = "Preparando pagamento...";
+        try {
+          const checkout = await request("/billing/checkout", { method: "POST" });
+          const checkoutUrl = safeAsaasCheckoutUrl(checkout && checkout.checkoutUrl);
+          if (!checkoutUrl) {
+            throw new Error("Nao recebemos um link de pagamento valido. Tente novamente.");
+          }
+          window.location.assign(checkoutUrl);
+        } catch (error) {
+          window.alert(error && error.message
+            ? error.message
+            : "Nao foi possivel iniciar o pagamento agora. Tente novamente.");
+          paymentButton.disabled = false;
+          paymentButton.textContent = originalLabel;
+        }
       });
     }
     const logoutButton = blocker.querySelector("[data-account-blocked-logout]");
@@ -184,6 +200,20 @@
         clearSession();
         window.location.replace(loginPath());
       });
+    }
+  }
+
+  function safeAsaasCheckoutUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const host = url.hostname.toLowerCase();
+      const asaasHost = host === "asaas.com"
+        || host.endsWith(".asaas.com")
+        || host === "asaas.com.br"
+        || host.endsWith(".asaas.com.br");
+      return url.protocol === "https:" && asaasHost ? url.href : "";
+    } catch (error) {
+      return "";
     }
   }
 

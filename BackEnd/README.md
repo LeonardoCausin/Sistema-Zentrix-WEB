@@ -295,3 +295,38 @@ mvn spring-boot:run
 ```
 
 Por padrao a API sobe em `http://localhost:8080`.
+
+## Pagamentos Asaas
+
+O AppGestao cria uma cobranca mensal avulsa com valor calculado no backend. A fatura usa
+`UNDEFINED`, permitindo ao cliente escolher Pix, boleto ou cartao entre os meios habilitados
+na conta Asaas. O CPF/CNPJ do cliente deve estar preenchido no cadastro Zentrix.
+
+Configure primeiro no `BackEnd/.env` usando a chave do sandbox:
+
+```properties
+ASAAS_ENABLED=true
+ASAAS_API_URL=https://api-sandbox.asaas.com/v3
+ASAAS_API_KEY=$aact_hmlg_sua_chave
+ASAAS_WEBHOOK_TOKEN=gere-um-segredo-aleatorio-com-32-ou-mais-caracteres
+ASAAS_PAYMENT_DUE_DAYS=3
+```
+
+No Asaas Sandbox, crie um Webhook de cobrancas com:
+
+```text
+URL: https://pdv.zentrixsystems.com.br/api/webhooks/asaas
+Token de autenticacao: o mesmo valor de ASAAS_WEBHOOK_TOKEN
+```
+
+Habilite estes eventos: `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_OVERDUE`,
+`PAYMENT_REFUNDED`, `PAYMENT_PARTIALLY_REFUNDED`, `PAYMENT_CHARGEBACK_REQUESTED`,
+`PAYMENT_CHARGEBACK_DISPUTE` e `PAYMENT_AWAITING_CHARGEBACK_REVERSAL`.
+
+O webhook e idempotente, valida o header `asaas-access-token` e consulta a cobranca diretamente
+no Asaas antes de renovar a licenca. Para producao, troque apenas a URL e a chave:
+
+```properties
+ASAAS_API_URL=https://api.asaas.com/v3
+ASAAS_API_KEY=$aact_prod_sua_chave
+```

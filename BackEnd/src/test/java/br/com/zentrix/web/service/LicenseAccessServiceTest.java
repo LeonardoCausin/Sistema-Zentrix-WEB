@@ -51,6 +51,13 @@ class LicenseAccessServiceTest {
         assertEquals("STORE_BLOCKED", error.reasonCode());
     }
 
+    @Test
+    void allowsAuthenticatedBillingWhenLicenseIsExpired() {
+        service.requireActive("tenant-1", "WEB", "/api/billing/checkout");
+
+        assertEquals(0, jdbcTemplate.queryResults.size());
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         private final ArrayDeque<List<Map<String, Object>>> queryResults = new ArrayDeque<>();
 

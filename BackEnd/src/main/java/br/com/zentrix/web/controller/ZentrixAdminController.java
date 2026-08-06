@@ -102,6 +102,16 @@ public class ZentrixAdminController {
         return zentrixAdminService.updateClientStatus(tenantId, body);
     }
 
+    @PutMapping("/clients/{tenantId}/billing-profile")
+    public Map<String, Object> updateBillingProfile(
+            @PathVariable String tenantId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        requireFinanceAccess(request);
+        return zentrixAdminService.updateBillingProfile(tenantId, body);
+    }
+
     @PutMapping("/clients/{tenantId}/stores/{storeId}/status")
     public Map<String, Object> updateStoreStatus(
             @PathVariable String tenantId,
