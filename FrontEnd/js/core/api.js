@@ -3,6 +3,7 @@
 
   const SESSION_KEY = "zentrix-session";
   const DEFAULT_TIMEOUT_MS = 15000;
+  let paymentStatusTimer = 0;
 
   function readSessionRaw() {
     try {
@@ -158,6 +159,7 @@
         <p>${escapeHtml(safeMessage)}</p>
         <div class="account-blocked-actions">
           <button class="button btn-primary" type="button" data-account-blocked-payment>${escapeHtml(paymentLabel)}</button>
+          <button class="button btn-dark" type="button" data-account-blocked-check>Consultar pagamento</button>
           <button class="button btn-dark" type="button" data-account-blocked-logout>Sair do painel</button>
         </div>
       </div>
@@ -166,6 +168,10 @@
     const paymentButton = blocker.querySelector("[data-account-blocked-payment]");
     if (paymentButton) {
       paymentButton.addEventListener("click", async () => {
+        if (upgrade) {
+          await openBillingPortal();
+          return;
+        }
         if (typeof window.ZentrixStartPayment === "function") {
           window.ZentrixStartPayment({ reasonCode: normalizedCode, message: safeMessage });
           return;
@@ -184,7 +190,8 @@
           if (!checkoutUrl) {
             throw new Error("Nao recebemos um link de pagamento valido. Tente novamente.");
           }
-          window.location.assign(checkoutUrl);
+          window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+          startPaymentStatusPolling();
         } catch (error) {
           window.alert(error && error.message
             ? error.message
@@ -194,6 +201,10 @@
         }
       });
     }
+    const checkButton = blocker.querySelector("[data-account-blocked-check]");
+    if (checkButton) {
+      checkButton.addEventListener("click", () => checkPaymentStatus(checkButton));
+    }
     const logoutButton = blocker.querySelector("[data-account-blocked-logout]");
     if (logoutButton) {
       logoutButton.addEventListener("click", () => {
@@ -201,6 +212,149 @@
         window.location.replace(loginPath());
       });
     }
+    startPaymentStatusPolling();
+  }
+
+  function startPaymentStatusPolling() {
+    window.clearInterval(paymentStatusTimer);
+    paymentStatusTimer = window.setInterval(() => checkPaymentStatus(null, true), 15000);
+  }
+
+  async function checkPaymentStatus(button, silent) {
+    const original = button && button.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Consultando...";
+    }
+    try {
+      const portal = await request("/billing/portal", { method: "GET" });
+      const access = String(portal && portal.license && portal.license.accessStatus || "").toUpperCase();
+      const invoice = String(portal && portal.currentInvoice && portal.currentInvoice.status || "").toUpperCase();
+      if (["ACTIVE", "TRIAL"].includes(access) && ["CONFIRMED", "RECEIVED", "NONE"].includes(invoice)) {
+        window.clearInterval(paymentStatusTimer);
+        window.location.reload();
+        return;
+      }
+      if (!silent) window.alert("O pagamento ainda nao foi confirmado. A consulta sera repetida automaticamente.");
+    } catch (error) {
+      if (!silent) window.alert(error.message || "Nao foi possivel consultar o pagamento agora.");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+  }
+
+  function installBillingPortal() {
+    if (!document.body.classList.contains("is-authenticated") || document.querySelector("[data-open-billing-portal]")) return;
+    const toolbar = document.querySelector(".window-toolbar") || document.querySelector(".topbar-tools");
+    if (!toolbar) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button btn-dark billing-portal-button";
+    button.dataset.openBillingPortal = "true";
+    button.textContent = "Assinatura";
+    button.addEventListener("click", openBillingPortal);
+    const logout = toolbar.querySelector('a[href*="index.html"]');
+    toolbar.insertBefore(button, logout || null);
+  }
+
+  async function openBillingPortal() {
+    let modal = document.getElementById("zentrixBillingPortal");
+    if (!modal) {
+      modal = document.createElement("section");
+      modal.id = "zentrixBillingPortal";
+      modal.className = "billing-portal-overlay";
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      document.body.appendChild(modal);
+    }
+    modal.hidden = false;
+    modal.innerHTML = '<div class="billing-portal"><div class="billing-portal-loading">Carregando assinatura...</div></div>';
+    try {
+      const data = await request("/billing/portal", { method: "GET" });
+      renderBillingPortal(modal, data || {});
+    } catch (error) {
+      modal.innerHTML = `<div class="billing-portal"><header><h2>Assinatura</h2><button type="button" data-close-billing aria-label="Fechar">x</button></header><p>${escapeHtml(error.message)}</p></div>`;
+      wireBillingPortal(modal);
+    }
+  }
+
+  function renderBillingPortal(modal, data) {
+    const billing = data.billing || {};
+    const license = data.license || {};
+    const invoices = Array.isArray(data.invoices) ? data.invoices : [];
+    const devices = Array.isArray(data.devices) ? data.devices : [];
+    const notifications = Array.isArray(data.notifications) ? data.notifications : [];
+    modal.innerHTML = `
+      <div class="billing-portal">
+        <header><div><span class="billing-eyebrow">Conta Zentrix</span><h2>Assinatura e pagamentos</h2><p>${escapeHtml(data.companyName || "Cliente")}</p></div><button type="button" data-close-billing aria-label="Fechar">x</button></header>
+        <div class="billing-summary-band">
+          <div><span>Plano</span><strong>${escapeHtml(data.plan || license.planName || "BASICO")}</strong></div>
+          <div><span>Status</span><strong>${escapeHtml(license.accessStatus || license.status || "-")}</strong></div>
+          <div><span>Vencimento</span><strong>${formatDate(license.expiresAt)}</strong></div>
+          <div><span>Mensalidade atual</span><strong>${formatMoney(billing.monthlyTotal)}</strong></div>
+        </div>
+        <section class="billing-section">
+          <div class="billing-section-title"><div><h3>Composicao do plano</h3><p>A cobranca acompanha lojas e aplicativos faturaveis.</p></div><button class="button btn-primary" type="button" data-new-checkout>Gerar pagamento</button></div>
+          <div class="billing-breakdown">
+            <div><span>Lojas ativas</span><strong>${escapeHtml(billing.activeStores || 0)}</strong><small>${formatMoney(billing.storeSubtotal)}</small></div>
+            <div><span>PDVs instalados</span><strong>${escapeHtml(billing.pdvApps || 0)}</strong><small>${escapeHtml(billing.extraPdvApps || 0)} adicional(is) a ${formatMoney(billing.extraPdvPrice)}</small></div>
+            <div><span>AppGestao</span><strong>${escapeHtml(billing.appGestaoApps || 0)}</strong><small>${billing.appGestaoIncluded ? "Incluido no plano" : "Requer upgrade"}</small></div>
+          </div>
+        </section>
+        <section class="billing-section"><h3>Cobrancas recentes</h3>${billingInvoiceTable(invoices)}</section>
+        <section class="billing-section"><h3>Aplicativos faturaveis</h3>${billingDeviceTable(devices)}</section>
+        <section class="billing-section"><h3>Avisos</h3>${notifications.length ? `<div class="billing-notices">${notifications.map((item) => `<div><strong>${escapeHtml(item.title || item.type || "Aviso")}</strong><span>${escapeHtml(item.message || "")}</span></div>`).join("")}</div>` : '<p class="billing-empty">Nenhum aviso pendente.</p>'}</section>
+      </div>`;
+    wireBillingPortal(modal);
+  }
+
+  function billingInvoiceTable(rows) {
+    if (!rows.length) return '<p class="billing-empty">Nenhuma cobranca emitida.</p>';
+    return `<div class="billing-table-wrap"><table><thead><tr><th>Vencimento</th><th>Plano</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${rows.map((row) => {
+      const url = safeAsaasCheckoutUrl(row.checkoutUrl);
+      return `<tr><td>${formatDate(row.dueDate)}</td><td>${escapeHtml(row.planName || "-")}</td><td>${formatMoney(row.amount)}</td><td>${escapeHtml(row.status || "-")}</td><td>${url ? `<a class="button btn-dark" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Pagar</a>` : "-"}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+  }
+
+  function billingDeviceTable(rows) {
+    if (!rows.length) return '<p class="billing-empty">Nenhum aplicativo identificado.</p>';
+    return `<div class="billing-table-wrap"><table><thead><tr><th>Aplicativo</th><th>Loja</th><th>Tipo</th><th>Faturavel</th><th>Ultimo acesso</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.name || row.id)}</td><td>${escapeHtml(row.storeId || "-")}</td><td>${escapeHtml(row.appType || "PDV")}</td><td>${row.billable === false ? "Nao" : "Sim"}</td><td>${formatDate(row.lastSeenAt)}</td></tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function wireBillingPortal(modal) {
+    const close = modal.querySelector("[data-close-billing]");
+    if (close) close.onclick = () => { modal.hidden = true; };
+    modal.onclick = (event) => { if (event.target === modal) modal.hidden = true; };
+    const checkout = modal.querySelector("[data-new-checkout]");
+    if (checkout) checkout.onclick = async () => {
+      checkout.disabled = true;
+      checkout.textContent = "Preparando...";
+      try {
+        const invoice = await request("/billing/checkout", { method: "POST" });
+        const url = safeAsaasCheckoutUrl(invoice && invoice.checkoutUrl);
+        if (!url) throw new Error("O provedor nao retornou um link de pagamento valido.");
+        window.open(url, "_blank", "noopener,noreferrer");
+        startPaymentStatusPolling();
+        await openBillingPortal();
+      } catch (error) {
+        window.alert(error.message || "Nao foi possivel gerar o pagamento.");
+        checkout.disabled = false;
+        checkout.textContent = "Gerar pagamento";
+      }
+    };
+  }
+
+  function formatMoney(value) {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
+  }
+
+  function formatDate(value) {
+    if (!value) return "-";
+    const parsed = new Date(String(value).replace(" ", "T"));
+    return Number.isNaN(parsed.getTime()) ? escapeHtml(value) : parsed.toLocaleDateString("pt-BR");
   }
 
   function safeAsaasCheckoutUrl(value) {
@@ -254,4 +408,9 @@
     readSession,
     clearSession
   });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installBillingPortal);
+  } else {
+    installBillingPortal();
+  }
 })();

@@ -17,6 +17,7 @@
         <button class="active" type="button" data-view="dashboard">Dashboard</button>
         <button type="button" data-view="clients">Clientes</button>
         <button type="button" data-view="subscriptions">Assinaturas</button>
+        <button type="button" data-view="finance">Financeiro</button>
         <button type="button" data-view="permissions">Permissoes</button>
         <button type="button" data-view="support">Suporte</button>
       </nav>
@@ -51,6 +52,10 @@
             Senha
             <input name="password" type="password" autocomplete="current-password" required />
           </label>
+          <label>
+            Codigo autenticador
+            <input name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Opcional" />
+          </label>
           <button type="submit">Entrar</button>
           <p class="muted">Este painel so funciona na rede local liberada pelo backend.</p>
         </form>
@@ -74,6 +79,6 @@
   </dialog>
 
   <script src="/ZentrixAdmin/config.js"></script>
-  <script src="/ZentrixAdmin/app.js?v=20260806-cpf-cnpj"></script>
+  <script src="/ZentrixAdmin/app.js?v=20260806-admin-robusto"></script>
 </body>
 </html>

@@ -21,6 +21,28 @@ test("login page loads the Zentrix AppGestao shell", async ({ page }) => {
   await expect(page.locator("#loginPassword")).toBeVisible();
 });
 
+test("admin dashboard opens the financial control center", async ({ page }) => {
+  await page.addInitScript((value) => sessionStorage.setItem("zentrix-admin-session", JSON.stringify(value)), session);
+  await page.route("**/api/stores", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/zentrix-admin/overview", async (route) => route.fulfill({ json: {
+    clients: 2, activeClients: 2, activeSubscriptions: 2, expiringSoon: 0,
+    pendingInvoices: 1, deadWebhooks: 0, failedNotifications: 0,
+    expirationAlerts: [], recentClients: [], plans: []
+  } }));
+  await page.route("**/api/zentrix-admin/finance**", async (route) => route.fulfill({ json: {
+    receivedThisMonth: 399.6, pendingAmount: 149.8, overdueAmount: 0,
+    failedWebhooks: 0, failedNotifications: 0,
+    invoices: [{ id: "fat-1", clientName: "Empresa E2E", planName: "BASICO", amount: 149.8, dueDate: "2026-08-10", status: "PENDING" }]
+  } }));
+
+  await page.goto("/ZentrixAdmin/");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.locator('[data-view="finance"]').click();
+  await expect(page.getByRole("heading", { name: "Financeiro" })).toBeVisible();
+  await expect(page.getByText("Empresa E2E")).toBeVisible();
+  await expect(page.getByText("R$ 399,60")).toBeVisible();
+});
+
 test("api base is compatible with same-origin nginx and local dev", async ({ page }) => {
   await page.goto("/");
   const result = await page.evaluate(() => ({
@@ -165,6 +187,18 @@ test("authenticated top bar shows notifications and account menu", async ({ page
 
   await page.locator("[data-action='toggle-user-menu']").click();
   await expect(page.locator("[data-action='logout']")).toBeVisible();
+});
+
+test("customer opens subscription portal with billing and device details", async ({ page }) => {
+  await mockPanelApi(page);
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await page.getByRole("button", { name: "Assinatura" }).click();
+
+  await expect(page.getByRole("heading", { name: "Assinatura e pagamentos" })).toBeVisible();
+  await expect(page.locator("#zentrixBillingPortal")).toContainText("R$ 149,80");
+  await expect(page.locator("#zentrixBillingPortal")).toContainText("PDV Caixa 2");
+  await expect(page.locator("#zentrixBillingPortal")).toContainText("PENDING");
 });
 
 test("theme preference lives in settings", async ({ page }) => {
@@ -343,6 +377,18 @@ async function mockPanelApi(page, options = {}) {
   });
   await page.route("**/api/dashboard**", async (route) => {
     await route.fulfill({ json: dashboardPayload() });
+  });
+  await page.route("**/api/billing/portal", async (route) => {
+    await route.fulfill({ json: {
+      companyName: "Empresa E2E",
+      plan: "BASICO",
+      license: { status: "ACTIVE", accessStatus: "ACTIVE", expiresAt: "2026-08-31 23:59:59" },
+      billing: { monthlyTotal: 149.8, activeStores: 1, storeSubtotal: 99.9, pdvApps: 2, includedPdvApps: 1, extraPdvApps: 1, extraPdvPrice: 49.9, appGestaoApps: 0, appGestaoIncluded: false },
+      currentInvoice: { status: "PENDING" },
+      invoices: [{ invoiceId: "invoice-e2e", planName: "BASICO", amount: 149.8, dueDate: "2026-08-10", status: "PENDING" }],
+      devices: [{ id: "PDV-02", name: "PDV Caixa 2", storeId: "WEB", appType: "PDV", billable: true, lastSeenAt: "2026-08-06 12:00:00" }],
+      notifications: []
+    } });
   });
   await page.route("**/api/cash-sessions**", async (route) => {
     await route.fulfill({ json: cashSessionsPayload() });

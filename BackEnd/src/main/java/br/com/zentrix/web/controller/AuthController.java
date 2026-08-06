@@ -6,6 +6,8 @@ import br.com.zentrix.web.service.AuthCookieService;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.AuthService;
 import br.com.zentrix.web.service.AuthTokenService;
+import br.com.zentrix.web.service.TotpService;
+import br.com.zentrix.web.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,11 +31,15 @@ public class AuthController {
     private final AuthService authService;
     private final AuthTokenService authTokenService;
     private final AuthCookieService authCookieService;
+    private final TotpService totpService;
+    private final PasswordResetService passwordResetService;
 
-    public AuthController(AuthService authService, AuthTokenService authTokenService, AuthCookieService authCookieService) {
+    public AuthController(AuthService authService, AuthTokenService authTokenService, AuthCookieService authCookieService, TotpService totpService, PasswordResetService passwordResetService) {
         this.authService = authService;
         this.authTokenService = authTokenService;
         this.authCookieService = authCookieService;
+        this.totpService = totpService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/login")
@@ -57,6 +64,43 @@ public class AuthController {
         response.put("issuedAt", session.issuedAt().toString());
         response.put("expiresAt", session.expiresAt().toString());
         return response;
+    }
+
+    @GetMapping("/mfa")
+    public Map<String, Object> mfaStatus() {
+        var session = AuthContext.current().orElseThrow();
+        return totpService.status(session.tenantId(), session.username());
+    }
+
+    @PostMapping("/mfa/setup")
+    public Map<String, Object> setupMfa() {
+        var session = AuthContext.current().orElseThrow();
+        return totpService.setup(session.tenantId(), session.username());
+    }
+
+    @PostMapping("/mfa/enable")
+    public Map<String, Object> enableMfa(@RequestBody Map<String, Object> body) {
+        var session = AuthContext.current().orElseThrow();
+        return totpService.enable(session.tenantId(), session.username(), String.valueOf(body.getOrDefault("otp", "")));
+    }
+
+    @DeleteMapping("/mfa")
+    public Map<String, Object> disableMfa(@RequestBody Map<String, Object> body) {
+        var session = AuthContext.current().orElseThrow();
+        return totpService.disable(session.tenantId(), session.username(), String.valueOf(body.getOrDefault("otp", "")));
+    }
+
+    @PostMapping("/password-reset/request")
+    public Map<String, Object> requestPasswordReset(@RequestBody Map<String, Object> body) {
+        return passwordResetService.request(String.valueOf(body.getOrDefault("username", "")));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public Map<String, Object> confirmPasswordReset(@RequestBody Map<String, Object> body) {
+        return passwordResetService.confirm(
+                String.valueOf(body.getOrDefault("token", "")),
+                String.valueOf(body.getOrDefault("password", ""))
+        );
     }
 
     @PostMapping("/logout")

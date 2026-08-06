@@ -73,6 +73,9 @@ public class ZentrixAdminService {
                 """));
         response.put("stores", number("SELECT COUNT(*) FROM tenant_stores"));
         response.put("devices", number("SELECT COUNT(*) FROM tenant_devices"));
+        response.put("pendingInvoices", number("SELECT COUNT(*) FROM billing_invoices WHERE UPPER(status) IN ('PENDING', 'OVERDUE')"));
+        response.put("deadWebhooks", number("SELECT COUNT(*) FROM billing_webhook_queue WHERE UPPER(status) IN ('FAILED', 'DEAD')"));
+        response.put("failedNotifications", number("SELECT COUNT(*) FROM billing_notifications WHERE UPPER(status) = 'FAILED'"));
         response.put("recentClients", clients("", "all", 8));
         response.put("expirationAlerts", expirationAlerts());
         response.put("plans", plans());
@@ -93,6 +96,11 @@ public class ZentrixAdminService {
             row.put("maxStores", 1);
             row.put("maxDevices", plan.includedPdvPerStore() + plan.includedAppGestaoPerStore());
             row.put("description", plan.description());
+            row.put("features", switch (plan.code()) {
+                case "BASICO" -> List.of("PDV", "Vendas offline", "Sincronizacao e backup");
+                case "INTERMEDIARIO" -> List.of("Tudo do Basico", "AppGestao", "Estoque e financeiro", "Relatorios operacionais");
+                default -> List.of("Tudo do Intermediario", "Auditoria avancada", "Indicadores completos", "Suporte prioritario");
+            });
             return row;
         }).toList();
     }
@@ -121,7 +129,8 @@ public class ZentrixAdminService {
         String q = "%" + text(search).toLowerCase() + "%";
         String normalizedStatus = text(status);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT t.id AS tenantId, t.name, t.document, t.status,
+                SELECT t.id AS tenantId, t.name, t.document, t.billing_email AS billingEmail,
+                       t.billing_phone AS billingPhone, t.billing_address AS billingAddress, t.status,
                        t.block_reason AS blockReason, t.blocked_at AS blockedAt, t.blocked_by AS blockedBy,
                        t.created_at AS createdAt, t.updated_at AS updatedAt,
                        l.id AS licenseId, l.plan_name AS planName, l.status AS licenseStatus,
@@ -155,7 +164,9 @@ public class ZentrixAdminService {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");
         List<Map<String, Object>> tenants = jdbcTemplate.queryForList("""
-                SELECT id AS tenantId, name, document, status, block_reason AS blockReason,
+                SELECT id AS tenantId, name, document, billing_email AS billingEmail,
+                       billing_phone AS billingPhone, billing_address AS billingAddress,
+                       status, block_reason AS blockReason,
                        blocked_at AS blockedAt, blocked_by AS blockedBy,
                        created_at AS createdAt, updated_at AS updatedAt
                 FROM tenants
@@ -184,8 +195,9 @@ public class ZentrixAdminService {
                 ORDER BY created_at DESC, name
                 """, tenant));
         response.put("devices", jdbcTemplate.queryForList("""
-                SELECT store_id AS storeId, id, name, source_id AS sourceId, app_type AS appType, status, last_seen_at AS lastSeenAt,
-                       created_at AS createdAt, updated_at AS updatedAt
+                SELECT store_id AS storeId, id, name, source_id AS sourceId, app_type AS appType,
+                       status, billable, activated_at AS activatedAt, deactivated_at AS deactivatedAt,
+                       last_seen_at AS lastSeenAt, created_at AS createdAt, updated_at AS updatedAt
                 FROM tenant_devices
                 WHERE tenant_id = ?
                 ORDER BY last_seen_at DESC, created_at DESC
@@ -198,6 +210,16 @@ public class ZentrixAdminService {
                 ORDER BY created_at DESC
                 LIMIT 20
                 """, tenant));
+        response.put("invoices", jdbcTemplate.queryForList("""
+                SELECT id, provider, provider_payment_id AS providerPaymentId, plan_name AS planName,
+                       amount, due_date AS dueDate, status, checkout_url AS checkoutUrl,
+                       paid_at AS paidAt, created_at AS createdAt
+                FROM billing_invoices
+                WHERE tenant_id = ?
+                ORDER BY created_at DESC
+                LIMIT 30
+                """, tenant));
+        response.put("supportNotes", supportNotes(tenant));
         response.put("billing", billingSummary(tenant, latestPlan));
         return response;
     }
@@ -205,6 +227,7 @@ public class ZentrixAdminService {
     @Transactional
     public Map<String, Object> createClient(Map<String, Object> request) {
         initializer.ensureReady();
+        request = request == null ? new LinkedHashMap<>() : new LinkedHashMap<>(request);
         String companyName = required(value(request, "companyName"), "companyName");
         String document = normalizedCpfCnpj(value(request, "document"));
         String adminUsername = required(value(request, "adminUsername"), "adminUsername");
@@ -222,6 +245,16 @@ public class ZentrixAdminService {
                 null
         ));
         String tenantId = String.valueOf(created.get("tenantId"));
+        jdbcTemplate.update("""
+                UPDATE tenants
+                SET billing_email = NULLIF(?, ''), billing_phone = NULLIF(?, ''), billing_address = NULLIF(?, '')
+                WHERE id = ?
+                """, value(request, "billingEmail"), value(request, "billingPhone"), value(request, "billingAddress"), tenantId);
+        int trialDays = intValue(request == null ? null : request.get("trialDays"), 0);
+        if (trialDays > 0) {
+            request.put("licenseStatus", "TRIAL");
+            request.put("expiresAt", LocalDateTime.now().plusDays(Math.min(trialDays, 90)).toString());
+        }
         Map<String, Object> license = createLicense(tenantId, request);
         auditService.recordCurrent("ZENTRIX_ADMIN_CLIENT_CREATED", "tenants", tenantId,
                 "Cliente criado pelo painel administrativo Zentrix.", "ALERTA", value(request, "reason"));
@@ -236,15 +269,26 @@ public class ZentrixAdminService {
         ensureTenantExists(tenant);
         String name = required(value(request, "name"), "name");
         String document = normalizedCpfCnpj(value(request, "document"));
+        String email = value(request, "billingEmail");
+        String phone = value(request, "billingPhone");
+        String address = value(request, "billingAddress");
         jdbcTemplate.update("""
                 UPDATE tenants
-                SET name = ?, document = ?
+                SET name = ?, document = ?, billing_email = NULLIF(?, ''),
+                    billing_phone = NULLIF(?, ''), billing_address = NULLIF(?, '')
                 WHERE id = ?
-                """, name, document, tenant);
+                """, name, document, email, phone, address, tenant);
         auditService.recordCurrent("ZENTRIX_ADMIN_BILLING_PROFILE_UPDATED", "tenants", tenant,
                 "Dados de cobranca atualizados pelo painel administrativo.", "ALERTA", value(request, "reason"));
         panelCacheService.clear();
-        return Map.of("tenantId", tenant, "name", name, "document", document);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("tenantId", tenant);
+        response.put("name", name);
+        response.put("document", document);
+        response.put("billingEmail", email);
+        response.put("billingPhone", phone);
+        response.put("billingAddress", address);
+        return response;
     }
 
     static boolean validCpfCnpj(String value) {
@@ -285,7 +329,10 @@ public class ZentrixAdminService {
         String tenant = required(tenantId, "tenantId");
         String plan = normalizePlan(defaultValue(value(request, "planName"), "BASICO"));
         PlanDefinition planDefinition = planDefinition(plan);
-        String status = defaultValue(value(request, "licenseStatus"), defaultValue(value(request, "status"), "ACTIVE"));
+        String status = defaultValue(value(request, "licenseStatus"), defaultValue(value(request, "status"), "ACTIVE")).toUpperCase();
+        if (!validStatus(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status de assinatura invalido.");
+        }
         Timestamp startsAt = timestampOrNull(value(request, "startsAt"));
         if (startsAt == null) {
             startsAt = Timestamp.valueOf(LocalDateTime.now());
@@ -293,11 +340,23 @@ public class ZentrixAdminService {
         Timestamp expiresAt = timestampOrNull(value(request, "expiresAt"));
         int maxStores = intValue(request == null ? null : request.get("maxStores"), 1);
         int maxDevices = intValue(request == null ? null : request.get("maxDevices"), planDefinition.includedPdvPerStore() + planDefinition.includedAppGestaoPerStore());
+        Map<String, Object> previous = jdbcTemplate.queryForList("""
+                SELECT plan_name AS planName FROM licenses WHERE tenant_id = ? ORDER BY id DESC LIMIT 1
+                """, tenant).stream().findFirst().orElse(Map.of());
         jdbcTemplate.update("""
                 INSERT INTO licenses (tenant_id, plan_name, status, starts_at, expires_at, max_stores, max_devices)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, tenant, plan, status, startsAt, expiresAt, maxStores, maxDevices);
         Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        String previousPlan = String.valueOf(previous.getOrDefault("planName", ""));
+        if (!previousPlan.isBlank() && !previousPlan.equalsIgnoreCase(plan)) {
+            jdbcTemplate.update("""
+                    INSERT INTO billing_plan_changes
+                        (tenant_id, from_plan, to_plan, effective_at, status, requested_by, reason)
+                    VALUES (?, ?, ?, ?, 'APPLIED', ?, ?)
+                    """, tenant, previousPlan, plan, startsAt,
+                    AuthContext.current().map(AuthTokenService.SessionToken::username).orElse("zentrix-admin"), value(request, "reason"));
+        }
         if (boolValue(request == null ? null : request.get("activateClient")) && "ACTIVE".equalsIgnoreCase(status)) {
             jdbcTemplate.update("""
                     UPDATE tenants
@@ -336,6 +395,7 @@ public class ZentrixAdminService {
                 FROM tenant_devices
                 WHERE tenant_id = ?
                   AND UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+                  AND billable = TRUE
                   AND UPPER(COALESCE(app_type, 'PDV')) = 'PDV'
                 """, tenant);
         long appGestaoApps = number("""
@@ -429,6 +489,117 @@ public class ZentrixAdminService {
         response.put("storesWithoutSync", stores.stream().filter(row -> row.get("lastSyncAt") == null).count());
         response.put("storesWithoutBackup", stores.stream().filter(row -> row.get("lastBackupAt") == null).count());
         return response;
+    }
+
+    public Map<String, Object> financeOverview(String status, int limit) {
+        initializer.ensureReady();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("receivedThisMonth", decimal("""
+                SELECT COALESCE(SUM(amount), 0) FROM billing_invoices
+                WHERE paid_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+                  AND UPPER(status) IN ('RECEIVED', 'CONFIRMED')
+                """));
+        response.put("pendingAmount", decimal("""
+                SELECT COALESCE(SUM(amount), 0) FROM billing_invoices
+                WHERE UPPER(status) IN ('PENDING', 'AWAITING_RISK_ANALYSIS')
+                """));
+        response.put("overdueAmount", decimal("""
+                SELECT COALESCE(SUM(amount), 0) FROM billing_invoices
+                WHERE UPPER(status) = 'OVERDUE' OR (due_date < CURRENT_DATE() AND UPPER(status) = 'PENDING')
+                """));
+        response.put("failedWebhooks", number("SELECT COUNT(*) FROM billing_webhook_queue WHERE UPPER(status) IN ('FAILED', 'DEAD')"));
+        response.put("failedNotifications", number("SELECT COUNT(*) FROM billing_notifications WHERE UPPER(status) = 'FAILED'"));
+        String filter = text(status);
+        response.put("invoices", jdbcTemplate.queryForList("""
+                SELECT bi.id, bi.tenant_id AS tenantId, t.name AS clientName, bi.plan_name AS planName,
+                       bi.amount, bi.due_date AS dueDate, bi.status, bi.paid_at AS paidAt,
+                       bi.checkout_url AS checkoutUrl, bi.created_at AS createdAt
+                FROM billing_invoices bi
+                JOIN tenants t ON t.id = bi.tenant_id
+                WHERE (? = 'all' OR UPPER(bi.status) = UPPER(?))
+                ORDER BY bi.created_at DESC
+                LIMIT ?
+                """, filter.isBlank() ? "all" : filter, filter, safeLimit(limit)));
+        return response;
+    }
+
+    @Transactional
+    public Map<String, Object> updateDeviceBilling(String tenantId, String deviceId, Map<String, Object> request) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        String device = required(deviceId, "deviceId");
+        Map<String, Object> current = jdbcTemplate.queryForList("""
+                SELECT store_id AS storeId, status, billable FROM tenant_devices
+                WHERE tenant_id = ? AND id = ? LIMIT 1
+                """, tenant, device).stream().findFirst().orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Dispositivo nao encontrado."));
+        boolean billable = request == null || !request.containsKey("billable") || boolValue(request.get("billable"));
+        String status = defaultValue(value(request, "status"), billable ? "ACTIVE" : "INACTIVE").toUpperCase();
+        if (!List.of("ACTIVE", "INACTIVE", "BLOCKED").contains(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status de dispositivo invalido.");
+        }
+        String reason = required(value(request, "reason"), "reason");
+        jdbcTemplate.update("""
+                UPDATE tenant_devices
+                SET status = ?, billable = ?, activated_at = CASE WHEN ? THEN COALESCE(activated_at, CURRENT_TIMESTAMP) ELSE activated_at END,
+                    deactivated_at = CASE WHEN ? THEN NULL ELSE CURRENT_TIMESTAMP END
+                WHERE tenant_id = ? AND id = ?
+                """, status, billable, billable, billable, tenant, device);
+        String actor = AuthContext.current().map(AuthTokenService.SessionToken::username).orElse("zentrix-admin");
+        jdbcTemplate.update("""
+                INSERT INTO device_billing_events
+                    (tenant_id, store_id, device_id, event_type, previous_status, new_status, reason, actor)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, tenant, current.get("storeId"), device, billable ? "ACTIVATED" : "DEACTIVATED",
+                current.get("status"), status, reason, actor);
+        auditService.recordCurrent("ZENTRIX_ADMIN_DEVICE_BILLING_UPDATED", "tenant_devices", device,
+                "Faturamento do aplicativo alterado para " + (billable ? "ativo" : "inativo") + ".", "ALERTA", reason);
+        panelCacheService.clear();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("tenantId", tenant);
+        result.put("deviceId", device);
+        result.put("status", status);
+        result.put("billable", billable);
+        return result;
+    }
+
+    public List<Map<String, Object>> supportNotes(String tenantId) {
+        initializer.ensureReady();
+        return jdbcTemplate.queryForList("""
+                SELECT id, category, status, priority, note, assigned_to AS assignedTo,
+                       created_by AS createdBy, created_at AS createdAt, resolved_at AS resolvedAt
+                FROM support_notes WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 50
+                """, required(tenantId, "tenantId"));
+    }
+
+    @Transactional
+    public Map<String, Object> addSupportNote(String tenantId, Map<String, Object> request) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        ensureTenantExists(tenant);
+        String note = required(value(request, "note"), "note");
+        String category = defaultValue(value(request, "category"), "SUPPORT").toUpperCase();
+        String priority = defaultValue(value(request, "priority"), "NORMAL").toUpperCase();
+        String actor = AuthContext.current().map(AuthTokenService.SessionToken::username).orElse("zentrix-admin");
+        jdbcTemplate.update("""
+                INSERT INTO support_notes (tenant_id, category, priority, note, assigned_to, created_by)
+                VALUES (?, ?, ?, ?, NULLIF(?, ''), ?)
+                """, tenant, category, priority, note, value(request, "assignedTo"), actor);
+        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        auditService.recordCurrent("ZENTRIX_ADMIN_SUPPORT_NOTE_CREATED", "support_notes", String.valueOf(id),
+                "Nota interna adicionada ao cliente.", "INFO", note);
+        return Map.of("id", id == null ? 0 : id, "tenantId", tenant, "status", "OPEN");
+    }
+
+    @Transactional
+    public Map<String, Object> resolveSupportNote(String tenantId, long noteId) {
+        initializer.ensureReady();
+        int updated = jdbcTemplate.update("""
+                UPDATE support_notes SET status = 'RESOLVED', resolved_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND tenant_id = ?
+                """, noteId, required(tenantId, "tenantId"));
+        if (updated == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Nota nao encontrada.");
+        return Map.of("id", noteId, "status", "RESOLVED");
     }
 
     public Map<String, Object> testClientAccess(String tenantId) {
@@ -599,6 +770,11 @@ public class ZentrixAdminService {
         return value == null ? 0 : value;
     }
 
+    private BigDecimal decimal(String sql) {
+        BigDecimal value = jdbcTemplate.queryForObject(sql, BigDecimal.class);
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
     private int safeLimit(int limit) {
         return Math.max(1, Math.min(limit <= 0 ? 100 : limit, 300));
     }
@@ -625,11 +801,12 @@ public class ZentrixAdminService {
     }
 
     private boolean validStatus(String status) {
-        return List.of("ACTIVE", "BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE").contains(status);
+        return List.of("ACTIVE", "TRIAL", "BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE").contains(status);
     }
 
     private boolean restrictedStatus(String status) {
-        return !"ACTIVE".equalsIgnoreCase(status);
+        String value = text(status).toUpperCase();
+        return List.of("BLOCKED", "SUSPENDED", "EXPIRED", "CANCELLED", "CANCELED", "INACTIVE").contains(value);
     }
 
     private long longValue(Object value) {

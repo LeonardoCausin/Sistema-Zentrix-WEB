@@ -22,6 +22,6 @@ public class AsaasWebhookController {
             @RequestHeader(name = "asaas-access-token", required = false) String webhookToken,
             @RequestBody Map<String, Object> payload
     ) {
-        return billingService.processAsaasWebhook(webhookToken, payload);
+        return billingService.enqueueAsaasWebhook(webhookToken, payload);
     }
 }

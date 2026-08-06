@@ -27,8 +27,9 @@ class LicenseAccessServiceTest {
         jdbcTemplate.addQueryResult(List.of(Map.of(
                 "status", "ACTIVE",
                 "planName", "INTERMEDIARIO",
-                "expiresAt", Timestamp.valueOf(LocalDateTime.now().minusMinutes(1))
+                "expiresAt", Timestamp.valueOf(LocalDateTime.now().minusDays(4))
         )));
+        jdbcTemplate.addQueryResult(List.of(Map.of("graceDays", 3)));
 
         LicenseAccessException error = assertThrows(
                 LicenseAccessException.class,
@@ -36,6 +37,21 @@ class LicenseAccessServiceTest {
         );
 
         assertEquals("PAYMENT_EXPIRED", error.reasonCode());
+    }
+
+    @Test
+    void allowsAccessDuringConfiguredGracePeriod() {
+        jdbcTemplate.addQueryResult(List.of(Map.of("status", "ACTIVE")));
+        jdbcTemplate.addQueryResult(List.of(Map.of(
+                "status", "ACTIVE",
+                "planName", "INTERMEDIARIO",
+                "expiresAt", Timestamp.valueOf(LocalDateTime.now().minusDays(1))
+        )));
+        jdbcTemplate.addQueryResult(List.of(Map.of("graceDays", 3)));
+
+        service.requireActive("tenant-1", "WEB", "/api/dashboard");
+
+        assertEquals(0, jdbcTemplate.queryResults.size());
     }
 
     @Test

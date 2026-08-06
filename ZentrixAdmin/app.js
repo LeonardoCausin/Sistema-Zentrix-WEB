@@ -10,6 +10,7 @@
     overview: null,
     clients: [],
     plans: [],
+    finance: null,
     support: null,
     viewRequestId: 0
   };
@@ -121,6 +122,7 @@
       if (state.view === "dashboard") await loadDashboard(fresh);
       if (state.view === "clients") await loadClients(fresh);
       if (state.view === "subscriptions") await loadSubscriptions(fresh);
+      if (state.view === "finance") await loadFinance(fresh);
       if (state.view === "permissions") await loadPermissions();
       if (state.view === "support") await loadSupport();
     } catch (error) {
@@ -177,6 +179,14 @@
           date(row.expiresAt),
           `${row.daysLeft} dia(s)`
         ]) : emptyState("Nenhum vencimento em 7, 3 ou 1 dia.")}
+      </section>
+      <section class="panel">
+        <div class="panel-title"><div><h2>Saude financeira</h2><span class="muted">Fila de cobranca e entregas automaticas</span></div><button type="button" data-action="open-finance">Abrir financeiro</button></div>
+        <div class="grid three compact-grid">
+          ${metric("Faturas pendentes", data.pendingInvoices || 0, "Aguardando ou vencidas")}
+          ${metric("Webhooks parados", data.deadWebhooks || 0, "Exigem revisao")}
+          ${metric("Avisos com falha", data.failedNotifications || 0, "E-mail ou automacao")}
+        </div>
       </section>
       <section class="panel">
         <div class="panel-title">
@@ -288,14 +298,14 @@
       <thead><tr><th>Cliente</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
-          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(formatCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
+          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(maskCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span>${row.blockReason ? `<br><span class="danger-text">${esc(row.blockReason)}</span>` : ""}</td>
           <td>${esc(row.planName || "BASICO")}<br><span class="muted">${planAccessLabel(row.billing)}</span></td>
           <td>${tag(row.status)} ${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}<br><span class="muted">${expirationLabel(row.expiresAt)}</span></td>
           <td><strong>${money(row.monthlyTotal)}</strong><br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="renew-license" data-tenant="${escAttr(row.tenantId)}">Renovar</button>
-            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}">Editar CPF/CNPJ</button>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}" data-email="${escAttr(row.billingEmail || "")}" data-phone="${escAttr(row.billingPhone || "")}" data-address="${escAttr(row.billingAddress || "")}">Dados de cobranca</button>
             <button class="danger" type="button" data-action="block-client" data-tenant="${escAttr(row.tenantId)}">Bloquear</button>
             <button type="button" data-action="activate-client" data-tenant="${escAttr(row.tenantId)}">Liberar</button>
             <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
@@ -303,6 +313,36 @@
         </tr>
       `).join("") || emptyRow(6)}</tbody>
     </table>`;
+  }
+
+  async function loadFinance(fresh) {
+    setHeading("Financeiro", "Faturas, recebimentos, inadimplencia e integracoes.");
+    if (fresh || !state.finance) state.finance = await api("/zentrix-admin/finance?limit=200");
+    const data = state.finance || {};
+    const invoices = data.invoices || [];
+    els.viewHost.innerHTML = `
+      <div class="grid">
+        ${metric("Recebido no mes", money(data.receivedThisMonth), "Pagamentos confirmados")}
+        ${metric("Pendente", money(data.pendingAmount), "Cobrancas aguardando")}
+        ${metric("Vencido", money(data.overdueAmount), "Inadimplencia")}
+        ${metric("Falhas tecnicas", Number(data.failedWebhooks || 0) + Number(data.failedNotifications || 0), "Webhooks e avisos")}
+      </div>
+      <section class="panel">
+        <div class="panel-title"><div><h2>Faturas</h2><span class="muted">${invoices.length} registros recentes</span></div><button type="button" id="exportFinanceButton">Exportar CSV</button></div>
+        ${simpleTable(["Cliente", "Plano", "Vencimento", "Valor", "Status", "Pagamento"], invoices, (row) => [row.clientName, row.planName, date(row.dueDate), money(row.amount), tag(row.status), date(row.paidAt)])}
+      </section>`;
+    document.getElementById("exportFinanceButton").onclick = () => exportFinanceCsv(invoices);
+  }
+
+  function exportFinanceCsv(rows) {
+    const cell = (value) => `"${String(value == null ? "" : value).replaceAll('"', '""')}"`;
+    const csv = [["Cliente", "Plano", "Vencimento", "Valor", "Status", "Pagamento"], ...rows.map((row) => [row.clientName, row.planName, row.dueDate, row.amount, row.status, row.paidAt])]
+      .map((row) => row.map(cell).join(";")).join("\r\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+    link.download = `zentrix-faturas-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   async function loadSupport() {
@@ -345,14 +385,14 @@
       <thead><tr><th>Cliente</th><th>Status</th><th>Plano</th><th>Vencimento</th><th>Cobranca</th><th>Acoes</th></tr></thead>
       <tbody>${rows.map((row) => `
         <tr>
-          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(formatCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span></td>
+          <td><strong>${esc(row.name)}</strong><br><span class="muted">${esc(maskCpfCnpj(row.document) || "CPF/CNPJ nao cadastrado")}</span></td>
           <td>${tag(row.status)}</td>
           <td>${esc(row.planName || "BASICO")}<br>${tag(row.licenseStatus || "-")}</td>
           <td>${date(row.expiresAt)}</td>
           <td>${money(row.monthlyTotal)}<br><span class="muted">${billingLine(row.billing)}</span></td>
           <td class="actions">
             <button type="button" data-action="client-detail" data-tenant="${escAttr(row.tenantId)}">Abrir</button>
-            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}">Editar CPF/CNPJ</button>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(row.tenantId)}" data-name="${escAttr(row.name)}" data-document="${escAttr(row.document || "")}" data-email="${escAttr(row.billingEmail || "")}" data-phone="${escAttr(row.billingPhone || "")}" data-address="${escAttr(row.billingAddress || "")}">Dados de cobranca</button>
             <button type="button" data-action="activation-code" data-tenant="${escAttr(row.tenantId)}">Codigo PDV</button>
             <button type="button" data-action="test-access" data-tenant="${escAttr(row.tenantId)}">Testar</button>
           </td>
@@ -401,13 +441,26 @@
   async function handleAction(button) {
     const action = button.dataset.action;
     if (action === "new-client") return showClientForm();
+    if (action === "open-finance") return setView("finance");
     if (action === "client-detail") return showClientDetail(button.dataset.tenant);
-    if (action === "billing-profile") return showBillingProfileForm(button.dataset.tenant, button.dataset.name, button.dataset.document);
+    if (action === "billing-profile") return showBillingProfileForm(
+      button.dataset.tenant,
+      button.dataset.name,
+      button.dataset.document,
+      button.dataset.email,
+      button.dataset.phone,
+      button.dataset.address
+    );
     if (action === "renew-license") return showLicenseForm(button.dataset.tenant);
     if (action === "activation-code") return showActivationForm(button.dataset.tenant);
     if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
     if (action === "activate-client") return showStatusForm(button.dataset.tenant, "ACTIVE");
     if (action === "store-status") return showStoreStatusForm(button.dataset.tenant, button.dataset.store, button.dataset.status);
+    if (action === "device-billing") return showDeviceBillingForm(button.dataset.tenant, button.dataset.device, button.dataset.billable, button.dataset.status);
+    if (action === "support-note") return showSupportNoteForm(button.dataset.tenant);
+    if (action === "resolve-note") return resolveSupportNote(button.dataset.tenant, button.dataset.note);
+    if (action === "mfa-setup") return setupMfa();
+    if (action === "mfa-disable") return disableMfa();
     if (action === "test-access") return testClientAccess(button.dataset.tenant);
     if (action === "normalize-cash") return reasonAction("Normalizar caixas", "/local-admin/cash/normalize-statuses?store=" + encodeURIComponent(els.storeSelect.value), "POST");
     if (action === "clear-sync") return reasonAction("Limpar falhas de sincronizacao", "/local-admin/sync/clear-failures?store=" + encodeURIComponent(els.storeSelect.value), "POST", { days: 7 });
@@ -419,6 +472,7 @@
 
   async function loadPermissions() {
     setHeading("Permissoes", "Acessos separados para dono, financeiro e suporte.");
+    const mfa = await api("/auth/mfa").catch(() => ({ available: false, enabled: false }));
     els.viewHost.innerHTML = `
       <section class="panel" style="margin-top:0">
         <div class="panel-title">
@@ -429,8 +483,14 @@
           ${permissionCard("Financeiro", "zentrix.financeiro", "Cria clientes, renova assinaturas, bloqueia e libera lojas.")}
           ${permissionCard("Suporte", "zentrix.suporte", "Consulta saude, historico, teste de acesso e gera codigo PDV.")}
         </div>
+        <section class="notice full ${mfa.enabled ? "success-note" : ""}">
+          <strong>Segundo fator: ${mfa.enabled ? "ativo" : "inativo"}</strong>
+          <span>${mfa.available ? "Proteja este usuario com um aplicativo autenticador compativel." : "Habilite ZENTRIX_AUTH_MFA_ENABLED no servidor para disponibilizar o recurso."}</span>
+          ${mfa.available ? `<button type="button" data-action="${mfa.enabled ? "mfa-disable" : "mfa-setup"}">${mfa.enabled ? "Desativar 2FA" : "Configurar 2FA"}</button>` : ""}
+        </section>
       </section>
     `;
+    wireCommonActions();
   }
 
   async function showClientForm() {
@@ -444,10 +504,15 @@
         ${field("adminUsername", "Usuario admin", "text", true)}
         ${field("adminDisplayName", "Nome do admin")}
         ${field("adminPassword", "Senha inicial", "password", true)}
+        ${field("billingEmail", "E-mail de cobranca", "email")}
+        ${field("billingPhone", "Telefone de cobranca", "text")}
+        <label class="full">Endereco de cobranca<input name="billingAddress" type="text" /></label>
         ${planSelect("planName", "Plano", "BASICO")}
+        ${field("trialDays", "Teste gratis em dias", "number", false, "0")}
         ${field("expiresAt", "Vencimento", "date")}
         ${field("maxStores", "Lojas base cobradas", "number", false, "1")}
         ${field("maxDevices", "Apps incluidos por loja", "number", false, "1")}
+        <section id="planPreview" class="notice full"><span>Selecione o plano para calcular a diferenca proporcional.</span></section>
         <label class="full">Motivo<textarea name="reason">Cadastro de novo cliente.</textarea></label>
         <button class="primary full" type="submit">Criar cliente</button>
       </form>
@@ -486,7 +551,7 @@
           <div><h3>Resumo de cobranca</h3><span class="muted">Por loja ativa e aplicativos instalados</span></div>
           <div class="actions">
             <strong>${money(detail.billing && detail.billing.monthlyTotal)}</strong>
-            <button type="button" data-action="billing-profile" data-tenant="${escAttr(tenantId)}" data-name="${escAttr(detail.name)}" data-document="${escAttr(detail.document || "")}">Dados de cobranca</button>
+            <button type="button" data-action="billing-profile" data-tenant="${escAttr(tenantId)}" data-name="${escAttr(detail.name)}" data-document="${escAttr(detail.document || "")}" data-email="${escAttr(detail.billingEmail || "")}" data-phone="${escAttr(detail.billingPhone || "")}" data-address="${escAttr(detail.billingAddress || "")}">Dados de cobranca</button>
           </div>
         </div>
         ${billingDetails(detail.billing)}
@@ -508,8 +573,23 @@
         ${simpleTable(["Plano", "Status", "Inicio", "Fim", "Limites"], detail.licenses || [], (row) => [row.planName, tag(row.status), date(row.startsAt), date(row.expiresAt), `${row.maxStores} lojas / ${row.maxDevices} disp.`])}
       </section>
       <section class="panel">
+        <div class="panel-title"><div><h3>Aplicativos instalados</h3><span class="muted">Cada PDV adicional faturavel custa R$ 49,90 por mes</span></div></div>
+        ${simpleTable(["Aplicativo", "Loja", "Tipo", "Status", "Faturavel", "Acao"], detail.devices || [], (row) => [
+          row.name || row.id, row.storeId, row.appType || "PDV", tag(row.status), row.billable === false ? "Nao" : "Sim",
+          `<button type="button" data-action="device-billing" data-tenant="${escAttr(tenantId)}" data-device="${escAttr(row.id)}" data-status="${escAttr(row.status || "ACTIVE")}" data-billable="${row.billable === false ? "false" : "true"}">Alterar</button>`
+        ])}
+      </section>
+      <section class="panel">
+        <h3>Faturas</h3>
+        ${simpleTable(["Plano", "Vencimento", "Valor", "Status", "Pago em"], detail.invoices || [], (row) => [row.planName, date(row.dueDate), money(row.amount), tag(row.status), date(row.paidAt)])}
+      </section>
+      <section class="panel">
         <h3>Historico visual</h3>
         ${timeline(history || [])}
+      </section>
+      <section class="panel">
+        <div class="panel-title"><div><h3>Notas internas</h3><span class="muted">Atendimento, financeiro e acompanhamento</span></div><button type="button" data-action="support-note" data-tenant="${escAttr(tenantId)}">Nova nota</button></div>
+        ${simpleTable(["Prioridade", "Categoria", "Nota", "Responsavel", "Status", "Acao"], detail.supportNotes || [], (row) => [tag(row.priority), row.category, row.note, row.assignedTo || row.createdBy || "-", tag(row.status), String(row.status).toUpperCase() === "RESOLVED" ? "-" : `<button type="button" data-action="resolve-note" data-tenant="${escAttr(tenantId)}" data-note="${escAttr(row.id)}">Resolver</button>`])}
       </section>
       <section class="panel">
         <div class="panel-title">
@@ -531,11 +611,14 @@
     wireCommonActions();
   }
 
-  function showBillingProfileForm(tenantId, name, documentValue) {
+  function showBillingProfileForm(tenantId, name, documentValue, email, phone, address) {
     openModal("Dados de cobranca", `
       <form id="billingProfileForm" class="form-grid">
         ${field("name", "Razao social ou nome", "text", true, name || "")}
         ${field("document", "CPF ou CNPJ", "text", true, documentValue || "")}
+        ${field("billingEmail", "E-mail", "email", false, email || "")}
+        ${field("billingPhone", "Telefone", "text", false, phone || "")}
+        <label class="full">Endereco<input name="billingAddress" type="text" value="${escAttr(address || "")}" /></label>
         <label class="full">Motivo<textarea name="reason">Atualizacao dos dados usados na cobranca Asaas.</textarea></label>
         <button class="primary full" type="submit">Salvar dados de cobranca</button>
       </form>
@@ -599,6 +682,17 @@
       }
     };
     wirePlanDefaults("licenseForm");
+    const planField = document.querySelector('#licenseForm [name="planName"]');
+    const updatePreview = async () => {
+      try {
+        const preview = await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/plan-preview?plan=${encodeURIComponent(planField.value)}`);
+        document.getElementById("planPreview").innerHTML = `<strong>${esc(preview.fromPlan)} para ${esc(preview.toPlan)}</strong><span>Novo valor mensal: ${money(preview.newMonthlyTotal)}. Ajuste proporcional estimado: ${money(preview.prorationAmount)} (${esc(preview.remainingDays)} dia(s)).</span>`;
+      } catch (error) {
+        document.getElementById("planPreview").innerHTML = `<span>${esc(error.message)}</span>`;
+      }
+    };
+    planField.addEventListener("change", updatePreview);
+    updatePreview();
   }
 
   function showActivationForm(tenantId) {
@@ -702,6 +796,52 @@
     };
   }
 
+  function showDeviceBillingForm(tenantId, deviceId, currentBillable, currentStatus) {
+    const isBillable = String(currentBillable) !== "false";
+    openModal("Faturamento do aplicativo", `
+      <form id="deviceBillingForm" class="form-grid">
+        <section class="notice full"><strong>${esc(deviceId)}</strong><span>Desativar remove este aplicativo da proxima composicao mensal. O historico sera preservado.</span></section>
+        <label class="check-field full"><input name="billable" type="checkbox" value="true" ${isBillable ? "checked" : ""} /> Aplicativo ativo e faturavel</label>
+        <label>Status<select name="status">${["ACTIVE", "INACTIVE", "BLOCKED"].map((status) => `<option value="${status}" ${status === String(currentStatus).toUpperCase() ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+        <label class="full">Motivo<textarea name="reason" required>Alteracao do aplicativo faturavel.</textarea></label>
+        <button class="primary full" type="submit">Salvar aplicativo</button>
+      </form>`);
+    document.getElementById("deviceBillingForm").onsubmit = async (event) => {
+      event.preventDefault();
+      const data = formData(event.currentTarget);
+      data.billable = data.billable === "true";
+      await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/billing`, { method: "PUT", body: JSON.stringify(data) });
+      closeModal();
+      state.clients = [];
+      await showClientDetail(tenantId);
+      toast("Aplicativo atualizado.");
+    };
+  }
+
+  function showSupportNoteForm(tenantId) {
+    openModal("Nova nota interna", `
+      <form id="supportNoteForm" class="form-grid">
+        <label>Categoria<select name="category"><option>SUPPORT</option><option>FINANCE</option><option>ONBOARDING</option></select></label>
+        <label>Prioridade<select name="priority"><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select></label>
+        ${field("assignedTo", "Responsavel")}
+        <label class="full">Nota<textarea name="note" required></textarea></label>
+        <button class="primary full" type="submit">Registrar nota</button>
+      </form>`);
+    document.getElementById("supportNoteForm").onsubmit = async (event) => {
+      event.preventDefault();
+      await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/support-notes`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+      closeModal();
+      await showClientDetail(tenantId);
+      toast("Nota registrada.");
+    };
+  }
+
+  async function resolveSupportNote(tenantId, noteId) {
+    await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/support-notes/${encodeURIComponent(noteId)}/resolve`, { method: "PUT" });
+    await showClientDetail(tenantId);
+    toast("Nota resolvida.");
+  }
+
   async function testClientAccess(tenantId) {
     const result = await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/access-test`, { method: "POST" });
     openModal("Teste de acesso", `
@@ -710,6 +850,38 @@
         <span>${esc(result.message || "-")}</span>
       </section>
     `);
+  }
+
+  async function setupMfa() {
+    const setup = await api("/auth/mfa/setup", { method: "POST" });
+    openModal("Configurar segundo fator", `
+      <form id="mfaEnableForm" class="form-grid">
+        <section class="notice full"><strong>Chave do autenticador</strong><span class="mono">${esc(setup.secret)}</span><span>Adicione esta chave no aplicativo e informe o primeiro codigo.</span></section>
+        ${field("otp", "Codigo de 6 digitos", "text", true)}
+        <button class="primary full" type="submit">Ativar segundo fator</button>
+      </form>`);
+    document.getElementById("mfaEnableForm").onsubmit = async (event) => {
+      event.preventDefault();
+      await api("/auth/mfa/enable", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+      closeModal();
+      await loadPermissions();
+      toast("Segundo fator ativado.");
+    };
+  }
+
+  function disableMfa() {
+    openModal("Desativar segundo fator", `
+      <form id="mfaDisableForm" class="form-grid">
+        ${field("otp", "Codigo atual", "text", true)}
+        <button class="danger full" type="submit">Desativar segundo fator</button>
+      </form>`);
+    document.getElementById("mfaDisableForm").onsubmit = async (event) => {
+      event.preventDefault();
+      await api("/auth/mfa", { method: "DELETE", body: JSON.stringify(formData(event.currentTarget)) });
+      closeModal();
+      await loadPermissions();
+      toast("Segundo fator desativado.");
+    };
   }
 
   function showCloseCashForm(id, store) {
@@ -819,6 +991,15 @@
       .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
       .replace(/\.(\d{3})(\d)/, ".$1/$2")
       .replace(/(\/\d{4})(\d)/, "$1-$2");
+  }
+
+  function maskCpfCnpj(value) {
+    const formatted = formatCpfCnpj(value);
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!formatted) return "";
+    if (digits.length === 11) return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`;
+    if (digits.length === 14) return `${digits.slice(0, 2)}.***.***/${digits.slice(8, 12)}-**`;
+    return formatted;
   }
 
   function planSelect(name, label, selected) {

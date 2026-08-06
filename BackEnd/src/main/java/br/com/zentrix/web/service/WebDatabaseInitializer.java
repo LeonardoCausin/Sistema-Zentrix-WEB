@@ -118,6 +118,9 @@ public class WebDatabaseInitializer {
                     id VARCHAR(80) NOT NULL,
                     name VARCHAR(180) NOT NULL,
                     document VARCHAR(40),
+                    billing_email VARCHAR(180) NULL,
+                    billing_phone VARCHAR(40) NULL,
+                    billing_address VARCHAR(500) NULL,
                     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
                     block_reason VARCHAR(255) NULL,
                     blocked_at DATETIME NULL,
@@ -150,6 +153,9 @@ public class WebDatabaseInitializer {
                     name VARCHAR(180),
                     source_id VARCHAR(120),
                     app_type VARCHAR(30) NOT NULL DEFAULT 'PDV',
+                    billable BOOLEAN NOT NULL DEFAULT TRUE,
+                    activated_at DATETIME NULL,
+                    deactivated_at DATETIME NULL,
                     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
                     last_seen_at DATETIME NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -335,6 +341,9 @@ public class WebDatabaseInitializer {
                     category VARCHAR(120) NOT NULL,
                     description VARCHAR(255) NOT NULL,
                     amount DECIMAL(15,2) NOT NULL,
+                    base_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    discount_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    proration_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
                     entry_date DATE NOT NULL,
                     status VARCHAR(30) NOT NULL DEFAULT 'PENDENTE',
                     created_by VARCHAR(80) NULL,
@@ -467,6 +476,7 @@ public class WebDatabaseInitializer {
                     coverage_start DATE NOT NULL,
                     coverage_end DATE NOT NULL,
                     due_date DATE NOT NULL,
+                    grace_until DATE NULL,
                     status VARCHAR(40) NOT NULL DEFAULT 'PENDING',
                     checkout_url VARCHAR(500) NULL,
                     paid_at DATETIME NULL,
@@ -490,6 +500,151 @@ public class WebDatabaseInitializer {
                     processed_at DATETIME NULL,
                     PRIMARY KEY (provider, event_id),
                     INDEX idx_billing_webhook_payment (provider, provider_payment_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_settings (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    grace_days INT NOT NULL DEFAULT 3,
+                    trial_days INT NOT NULL DEFAULT 0,
+                    auto_block BOOLEAN NOT NULL DEFAULT TRUE,
+                    notification_email BOOLEAN NOT NULL DEFAULT TRUE,
+                    notification_webhook BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_webhook_queue (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    provider VARCHAR(30) NOT NULL DEFAULT 'ASAAS',
+                    event_id VARCHAR(100) NOT NULL,
+                    event_type VARCHAR(80) NOT NULL,
+                    payload_json LONGTEXT NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                    attempts INT NOT NULL DEFAULT 0,
+                    next_attempt_at DATETIME NULL,
+                    last_error VARCHAR(500) NULL,
+                    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    processed_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    UNIQUE INDEX uq_billing_webhook_queue_event (provider, event_id),
+                    INDEX idx_billing_webhook_queue_work (status, next_attempt_at, id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_notifications (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    invoice_id CHAR(36) NULL,
+                    reference_key VARCHAR(120) NOT NULL,
+                    channel VARCHAR(30) NOT NULL DEFAULT 'IN_APP',
+                    notification_type VARCHAR(50) NOT NULL,
+                    recipient VARCHAR(180) NULL,
+                    subject VARCHAR(180) NOT NULL,
+                    message TEXT NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                    attempts INT NOT NULL DEFAULT 0,
+                    scheduled_for DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    sent_at DATETIME NULL,
+                    read_at DATETIME NULL,
+                    last_error VARCHAR(500) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    UNIQUE INDEX uq_billing_notification (tenant_id, reference_key, channel, notification_type),
+                    INDEX idx_billing_notification_delivery (status, scheduled_for, id),
+                    INDEX idx_billing_notification_tenant (tenant_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS billing_plan_changes (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    from_plan VARCHAR(80) NOT NULL,
+                    to_plan VARCHAR(80) NOT NULL,
+                    effective_at DATETIME NOT NULL,
+                    proration_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+                    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                    invoice_id CHAR(36) NULL,
+                    requested_by VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    applied_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    INDEX idx_billing_plan_change_tenant (tenant_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS device_billing_events (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    device_id VARCHAR(120) NOT NULL,
+                    event_type VARCHAR(40) NOT NULL,
+                    previous_status VARCHAR(30) NULL,
+                    new_status VARCHAR(30) NULL,
+                    reason VARCHAR(255) NULL,
+                    actor VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id),
+                    INDEX idx_device_billing_history (tenant_id, device_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS support_notes (
+                    id BIGINT NOT NULL AUTO_INCREMENT,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    category VARCHAR(40) NOT NULL DEFAULT 'SUPPORT',
+                    status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+                    priority VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+                    note TEXT NOT NULL,
+                    assigned_to VARCHAR(80) NULL,
+                    created_by VARCHAR(80) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME NULL,
+                    PRIMARY KEY (id),
+                    INDEX idx_support_notes_tenant (tenant_id, status, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    token_hash CHAR(64) NOT NULL,
+                    username VARCHAR(80) NOT NULL,
+                    display_name VARCHAR(140) NOT NULL,
+                    role VARCHAR(40) NOT NULL,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    source_id VARCHAR(120) NOT NULL,
+                    permissions_json TEXT NULL,
+                    issued_at DATETIME NOT NULL,
+                    expires_at DATETIME NOT NULL,
+                    revoked_at DATETIME NULL,
+                    PRIMARY KEY (token_hash),
+                    INDEX idx_auth_sessions_user (username, expires_at),
+                    INDEX idx_auth_sessions_expiration (expires_at, revoked_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS user_mfa (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    username VARCHAR(80) NOT NULL,
+                    secret_base32 VARCHAR(255) NOT NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    recovery_codes_json TEXT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    verified_at DATETIME NULL,
+                    PRIMARY KEY (tenant_id, username)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    token_hash CHAR(64) NOT NULL,
+                    tenant_id VARCHAR(80) NOT NULL,
+                    username VARCHAR(80) NOT NULL,
+                    requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL,
+                    used_at DATETIME NULL,
+                    PRIMARY KEY (token_hash),
+                    INDEX idx_password_reset_user (tenant_id, username, expires_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
                 """
@@ -583,6 +738,9 @@ public class WebDatabaseInitializer {
         ensureColumn("tenants", "block_reason", "VARCHAR(255) NULL", "AFTER status");
         ensureColumn("tenants", "blocked_at", "DATETIME NULL", "AFTER block_reason");
         ensureColumn("tenants", "blocked_by", "VARCHAR(80) NULL", "AFTER blocked_at");
+        ensureColumn("tenants", "billing_email", "VARCHAR(180) NULL", "AFTER document");
+        ensureColumn("tenants", "billing_phone", "VARCHAR(40) NULL", "AFTER billing_email");
+        ensureColumn("tenants", "billing_address", "VARCHAR(500) NULL", "AFTER billing_phone");
 
         ensureColumn("audit_log", "risk_level", "VARCHAR(30) NULL", "AFTER created_at");
         ensureColumn("audit_log", "previous_value", "TEXT NULL", "AFTER risk_level");
@@ -620,7 +778,17 @@ public class WebDatabaseInitializer {
         ensureColumn("users", "last_login_at", "DATETIME NULL", "AFTER updated_at");
         ensureColumn("users", "permissions_json", "TEXT NULL", "AFTER last_login_at");
         ensureColumn("tenant_devices", "app_type", "VARCHAR(30) NOT NULL DEFAULT 'PDV'", "AFTER source_id");
+        ensureColumn("tenant_devices", "billable", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER app_type");
+        ensureColumn("tenant_devices", "activated_at", "DATETIME NULL", "AFTER billable");
+        ensureColumn("tenant_devices", "deactivated_at", "DATETIME NULL", "AFTER activated_at");
         jdbcTemplate.update("UPDATE tenant_devices SET app_type = 'PDV' WHERE app_type IS NULL OR app_type = ''");
+        jdbcTemplate.update("UPDATE tenant_devices SET activated_at = COALESCE(activated_at, created_at) WHERE activated_at IS NULL");
+
+        ensureColumn("billing_invoices", "base_amount", "DECIMAL(15,2) NOT NULL DEFAULT 0.00", "AFTER amount");
+        ensureColumn("billing_invoices", "discount_amount", "DECIMAL(15,2) NOT NULL DEFAULT 0.00", "AFTER base_amount");
+        ensureColumn("billing_invoices", "proration_amount", "DECIMAL(15,2) NOT NULL DEFAULT 0.00", "AFTER discount_amount");
+        ensureColumn("billing_invoices", "grace_until", "DATE NULL", "AFTER due_date");
+        ensureColumn("billing_notifications", "reference_key", "VARCHAR(120) NOT NULL DEFAULT 'legacy'", "AFTER invoice_id");
 
         ensureColumn("cash_sessions", "closing_balance", "DECIMAL(15,2) NULL", "AFTER opening_balance");
         ensureColumn("cash_sessions", "expected_balance", "DECIMAL(15,2) NULL", "AFTER closing_balance");
@@ -688,7 +856,8 @@ public class WebDatabaseInitializer {
                 new Migration("2026063001", "performance indexes for panel pagination", ignored -> migrationPerformanceIndexes()),
                 new Migration("2026063002", "sync reconciliation ledger", ignored -> migrationSyncReconciliation()),
                 new Migration("2026070201", "web change outbox retry policy", ignored -> migrationWebChangeOutboxRetryPolicy()),
-                new Migration("2026070202", "tenant period indexes for panel filters", ignored -> migrationTenantPeriodIndexes())
+                new Migration("2026070202", "tenant period indexes for panel filters", ignored -> migrationTenantPeriodIndexes()),
+                new Migration("2026080601", "billing automation and device lifecycle indexes", ignored -> migrationBillingFoundation())
         );
         for (Migration migration : migrations) {
             if (migrationApplied(migration.version())) {
@@ -766,6 +935,14 @@ public class WebDatabaseInitializer {
         ensureIndex("audit_log", "idx_audit_log_tenant_created_id", List.of("tenant_id", "created_at", "id"));
         ensureIndex("products", "idx_products_tenant_active_stock", List.of("tenant_id", "active", "deleted_at", "stock"));
         ensureIndex("clients", "idx_clients_tenant_active_name", List.of("tenant_id", "active", "name"));
+    }
+
+    private void migrationBillingFoundation() {
+        jdbcTemplate.execute("ALTER TABLE user_mfa MODIFY COLUMN secret_base32 VARCHAR(255) NOT NULL");
+        ensureIndex("tenant_devices", "idx_tenant_devices_billing", List.of("tenant_id", "billable", "status", "app_type"));
+        ensureIndex("billing_invoices", "idx_billing_invoice_due", List.of("tenant_id", "status", "due_date"));
+        ensureIndex("billing_webhook_queue", "idx_billing_webhook_worker", List.of("status", "next_attempt_at", "id"));
+        ensureIndex("auth_sessions", "idx_auth_sessions_scope", List.of("tenant_id", "username", "expires_at"));
     }
 
     private void ensureScopeColumns(String tableName) {

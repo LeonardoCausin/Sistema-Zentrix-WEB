@@ -73,6 +73,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(apiAuthInterceptor)
                 .addPathPatterns(
                         "/api/auth/me",
+                        "/api/auth/mfa/**",
+                        "/api/auth/mfa",
                         "/api/admin/**",
                         "/api/dashboard",
                         "/api/sales",

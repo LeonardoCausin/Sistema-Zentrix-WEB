@@ -38,12 +38,16 @@ public class AsaasClient {
     }
 
     public void requireConfigured() {
-        if (!enabled || apiKey.isBlank()) {
+        if (!isConfigured()) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     "O pagamento online ainda nao esta habilitado. Configure o Asaas no servidor."
             );
         }
+    }
+
+    public boolean isConfigured() {
+        return enabled && !apiKey.isBlank();
     }
 
     public Map<String, Object> findCustomer(String externalReference) {

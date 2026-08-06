@@ -16,6 +16,7 @@ import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,13 +32,20 @@ public class AuthService {
     private final WebDatabaseInitializer initializer;
     private final AuthTokenService authTokenService;
     private final AuditService auditService;
+    private final TotpService totpService;
     private final Map<String, LoginAttempt> attempts = new ConcurrentHashMap<>();
 
     public AuthService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, AuthTokenService authTokenService, AuditService auditService) {
+        this(jdbcTemplate, initializer, authTokenService, auditService, null);
+    }
+
+    @Autowired
+    public AuthService(JdbcTemplate jdbcTemplate, WebDatabaseInitializer initializer, AuthTokenService authTokenService, AuditService auditService, TotpService totpService) {
         this.jdbcTemplate = jdbcTemplate;
         this.initializer = initializer;
         this.authTokenService = authTokenService;
         this.auditService = auditService;
+        this.totpService = totpService;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -70,6 +78,9 @@ public class AuthService {
             if (!isWebAdminRole(role)) {
                 passwordMatchedNonAdmin = true;
                 continue;
+            }
+            if (totpService != null) {
+                totpService.requireValid(String.valueOf(user.get("tenant_id")), username, request.otp());
             }
             Map<String, Object> sessionScope = resolveSessionScope(user);
             String tenantId = String.valueOf(sessionScope.get("tenant_id"));

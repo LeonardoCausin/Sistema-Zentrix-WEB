@@ -58,7 +58,9 @@ public class LicenseAccessService {
         }
         Object expiresAt = license.get("expiresAt");
         if (expiresAt instanceof Timestamp timestamp && timestamp.toLocalDateTime().isBefore(LocalDateTime.now())) {
-            throw expiredPayment();
+            if (!withinGracePeriod(tenantId, timestamp)) {
+                throw expiredPayment();
+            }
         }
         String plan = String.valueOf(license.getOrDefault("planName", ""));
         if (basicPlan(plan) && appGestaoPath(path)) {
@@ -94,6 +96,20 @@ public class LicenseAccessService {
                 "PAYMENT_EXPIRED",
                 "O pagamento da assinatura expirou. Prossiga para o pagamento para renovar o acesso ao AppGestao."
         );
+    }
+
+    private boolean withinGracePeriod(String tenantId, Timestamp expiresAt) {
+        int days = jdbcTemplate.queryForList("""
+                SELECT COALESCE((SELECT grace_days FROM billing_settings WHERE tenant_id = ?), 3) AS graceDays
+                """, tenantId).stream()
+                .findFirst()
+                .map(row -> row.get("graceDays"))
+                .filter(Number.class::isInstance)
+                .map(Number.class::cast)
+                .map(Number::intValue)
+                .map(value -> Math.max(0, Math.min(value, 30)))
+                .orElse(3);
+        return !expiresAt.toLocalDateTime().plusDays(days).isBefore(LocalDateTime.now());
     }
 
     private String blockedMessage(Object reason) {

@@ -4,6 +4,7 @@ import br.com.zentrix.web.service.LocalAdminAccessService;
 import br.com.zentrix.web.service.PermissionService;
 import br.com.zentrix.web.service.PermissionService.Permission;
 import br.com.zentrix.web.service.ZentrixAdminService;
+import br.com.zentrix.web.service.BillingService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -22,15 +23,18 @@ public class ZentrixAdminController {
     private final LocalAdminAccessService accessService;
     private final PermissionService permissionService;
     private final ZentrixAdminService zentrixAdminService;
+    private final BillingService billingService;
 
     public ZentrixAdminController(
             LocalAdminAccessService accessService,
             PermissionService permissionService,
-            ZentrixAdminService zentrixAdminService
+            ZentrixAdminService zentrixAdminService,
+            BillingService billingService
     ) {
         this.accessService = accessService;
         this.permissionService = permissionService;
         this.zentrixAdminService = zentrixAdminService;
+        this.billingService = billingService;
     }
 
     @GetMapping("/overview")
@@ -43,6 +47,16 @@ public class ZentrixAdminController {
     public List<Map<String, Object>> plans(HttpServletRequest request) {
         requireAnyAdminAccess(request);
         return zentrixAdminService.plans();
+    }
+
+    @GetMapping("/finance")
+    public Map<String, Object> finance(
+            @RequestParam(defaultValue = "all") String status,
+            @RequestParam(defaultValue = "150") int limit,
+            HttpServletRequest request
+    ) {
+        requireFinanceAccess(request);
+        return zentrixAdminService.financeOverview(status, limit);
     }
 
     @GetMapping("/expiration-alerts")
@@ -86,6 +100,16 @@ public class ZentrixAdminController {
         return zentrixAdminService.clientHealth(tenantId);
     }
 
+    @GetMapping("/clients/{tenantId}/plan-preview")
+    public Map<String, Object> planPreview(
+            @PathVariable String tenantId,
+            @RequestParam String plan,
+            HttpServletRequest request
+    ) {
+        requireFinanceAccess(request);
+        return billingService.previewPlanChange(tenantId, plan);
+    }
+
     @PostMapping("/clients/{tenantId}/access-test")
     public Map<String, Object> testClientAccess(@PathVariable String tenantId, HttpServletRequest request) {
         requireAnyAdminAccess(request);
@@ -121,6 +145,43 @@ public class ZentrixAdminController {
     ) {
         requireFinanceAccess(request);
         return zentrixAdminService.updateStoreStatus(tenantId, storeId, body);
+    }
+
+    @PutMapping("/clients/{tenantId}/devices/{deviceId}/billing")
+    public Map<String, Object> updateDeviceBilling(
+            @PathVariable String tenantId,
+            @PathVariable String deviceId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        requireFinanceAccess(request);
+        return zentrixAdminService.updateDeviceBilling(tenantId, deviceId, body);
+    }
+
+    @GetMapping("/clients/{tenantId}/support-notes")
+    public List<Map<String, Object>> supportNotes(@PathVariable String tenantId, HttpServletRequest request) {
+        requireAnyAdminAccess(request);
+        return zentrixAdminService.supportNotes(tenantId);
+    }
+
+    @PostMapping("/clients/{tenantId}/support-notes")
+    public Map<String, Object> addSupportNote(
+            @PathVariable String tenantId,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request
+    ) {
+        requireSupportAccess(request);
+        return zentrixAdminService.addSupportNote(tenantId, body);
+    }
+
+    @PutMapping("/clients/{tenantId}/support-notes/{noteId}/resolve")
+    public Map<String, Object> resolveSupportNote(
+            @PathVariable String tenantId,
+            @PathVariable long noteId,
+            HttpServletRequest request
+    ) {
+        requireSupportAccess(request);
+        return zentrixAdminService.resolveSupportNote(tenantId, noteId);
     }
 
     @PostMapping("/clients/{tenantId}/licenses")

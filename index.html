@@ -47,6 +47,11 @@
             </span>
           </label>
 
+          <label class="field">
+            <span>Codigo autenticador</span>
+            <input class="text-field" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Somente se o 2FA estiver ativo" />
+          </label>
+
           <div class="form-error" id="loginError" role="alert" hidden></div>
 
           <div class="form-line">
@@ -54,7 +59,7 @@
               <input type="checkbox" checked />
               <span>Manter conectado</span>
             </label>
-            <a class="link-button" href="FrontEnd/pages/configuracoes.html">Recuperar senha</a>
+            <button class="link-button" id="recoverPasswordButton" type="button">Recuperar senha</button>
           </div>
 
           <button class="button btn-primary full-width" type="submit">Acessar AppGestão</button>
@@ -92,7 +97,7 @@
     </aside>
   </section>
   <script src="FrontEnd/js/core/api-base.js?v=20260714-product-barcode"></script>
-  <script src="FrontEnd/js/core/api.js?v=20260714-product-barcode"></script>
-  <script src="FrontEnd/js/login.js?v=20260714-product-barcode"></script>
+  <script src="FrontEnd/js/core/api.js?v=20260806-billing-portal"></script>
+  <script src="FrontEnd/js/login.js?v=20260806-mfa"></script>
 </body>
 </html>

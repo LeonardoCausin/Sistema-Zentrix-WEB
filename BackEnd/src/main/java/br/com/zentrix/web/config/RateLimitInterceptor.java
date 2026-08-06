@@ -101,7 +101,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private Policy policyFor(String uri) {
         String path = uri == null ? "" : uri;
-        if (path.startsWith("/api/auth/login") || path.startsWith("/api/pdv/activation")) {
+        if (path.startsWith("/api/auth/login")
+                || path.startsWith("/api/auth/password-reset")
+                || path.startsWith("/api/pdv/activation")) {
             return new Policy("auth", authLimit, authWindowSeconds * 1000L);
         }
         if (path.startsWith("/api/sync")) {

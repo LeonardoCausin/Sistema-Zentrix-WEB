@@ -6,14 +6,21 @@
   const HEALTH_TIMEOUT_MS = 2500;
   const userField = document.getElementById('loginUser');
   const passwordField = document.getElementById('loginPassword');
+  const otpField = form.querySelector('[name="otp"]');
   const togglePasswordButton = document.getElementById('togglePasswordButton');
   const errorBox = document.getElementById('loginError');
   const submitButton = form.querySelector('button[type="submit"]');
   const previewStatus = document.getElementById('previewStatus');
   const previewService = document.getElementById('previewService');
   const previewLastSync = document.getElementById('previewLastSync');
+  const recoverPasswordButton = document.getElementById('recoverPasswordButton');
 
   refreshPreview();
+  handlePasswordResetLink();
+
+  if (recoverPasswordButton) {
+    recoverPasswordButton.addEventListener('click', requestPasswordReset);
+  }
 
   if (togglePasswordButton && passwordField) {
     togglePasswordButton.addEventListener('click', function () {
@@ -35,6 +42,48 @@
     errorBox.hidden = true;
   }
 
+  async function requestPasswordReset() {
+    const username = window.prompt('Informe seu usuario Zentrix:');
+    if (!username) return;
+    clearError();
+    try {
+      const response = await fetch(apiBases()[0] + '/auth/password-reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim() })
+      });
+      if (!response.ok) throw new Error(await responseMessage(response) || 'Nao foi possivel solicitar a recuperacao.');
+      const result = await response.json();
+      window.alert(result.message || 'Confira seu e-mail para continuar.');
+    } catch (error) {
+      showError(error.message);
+    }
+  }
+
+  async function handlePasswordResetLink() {
+    const token = new URLSearchParams(window.location.search).get('resetToken');
+    if (!token) return;
+    const password = window.prompt('Digite sua nova senha (minimo de 10 caracteres):');
+    if (!password) return;
+    const confirmation = window.prompt('Repita a nova senha:');
+    if (password !== confirmation) {
+      showError('As senhas informadas nao conferem.');
+      return;
+    }
+    try {
+      const response = await fetch(apiBases()[0] + '/auth/password-reset/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password })
+      });
+      if (!response.ok) throw new Error(await responseMessage(response) || 'O link de recuperacao e invalido ou expirou.');
+      history.replaceState({}, document.title, window.location.pathname);
+      window.alert('Senha atualizada. Entre com sua nova senha.');
+    } catch (error) {
+      showError(error.message);
+    }
+  }
+
   form.addEventListener('submit', async function (event) {
     event.preventDefault();
     clearError();
@@ -49,7 +98,8 @@
       const session = await loginWithFallback({
         email: login,
         username: login,
-        password: passwordField.value
+        password: passwordField.value,
+        otp: otpField ? otpField.value.trim() : ''
       });
 
       writeSession(session);

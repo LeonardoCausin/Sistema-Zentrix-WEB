@@ -3,6 +3,7 @@ package br.com.zentrix.web.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Date;
@@ -32,7 +33,10 @@ public class BillingService {
     private final AsaasClient asaasClient;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final LicenseService licenseService;
+    private final BillingNotificationService notificationService;
     private final String webhookToken;
+    private final String previousWebhookToken;
     private final int paymentDueDays;
 
     public BillingService(
@@ -42,7 +46,10 @@ public class BillingService {
             AsaasClient asaasClient,
             AuditService auditService,
             ObjectMapper objectMapper,
+            LicenseService licenseService,
+            BillingNotificationService notificationService,
             @Value("${zentrix.billing.asaas.webhook-token:}") String webhookToken,
+            @Value("${zentrix.billing.asaas.previous-webhook-token:}") String previousWebhookToken,
             @Value("${zentrix.billing.asaas.payment-due-days:3}") int paymentDueDays
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -51,7 +58,10 @@ public class BillingService {
         this.asaasClient = asaasClient;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
+        this.licenseService = licenseService;
+        this.notificationService = notificationService;
         this.webhookToken = webhookToken == null ? "" : webhookToken.trim();
+        this.previousWebhookToken = previousWebhookToken == null ? "" : previousWebhookToken.trim();
         this.paymentDueDays = Math.max(0, Math.min(paymentDueDays, 30));
     }
 
@@ -59,14 +69,80 @@ public class BillingService {
         initializer.ensureReady();
         return jdbcTemplate.queryForList("""
                 SELECT id AS invoiceId, provider_payment_id AS providerPaymentId, plan_name AS planName,
-                       amount, coverage_start AS coverageStart, coverage_end AS coverageEnd,
-                       due_date AS dueDate, status, checkout_url AS checkoutUrl, paid_at AS paidAt,
+                       amount, base_amount AS baseAmount, discount_amount AS discountAmount,
+                       proration_amount AS prorationAmount, coverage_start AS coverageStart, coverage_end AS coverageEnd,
+                       due_date AS dueDate, grace_until AS graceUntil, status, checkout_url AS checkoutUrl, paid_at AS paidAt,
                        created_at AS createdAt, updated_at AS updatedAt
                 FROM billing_invoices
                 WHERE tenant_id = ?
                 ORDER BY created_at DESC
                 LIMIT 1
                 """, tenantId).stream().findFirst().orElse(Map.of("status", "NONE"));
+    }
+
+    public Map<String, Object> portal(String tenantId) {
+        initializer.ensureReady();
+        String tenant = requiredTenant(tenantId);
+        Map<String, Object> profile = tenantProfile(tenant);
+        String plan = latestPlan(tenant);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("tenantId", tenant);
+        response.put("companyName", profile.get("name"));
+        response.put("document", maskedDocument(profile.get("document")));
+        response.put("plan", plan);
+        response.put("license", licenseService.current(tenant));
+        response.put("billing", adminService.billingSummary(tenant, plan));
+        response.put("currentInvoice", current(tenant));
+        response.put("invoices", invoices(tenant, "all", 24));
+        response.put("devices", licenseService.devices(tenant));
+        response.put("notifications", notificationService.notifications(tenant, 20));
+        return response;
+    }
+
+    public List<Map<String, Object>> invoices(String tenantId, String status, int limit) {
+        initializer.ensureReady();
+        String normalized = text(status);
+        return jdbcTemplate.queryForList("""
+                SELECT id AS invoiceId, provider_payment_id AS providerPaymentId, plan_name AS planName,
+                       amount, base_amount AS baseAmount, discount_amount AS discountAmount,
+                       proration_amount AS prorationAmount, coverage_start AS coverageStart,
+                       coverage_end AS coverageEnd, due_date AS dueDate, grace_until AS graceUntil,
+                       status, checkout_url AS checkoutUrl, paid_at AS paidAt,
+                       created_at AS createdAt, updated_at AS updatedAt
+                FROM billing_invoices
+                WHERE tenant_id = ? AND (? = 'all' OR UPPER(status) = UPPER(?))
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, tenantId, normalized.isBlank() ? "all" : normalized, normalized,
+                Math.max(1, Math.min(limit, 100)));
+    }
+
+    public Map<String, Object> previewPlanChange(String tenantId, String targetPlan) {
+        initializer.ensureReady();
+        String tenant = requiredTenant(tenantId);
+        String currentPlan = latestPlan(tenant);
+        Map<String, Object> currentSummary = adminService.billingSummary(tenant, currentPlan);
+        Map<String, Object> targetSummary = adminService.billingSummary(tenant, targetPlan);
+        int remainingDays = remainingLicenseDays(tenant);
+        BigDecimal difference = money(targetSummary.get("monthlyTotal"))
+                .subtract(money(currentSummary.get("monthlyTotal")));
+        BigDecimal proration = difference
+                .multiply(BigDecimal.valueOf(remainingDays))
+                .divide(BigDecimal.valueOf(30), 2, RoundingMode.HALF_UP);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("fromPlan", currentPlan);
+        result.put("toPlan", text(targetSummary.get("planCode")));
+        result.put("remainingDays", remainingDays);
+        result.put("currentMonthlyTotal", currentSummary.get("monthlyTotal"));
+        result.put("newMonthlyTotal", targetSummary.get("monthlyTotal"));
+        result.put("prorationAmount", proration);
+        result.put("credit", proration.signum() < 0 ? proration.abs() : BigDecimal.ZERO);
+        result.put("charge", proration.signum() > 0 ? proration : BigDecimal.ZERO);
+        return result;
+    }
+
+    public void markNotificationRead(String tenantId, long id) {
+        notificationService.markRead(requiredTenant(tenantId), id);
     }
 
     public Map<String, Object> checkout(String tenantId) {
@@ -121,10 +197,36 @@ public class BillingService {
         return checkoutResponse(invoice(invoiceId));
     }
 
+    public Map<String, Object> enqueueAsaasWebhook(String receivedToken, Map<String, Object> payload) {
+        initializer.ensureReady();
+        validateWebhookToken(receivedToken);
+        String eventId = text(payload == null ? null : payload.get("id"));
+        String eventType = normalizedStatus(payload == null ? null : payload.get("event"));
+        if (eventId.isBlank() || eventType.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Webhook Asaas sem identificacao do evento.");
+        }
+        int inserted = jdbcTemplate.update("""
+                INSERT IGNORE INTO billing_webhook_queue
+                    (provider, event_id, event_type, payload_json)
+                VALUES (?, ?, ?, ?)
+                """, PROVIDER, eventId, eventType, json(payload));
+        return Map.of("received", true, "queued", inserted == 1, "duplicate", inserted == 0);
+    }
+
+    @Transactional
+    public Map<String, Object> processQueuedWebhook(Map<String, Object> payload) {
+        initializer.ensureReady();
+        return processAsaasPayload(payload);
+    }
+
     @Transactional
     public Map<String, Object> processAsaasWebhook(String receivedToken, Map<String, Object> payload) {
         initializer.ensureReady();
         validateWebhookToken(receivedToken);
+        return processAsaasPayload(payload);
+    }
+
+    private Map<String, Object> processAsaasPayload(Map<String, Object> payload) {
         String eventId = text(payload == null ? null : payload.get("id"));
         String eventType = normalizedStatus(payload == null ? null : payload.get("event"));
         if (eventId.isBlank() || eventType.isBlank()) {
@@ -286,11 +388,12 @@ public class BillingService {
     private Map<String, Object> tenantProfile(String tenantId) {
         return jdbcTemplate.queryForList("""
                 SELECT t.name, t.document,
-                       (SELECT u.username FROM users u
+                       COALESCE(NULLIF(t.billing_email, ''), (SELECT u.username FROM users u
                         WHERE u.tenant_id = t.id AND u.active = TRUE AND u.username LIKE '%@%'
                         ORDER BY CASE WHEN UPPER(u.role) IN ('ADMIN', 'ADMINISTRADOR', 'OWNER', 'DONO') THEN 0 ELSE 1 END,
                                  u.username
-                        LIMIT 1) AS email
+                        LIMIT 1)) AS email,
+                       t.billing_phone AS phone, t.billing_address AS address
                 FROM tenants t
                 WHERE t.id = ?
                 LIMIT 1
@@ -326,8 +429,9 @@ public class BillingService {
     private Map<String, Object> invoice(String invoiceId) {
         return jdbcTemplate.queryForList("""
                 SELECT id AS invoiceId, tenant_id AS tenantId, provider_payment_id AS providerPaymentId,
-                       plan_name AS planName, amount, coverage_start AS coverageStart, coverage_end AS coverageEnd,
-                       due_date AS dueDate, status, checkout_url AS checkoutUrl, paid_at AS paidAt
+                       plan_name AS planName, amount, base_amount AS baseAmount, discount_amount AS discountAmount,
+                       proration_amount AS prorationAmount, coverage_start AS coverageStart, coverage_end AS coverageEnd,
+                       due_date AS dueDate, grace_until AS graceUntil, status, checkout_url AS checkoutUrl, paid_at AS paidAt
                 FROM billing_invoices
                 WHERE id = ?
                 LIMIT 1
@@ -349,11 +453,12 @@ public class BillingService {
         String insert = ignoreDuplicate ? "INSERT IGNORE" : "INSERT";
         jdbcTemplate.update(insert + """
                  INTO billing_invoices
-                    (id, tenant_id, provider, external_reference, plan_name, amount, breakdown_json,
-                     coverage_start, coverage_end, due_date, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
-                """, invoiceId, tenantId, PROVIDER, invoiceId, plan, amount, json(summary),
-                Date.valueOf(coverageStart), Date.valueOf(coverageEnd), Date.valueOf(dueDate));
+                    (id, tenant_id, provider, external_reference, plan_name, amount, base_amount,
+                     breakdown_json, coverage_start, coverage_end, due_date, grace_until, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+                """, invoiceId, tenantId, PROVIDER, invoiceId, plan, amount, amount, json(summary),
+                Date.valueOf(coverageStart), Date.valueOf(coverageEnd), Date.valueOf(dueDate),
+                Date.valueOf(coverageEnd.plusDays(graceDays(tenantId))));
     }
 
     private Map<String, Object> checkoutResponse(Map<String, Object> invoice) {
@@ -361,9 +466,13 @@ public class BillingService {
         response.put("invoiceId", invoice.get("invoiceId"));
         response.put("checkoutUrl", invoice.get("checkoutUrl"));
         response.put("amount", invoice.get("amount"));
+        response.put("baseAmount", invoice.get("baseAmount"));
+        response.put("discountAmount", invoice.get("discountAmount"));
+        response.put("prorationAmount", invoice.get("prorationAmount"));
         response.put("dueDate", invoice.get("dueDate"));
         response.put("coverageStart", invoice.get("coverageStart"));
         response.put("coverageEnd", invoice.get("coverageEnd"));
+        response.put("graceUntil", invoice.get("graceUntil"));
         response.put("status", invoice.get("status"));
         return response;
     }
@@ -372,9 +481,11 @@ public class BillingService {
         if (webhookToken.isBlank()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Webhook Asaas nao configurado.");
         }
-        byte[] expected = webhookToken.getBytes(StandardCharsets.UTF_8);
         byte[] received = text(receivedToken).getBytes(StandardCharsets.UTF_8);
-        if (!MessageDigest.isEqual(expected, received)) {
+        boolean currentMatches = MessageDigest.isEqual(webhookToken.getBytes(StandardCharsets.UTF_8), received);
+        boolean previousMatches = !previousWebhookToken.isBlank()
+                && MessageDigest.isEqual(previousWebhookToken.getBytes(StandardCharsets.UTF_8), received);
+        if (!currentMatches && !previousMatches) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Webhook Asaas nao autorizado.");
         }
     }
@@ -435,6 +546,32 @@ public class BillingService {
     private String deterministicInvoiceId(String tenant, String plan, BigDecimal amount, LocalDate start, LocalDate end) {
         String value = String.join("|", tenant, plan, amount.toPlainString(), start.toString(), end.toString());
         return UUID.nameUUIDFromBytes(value.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private int graceDays(String tenantId) {
+        Integer value = jdbcTemplate.queryForObject("""
+                SELECT COALESCE((SELECT grace_days FROM billing_settings WHERE tenant_id = ?), 3)
+                """, Integer.class, tenantId);
+        return value == null ? 3 : Math.max(0, Math.min(value, 30));
+    }
+
+    private int remainingLicenseDays(String tenantId) {
+        Object value = jdbcTemplate.queryForList("""
+                SELECT GREATEST(DATEDIFF(DATE(expires_at), CURRENT_DATE()), 0)
+                FROM licenses
+                WHERE tenant_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, tenantId).stream().findFirst().flatMap(row -> row.values().stream().findFirst()).orElse(null);
+        return value instanceof Number number ? Math.min(number.intValue(), 30) : 0;
+    }
+
+    private String maskedDocument(Object value) {
+        String digits = text(value).replaceAll("\\D", "");
+        if (digits.length() <= 4) {
+            return digits;
+        }
+        return "*".repeat(digits.length() - 4) + digits.substring(digits.length() - 4);
     }
 
     private String json(Object value) {
