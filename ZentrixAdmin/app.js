@@ -189,6 +189,7 @@
               <strong>${money(plan.monthlyStorePrice)}</strong>
               <small class="muted">Por loja/mês - ${esc(plan.description)}</small>
               <small class="muted">Inclui ${esc(plan.includedPdvPerStore)} PDV e ${esc(plan.includedAppGestaoPerStore)} AppGestao por loja</small>
+              <small class="muted">PDV adicional: ${money(plan.extraPdvPrice)} por mês</small>
             </article>
           `).join("")}
         </div>
@@ -403,6 +404,7 @@
     if (action === "activation-code") return showActivationForm(button.dataset.tenant);
     if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
     if (action === "activate-client") return showStatusForm(button.dataset.tenant, "ACTIVE");
+    if (action === "store-status") return showStoreStatusForm(button.dataset.tenant, button.dataset.store, button.dataset.status);
     if (action === "test-access") return testClientAccess(button.dataset.tenant);
     if (action === "normalize-cash") return reasonAction("Normalizar caixas", "/local-admin/cash/normalize-statuses?store=" + encodeURIComponent(els.storeSelect.value), "POST");
     if (action === "clear-sync") return reasonAction("Limpar falhas de sincronizacao", "/local-admin/sync/clear-failures?store=" + encodeURIComponent(els.storeSelect.value), "POST", { days: 7 });
@@ -503,8 +505,16 @@
         ${timeline(history || [])}
       </section>
       <section class="panel">
-        <h3>Lojas</h3>
-        ${simpleTable(["ID", "Nome", "Origem", "Status"], detail.stores || [], (row) => [row.id, row.name, row.sourceId, tag(row.status)])}
+        <div class="panel-title">
+          <div><h3>Lojas</h3><span class="muted">Altere o status individual de cada loja</span></div>
+        </div>
+        ${simpleTable(["ID", "Nome", "Origem", "Status", "Acao"], detail.stores || [], (row) => [
+          row.id,
+          row.name,
+          row.sourceId,
+          tag(row.status),
+          `<button type="button" data-action="store-status" data-tenant="${escAttr(tenantId)}" data-store="${escAttr(row.id)}" data-status="${escAttr(row.status || "ACTIVE")}">Alterar status</button>`
+        ])}
       </section>
       <section class="panel">
         <h3>Codigos de ativacao</h3>
@@ -623,6 +633,39 @@
     state.overview = null;
     await loadView(true);
     toast("Status atualizado.");
+  }
+
+  function showStoreStatusForm(tenantId, storeId, currentStatus) {
+    openModal("Status da loja", `
+      <form id="storeStatusForm" class="form-grid">
+        <section class="notice full">
+          <strong>${esc(storeId)}</strong>
+          <span>Uma loja inativa, suspensa ou bloqueada deixa de acessar o sistema. O cliente e as outras lojas permanecem como estao.</span>
+        </section>
+        <label>Status
+          <select name="status">
+            ${["ACTIVE", "BLOCKED", "SUSPENDED", "INACTIVE"].map((status) => `<option value="${status}" ${status === String(currentStatus || "ACTIVE").toUpperCase() ? "selected" : ""}>${status}</option>`).join("")}
+          </select>
+        </label>
+        <label class="full">Motivo<textarea name="reason">Alteracao administrativa do status da loja.</textarea></label>
+        <button class="primary full" type="submit">Salvar status da loja</button>
+      </form>
+    `);
+    document.getElementById("storeStatusForm").onsubmit = async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/stores/${encodeURIComponent(storeId)}/status`, {
+          method: "PUT",
+          body: JSON.stringify(formData(event.currentTarget))
+        });
+        state.clients = [];
+        state.overview = null;
+        await showClientDetail(tenantId);
+        toast("Status da loja atualizado.");
+      } catch (error) {
+        toast(error.message, true);
+      }
+    };
   }
 
   async function testClientAccess(tenantId) {
@@ -769,12 +812,13 @@
 
   function billingDetails(billing) {
     if (!billing) return emptyState("Resumo de cobranca indisponivel.");
-    return simpleTable(["Item", "Uso", "Incluido", "Extra", "Subtotal"], [
+    return simpleTable(["Item", "Uso", "Incluido", "Extra", "Valor adicional", "Subtotal"], [
       {
         item: "Lojas",
         use: billing.activeStores,
         included: "-",
         extra: "-",
+        extraPrice: "-",
         subtotal: billing.storeSubtotal
       },
       {
@@ -782,6 +826,7 @@
         use: billing.pdvApps,
         included: billing.includedPdvApps,
         extra: billing.extraPdvApps,
+        extraPrice: money(billing.extraPdvPrice),
         subtotal: billing.extraPdvSubtotal
       },
       {
@@ -789,9 +834,10 @@
         use: billing.appGestaoApps,
         included: billing.includedAppGestaoApps,
         extra: billing.appGestaoIncluded ? billing.extraAppGestaoApps : "Upgrade",
+        extraPrice: billing.appGestaoIncluded ? money(billing.extraAppGestaoPrice) : "-",
         subtotal: billing.extraAppGestaoSubtotal
       }
-    ], (row) => [row.item, row.use, row.included, row.extra, money(row.subtotal)]);
+    ], (row) => [row.item, row.use, row.included, row.extra, row.extraPrice, money(row.subtotal)]);
   }
 
   function timeline(rows) {
@@ -812,7 +858,7 @@
   function openModal(title, body) {
     els.modalTitle.textContent = title;
     els.modalBody.innerHTML = body;
-    els.modal.showModal();
+    if (!els.modal.open) els.modal.showModal();
   }
 
   function closeModal() {

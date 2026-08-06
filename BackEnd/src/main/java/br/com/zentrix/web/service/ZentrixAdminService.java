@@ -18,9 +18,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ZentrixAdminService {
     private static final List<PlanDefinition> PLANS = List.of(
-            new PlanDefinition("BASICO", "Basico", bd("99.90"), 1, 0, bd("39.90"), bd("29.90"), false, "Acesso somente ao PDV."),
-            new PlanDefinition("INTERMEDIARIO", "Intermediario", bd("169.90"), 1, 1, bd("39.90"), bd("29.90"), true, "PDV + AppGestao essencial."),
-            new PlanDefinition("PRO", "Pro", bd("269.90"), 2, 2, bd("39.90"), bd("29.90"), true, "Gestao completa por loja.")
+            new PlanDefinition("BASICO", "Basico", bd("99.90"), 1, 0, bd("49.90"), bd("29.90"), false, "Acesso somente ao PDV."),
+            new PlanDefinition("INTERMEDIARIO", "Intermediario", bd("169.90"), 1, 1, bd("49.90"), bd("29.90"), true, "PDV + AppGestao essencial."),
+            new PlanDefinition("PRO", "Pro", bd("269.90"), 2, 2, bd("49.90"), bd("29.90"), true, "Gestao completa por loja.")
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -342,10 +342,14 @@ public class ZentrixAdminService {
                 SELECT 'Auditoria' AS type, acao AS title, COALESCE(details, reason, '-') AS description,
                        created_at AS createdAt
                 FROM audit_log
-                WHERE entity_id = ? OR details LIKE ?
+                WHERE entity_id = ?
+                   OR details LIKE ?
+                   OR (entity_type = 'tenant_stores' AND entity_id IN (
+                       SELECT id FROM tenant_stores WHERE tenant_id = ?
+                   ))
                 ORDER BY created_at DESC, id DESC
                 LIMIT 20
-                """, tenant, "%" + tenant + "%"));
+                """, tenant, "%" + tenant + "%", tenant));
         rows.sort((left, right) -> String.valueOf(right.get("createdAt")).compareTo(String.valueOf(left.get("createdAt"))));
         return rows.stream().limit(30).toList();
     }
@@ -447,6 +451,64 @@ public class ZentrixAdminService {
                 "status", status,
                 "updated", updated,
                 "blockReason", restricted ? reason : ""
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> updateStoreStatus(String tenantId, String storeId, Map<String, Object> request) {
+        initializer.ensureReady();
+        String tenant = required(tenantId, "tenantId");
+        String store = required(storeId, "storeId");
+        String status = required(value(request, "status"), "status").toUpperCase();
+        if (!List.of("ACTIVE", "BLOCKED", "SUSPENDED", "INACTIVE").contains(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status de loja invalido.");
+        }
+        boolean restricted = restrictedStatus(status);
+        String reason = text(value(request, "reason"));
+        if (restricted && reason.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo da alteracao da loja.");
+        }
+        String previousStatus = jdbcTemplate.queryForList("""
+                SELECT status
+                FROM tenant_stores
+                WHERE tenant_id = ? AND id = ?
+                LIMIT 1
+                """, tenant, store).stream()
+                .findFirst()
+                .map(row -> String.valueOf(row.getOrDefault("status", "ACTIVE")))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Loja nao encontrada."));
+        int updated = jdbcTemplate.update("""
+                UPDATE tenant_stores
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND id = ?
+                """, status, tenant, store);
+        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
+        auditService.record(
+                tenant,
+                store,
+                null,
+                session == null ? "ZENTRIX_ADMIN" : session.sourceId(),
+                session == null ? "zentrix-admin" : session.username(),
+                "ZENTRIX_ADMIN_STORE_STATUS_UPDATED",
+                "tenant_stores",
+                store,
+                "Status da loja " + store + " do cliente " + tenant + " alterado para " + status + ".",
+                "CRITICO",
+                previousStatus,
+                status,
+                reason,
+                "ZENTRIX_ADMIN",
+                null,
+                session == null ? null : session.role()
+        );
+        panelCacheService.clear();
+        return Map.of(
+                "tenantId", tenant,
+                "storeId", store,
+                "previousStatus", previousStatus,
+                "status", status,
+                "updated", updated,
+                "reason", reason
         );
     }
 

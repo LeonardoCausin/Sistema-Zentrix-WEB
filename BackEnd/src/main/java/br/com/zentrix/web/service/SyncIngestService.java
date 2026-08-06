@@ -215,7 +215,6 @@ public class SyncIngestService {
                 VALUES (?, ?, 'ACTIVE')
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
-                    status = 'ACTIVE',
                     updated_at = CURRENT_TIMESTAMP
                 """, scope.tenantId(), scope.tenantName());
         jdbcTemplate.update("""
@@ -224,7 +223,6 @@ public class SyncIngestService {
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     source_id = VALUES(source_id),
-                    status = 'ACTIVE',
                     updated_at = CURRENT_TIMESTAMP
                 """, scope.tenantId(), scope.storeId(), scope.storeName(), scope.sourceId());
         jdbcTemplate.update("""

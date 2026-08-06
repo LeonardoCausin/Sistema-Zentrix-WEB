@@ -73,11 +73,12 @@
       throw new Error("Sua sessão expirou. Entre novamente.");
     }
     if (!response.ok) {
-      const message = await errorMessage(response);
-      const error = new Error(message || "Não conseguimos carregar as informações agora. Tente novamente.");
+      const details = await errorDetails(response);
+      const error = new Error(details.message || "Não conseguimos carregar as informações agora. Tente novamente.");
       error.status = response.status;
+      error.reasonCode = details.reasonCode;
       if (response.status === 402) {
-        showAccountBlocked(error.message);
+        showAccountBlocked(error.message, error.reasonCode);
       }
       throw error;
     }
@@ -111,12 +112,15 @@
     return new Error("Não conseguimos conectar ao Zentrix agora. Verifique a internet ou se o servidor está ligado.");
   }
 
-  async function errorMessage(response) {
+  async function errorDetails(response) {
     try {
       const body = await response.json();
-      return friendlyServerMessage(body.message || body.error || body.detail || "");
+      return {
+        message: friendlyServerMessage(body.message || body.error || body.detail || ""),
+        reasonCode: String(body.reasonCode || "").trim().toUpperCase()
+      };
     } catch (error) {
-      return "";
+      return { message: "", reasonCode: "" };
     }
   }
 
@@ -129,9 +133,15 @@
     return text;
   }
 
-  function showAccountBlocked(message) {
+  function showAccountBlocked(message, reasonCode) {
     const safeMessage = friendlyServerMessage(message)
       || "A assinatura desta loja precisa ser regularizada para acessar o painel.";
+    const normalizedCode = accountRestrictionCode(reasonCode, safeMessage);
+    const expired = normalizedCode === "PAYMENT_EXPIRED";
+    const upgrade = normalizedCode === "PLAN_UPGRADE_REQUIRED";
+    const title = expired ? "Pagamento expirado" : upgrade ? "Plano sem acesso ao AppGestão" : "Loja bloqueada";
+    const kicker = expired ? "Assinatura vencida" : upgrade ? "Alteração de plano necessária" : "Acesso interrompido";
+    const paymentLabel = expired ? "Prosseguir para pagamento" : upgrade ? "Ver planos" : "Pagar assinatura";
     let blocker = document.getElementById("zentrixAccountBlocked");
     if (!blocker) {
       blocker = document.createElement("section");
@@ -143,11 +153,11 @@
     }
     blocker.innerHTML = `
       <div class="account-blocked-card">
-        <span class="account-blocked-kicker">Acesso interrompido</span>
-        <h1>Loja bloqueada</h1>
+        <span class="account-blocked-kicker">${escapeHtml(kicker)}</span>
+        <h1>${escapeHtml(title)}</h1>
         <p>${escapeHtml(safeMessage)}</p>
         <div class="account-blocked-actions">
-          <button class="button btn-primary" type="button" data-account-blocked-payment>Pagar assinatura</button>
+          <button class="button btn-primary" type="button" data-account-blocked-payment>${escapeHtml(paymentLabel)}</button>
           <button class="button btn-dark" type="button" data-account-blocked-logout>Sair do painel</button>
         </div>
       </div>
@@ -156,6 +166,10 @@
     const paymentButton = blocker.querySelector("[data-account-blocked-payment]");
     if (paymentButton) {
       paymentButton.addEventListener("click", () => {
+        if (typeof window.ZentrixStartPayment === "function") {
+          window.ZentrixStartPayment({ reasonCode: normalizedCode, message: safeMessage });
+          return;
+        }
         const paymentUrl = window.ZentrixPaymentUrl || "";
         if (paymentUrl) {
           window.location.href = paymentUrl;
@@ -171,6 +185,15 @@
         window.location.replace(loginPath());
       });
     }
+  }
+
+  function accountRestrictionCode(reasonCode, message) {
+    const code = String(reasonCode || "").trim().toUpperCase();
+    if (code) return code;
+    const text = String(message || "").toLowerCase();
+    if (text.includes("expir") || text.includes("vencid")) return "PAYMENT_EXPIRED";
+    if (text.includes("plano basico") || text.includes("plano básico")) return "PLAN_UPGRADE_REQUIRED";
+    return "ACCOUNT_BLOCKED";
   }
 
   function escapeHtml(value) {

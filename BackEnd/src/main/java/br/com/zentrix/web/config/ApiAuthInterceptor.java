@@ -4,6 +4,7 @@ import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.AuthCookieService;
 import br.com.zentrix.web.service.AuthTokenService;
 import br.com.zentrix.web.service.LicenseAccessService;
+import br.com.zentrix.web.service.LicenseAccessException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -55,10 +56,13 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
         AuthContext.set(session.get());
         if (licenseAccessService != null) {
             try {
-                licenseAccessService.requireActive(session.get().tenantId(), request.getRequestURI());
+                licenseAccessService.requireActive(session.get().tenantId(), session.get().storeId(), request.getRequestURI());
             } catch (ResponseStatusException e) {
                 AuthContext.clear();
-                writeJsonError(response, e.getStatusCode().value(), e.getReason(), request.getRequestURI());
+                String reasonCode = e instanceof LicenseAccessException licenseError
+                        ? licenseError.reasonCode()
+                        : "ACCESS_RESTRICTED";
+                writeJsonError(response, e.getStatusCode().value(), reasonCode, e.getReason(), request.getRequestURI());
                 return false;
             }
         }
@@ -78,12 +82,13 @@ public class ApiAuthInterceptor implements HandlerInterceptor {
         return authCookieService.readToken(request);
     }
 
-    private void writeJsonError(HttpServletResponse response, int status, String message, String path) throws IOException {
+    private void writeJsonError(HttpServletResponse response, int status, String reasonCode, String message, String path) throws IOException {
         response.setStatus(status);
         response.setCharacterEncoding("UTF-8");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write("{\"status\":" + status
                 + ",\"error\":\"" + escape(HttpStatus.valueOf(status).getReasonPhrase()) + "\""
+                + ",\"reasonCode\":\"" + escape(reasonCode) + "\""
                 + ",\"message\":\"" + escape(message == null || message.isBlank() ? "A assinatura desta loja precisa ser regularizada para acessar o painel." : message) + "\""
                 + ",\"path\":\"" + escape(path) + "\"}");
     }

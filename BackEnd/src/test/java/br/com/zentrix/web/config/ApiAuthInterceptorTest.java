@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import br.com.zentrix.web.service.AuthContext;
 import br.com.zentrix.web.service.AuthCookieService;
 import br.com.zentrix.web.service.AuthTokenService;
+import br.com.zentrix.web.service.LicenseAccessException;
+import br.com.zentrix.web.service.LicenseAccessService;
+import br.com.zentrix.web.service.WebDatabaseInitializer;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -42,5 +45,31 @@ class ApiAuthInterceptorTest {
 
         assertFalse(interceptor.preHandle(new MockHttpServletRequest("GET", "/api/auth/me"), response, new Object()));
         assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void exposesStructuredReasonForExpiredPayment() throws Exception {
+        AuthTokenService tokenService = new AuthTokenService();
+        LicenseAccessService licenseAccessService = new ExpiredLicenseAccessService();
+        ApiAuthInterceptor interceptor = new ApiAuthInterceptor(tokenService, new AuthCookieService(), licenseAccessService);
+        String token = tokenService.issue("admin", "Administrador", "ADMIN", "tenant-1", "store-1", "PDV-1", List.of("*"));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/dashboard");
+        request.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertFalse(interceptor.preHandle(request, response, new Object()));
+        assertEquals(402, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"reasonCode\":\"PAYMENT_EXPIRED\""));
+    }
+
+    private static class ExpiredLicenseAccessService extends LicenseAccessService {
+        ExpiredLicenseAccessService() {
+            super(null, new WebDatabaseInitializer(null, null));
+        }
+
+        @Override
+        public void requireActive(String tenantId, String storeId, String path) {
+            throw new LicenseAccessException("PAYMENT_EXPIRED", "Pagamento expirado.");
+        }
     }
 }

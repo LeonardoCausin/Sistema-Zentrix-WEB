@@ -1,6 +1,7 @@
 package br.com.zentrix.web.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import br.com.zentrix.web.dto.SyncPushRequest;
@@ -99,6 +100,22 @@ class SyncIngestServiceTest {
     }
 
     @Test
+    void syncDoesNotReactivateClientOrStoreChangedByAdmin() {
+        SyncPushRequest request = new SyncPushRequest(
+                "tenant-1", "Tenant", "store-1", "Loja", "device-1", "PDV 1", "pdv-1",
+                "PARTIAL", OffsetDateTime.now(), Map.of("products", List.of())
+        );
+
+        service.ingest(request);
+
+        List<String> scopeUpserts = jdbcTemplate.updateSqls.stream()
+                .filter(sql -> sql.contains("INSERT INTO tenants") || sql.contains("INSERT INTO tenant_stores"))
+                .toList();
+        assertEquals(2, scopeUpserts.size());
+        assertFalse(scopeUpserts.stream().anyMatch(sql -> sql.contains("status = 'ACTIVE'")));
+    }
+
+    @Test
     void preservesWebOnlyCostPriceWhenPdvPushesProduct() {
         jdbcTemplate.existingCostPrice = List.of(Map.of("cost_price", new BigDecimal("12.50")));
         SyncPushRequest request = new SyncPushRequest(
@@ -188,6 +205,7 @@ class SyncIngestServiceTest {
         int batchCalls;
         String lastBatchSql = "";
         List<String> batchSqls = new java.util.ArrayList<>();
+        List<String> updateSqls = new java.util.ArrayList<>();
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
@@ -202,6 +220,7 @@ class SyncIngestServiceTest {
 
         @Override
         public int update(String sql, Object... args) {
+            updateSqls.add(sql);
             if (sql.contains("DELETE FROM")) {
                 deleteCalls++;
             }

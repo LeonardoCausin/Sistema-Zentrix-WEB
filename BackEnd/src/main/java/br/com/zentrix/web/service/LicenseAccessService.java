@@ -4,10 +4,8 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class LicenseAccessService {
@@ -19,7 +17,7 @@ public class LicenseAccessService {
         this.initializer = initializer;
     }
 
-    public void requireActive(String tenantId, String path) {
+    public void requireActive(String tenantId, String storeId, String path) {
         if (tenantId == null || tenantId.isBlank() || "legacy".equalsIgnoreCase(tenantId) || isAdminPath(path)) {
             return;
         }
@@ -31,9 +29,14 @@ public class LicenseAccessService {
                 LIMIT 1
                 """, tenantId).stream().findFirst().orElse(Map.of("status", "ACTIVE"));
         String tenantStatus = String.valueOf(tenant.getOrDefault("status", "ACTIVE"));
-        if (blocked(tenantStatus)) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, blockedMessage(tenant.get("blockReason")));
+        if (expired(tenantStatus)) {
+            throw expiredPayment();
         }
+        if (blocked(tenantStatus)) {
+            throw new LicenseAccessException("ACCOUNT_BLOCKED", blockedMessage(tenant.get("blockReason")));
+        }
+
+        requireActiveStore(tenantId, storeId);
 
         List<Map<String, Object>> licenses = jdbcTemplate.queryForList("""
                 SELECT status, plan_name AS planName, expires_at AS expiresAt
@@ -47,17 +50,50 @@ public class LicenseAccessService {
         }
         Map<String, Object> license = licenses.get(0);
         String status = String.valueOf(license.get("status"));
+        if (expired(status)) {
+            throw expiredPayment();
+        }
         if (blocked(status)) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A assinatura desta loja esta bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.");
+            throw new LicenseAccessException("ACCOUNT_BLOCKED", "A assinatura desta loja esta bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.");
         }
         Object expiresAt = license.get("expiresAt");
         if (expiresAt instanceof Timestamp timestamp && timestamp.toLocalDateTime().isBefore(LocalDateTime.now())) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "A assinatura desta loja esta vencida. Entre em contato com o suporte Zentrix para regularizar o acesso.");
+            throw expiredPayment();
         }
         String plan = String.valueOf(license.getOrDefault("planName", ""));
         if (basicPlan(plan) && appGestaoPath(path)) {
-            throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED, "Seu plano Basico inclui somente o PDV. Para acessar o AppGestao, altere para o plano Intermediario ou Pro.");
+            throw new LicenseAccessException("PLAN_UPGRADE_REQUIRED", "Seu plano Basico inclui somente o PDV. Para acessar o AppGestao, altere para o plano Intermediario ou Pro.");
         }
+    }
+
+    private void requireActiveStore(String tenantId, String storeId) {
+        String store = storeId == null ? "" : storeId.trim();
+        if (store.isBlank() || "WEB".equalsIgnoreCase(store) || "all".equalsIgnoreCase(store)) {
+            return;
+        }
+        List<Map<String, Object>> stores = jdbcTemplate.queryForList("""
+                SELECT status
+                FROM tenant_stores
+                WHERE tenant_id = ? AND id = ?
+                LIMIT 1
+                """, tenantId, store);
+        if (stores.isEmpty()) {
+            return;
+        }
+        String status = String.valueOf(stores.get(0).getOrDefault("status", "ACTIVE"));
+        if (expired(status)) {
+            throw expiredPayment();
+        }
+        if (blocked(status)) {
+            throw new LicenseAccessException("STORE_BLOCKED", "Esta loja esta inativa ou bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.");
+        }
+    }
+
+    private LicenseAccessException expiredPayment() {
+        return new LicenseAccessException(
+                "PAYMENT_EXPIRED",
+                "O pagamento da assinatura expirou. Prossiga para o pagamento para renovar o acesso ao AppGestao."
+        );
     }
 
     private String blockedMessage(Object reason) {
@@ -92,9 +128,12 @@ public class LicenseAccessService {
         String value = status == null ? "" : status.trim().toUpperCase();
         return value.equals("BLOCKED")
                 || value.equals("SUSPENDED")
-                || value.equals("EXPIRED")
                 || value.equals("CANCELLED")
                 || value.equals("CANCELED")
                 || value.equals("INACTIVE");
+    }
+
+    private boolean expired(String status) {
+        return "EXPIRED".equalsIgnoreCase(status == null ? "" : status.trim());
     }
 }

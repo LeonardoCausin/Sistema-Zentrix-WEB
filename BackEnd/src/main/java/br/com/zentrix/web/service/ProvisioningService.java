@@ -182,7 +182,6 @@ public class ProvisioningService {
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     document = VALUES(document),
-                    status = 'ACTIVE',
                     updated_at = CURRENT_TIMESTAMP
                 """, tenantId, name, blankToNull(document));
     }
@@ -194,7 +193,6 @@ public class ProvisioningService {
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     source_id = VALUES(source_id),
-                    status = 'ACTIVE',
                     updated_at = CURRENT_TIMESTAMP
                 """, tenantId, storeId, name, sourceId);
     }
