@@ -85,16 +85,13 @@ class SyncKeyServiceTest {
     }
 
     @Test
-    void rejectsGlobalKeyWhenDeviceAlreadyHasItsOwnCredential() {
+    void acceptsGlobalKeyForActiveKnownDeviceWithOwnCredentialForLegacyPdvCompatibility() {
         FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();
         SyncKeyService service = new SyncKeyService(jdbcTemplate);
         ReflectionTestUtils.setField(service, "syncApiKey", "global-secret");
         jdbcTemplate.rows = List.of(Map.of("syncKeyHash", "device-hash", "status", "ACTIVE"));
 
-        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
-                () -> service.requireForDevice("global-secret", "tenant-1", "store-1", "device-1"));
-
-        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertDoesNotThrow(() -> service.requireForDevice("global-secret", "tenant-1", "store-1", "device-1"));
     }
 
     @Test

@@ -62,6 +62,9 @@ public class SyncKeyService {
         if (!"ACTIVE".equalsIgnoreCase(status)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Este PDV está inativo ou bloqueado");
         }
+        if (globalKeyMatches) {
+            return;
+        }
         String expectedHash = String.valueOf(rows.get(0).getOrDefault("syncKeyHash", ""));
         if (blank(expectedHash)) {
             if (globalKeyMatches) {
