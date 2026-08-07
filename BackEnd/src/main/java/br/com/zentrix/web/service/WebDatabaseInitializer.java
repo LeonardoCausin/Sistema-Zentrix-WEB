@@ -717,7 +717,7 @@ public class WebDatabaseInitializer {
                 CREATE TABLE IF NOT EXISTS %s (
                     tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy',
                     store_id VARCHAR(80) NOT NULL DEFAULT 'WEB',
-                    device_id VARCHAR(120) NULL,
+                    device_id VARCHAR(120) NOT NULL DEFAULT 'legacy-device',
                     source_id VARCHAR(120) NOT NULL DEFAULT 'WEB',
                 %s
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -1004,7 +1004,7 @@ public class WebDatabaseInitializer {
         jdbcTemplate.update("UPDATE `" + tableName + "` SET device_id = ? WHERE device_id IS NULL OR device_id = ''", LEGACY_DEVICE_ID);
         jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN tenant_id VARCHAR(80) NOT NULL DEFAULT 'legacy'");
         jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN store_id VARCHAR(80) NOT NULL DEFAULT 'WEB'");
-        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN device_id VARCHAR(120) NULL");
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN device_id VARCHAR(120) NOT NULL DEFAULT 'legacy-device'");
         jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN source_id VARCHAR(120) NOT NULL DEFAULT 'WEB'");
     }
 
