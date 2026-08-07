@@ -57,7 +57,7 @@ class LicenseAccessServiceTest {
     @Test
     void blocksOnlyTheInactiveStoreInSession() {
         jdbcTemplate.addQueryResult(List.of(Map.of("status", "ACTIVE")));
-        jdbcTemplate.addQueryResult(List.of(Map.of("status", "INACTIVE")));
+        jdbcTemplate.addQueryResult(List.of(Map.of("status", "INACTIVE", "blockReason", "Mensalidade em atraso")));
 
         LicenseAccessException error = assertThrows(
                 LicenseAccessException.class,
@@ -65,6 +65,7 @@ class LicenseAccessServiceTest {
         );
 
         assertEquals("STORE_BLOCKED", error.reasonCode());
+        assertEquals(true, error.getReason().contains("Mensalidade em atraso"));
     }
 
     @Test

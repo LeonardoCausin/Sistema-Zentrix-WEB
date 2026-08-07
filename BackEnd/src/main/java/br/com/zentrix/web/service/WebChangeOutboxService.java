@@ -31,6 +31,7 @@ public class WebChangeOutboxService {
     };
     private static final List<String> SUPPORTED_ENTITY_TYPES = List.of(
             "PRODUCT",
+            "SUPPLIER",
             "CLIENT",
             "USER",
             "EMPLOYEE",
@@ -42,7 +43,6 @@ public class WebChangeOutboxService {
             "FINANCIAL_ENTRY"
     );
     private static final List<Map<String, Object>> UNSUPPORTED_ENTITY_TYPES = List.of(
-            Map.of("entityType", "SUPPLIER", "reason", "Fornecedores ainda não são enviados do painel para o PDV nesta versão."),
             Map.of("entityType", "COMANDA", "reason", "Comandas continuam originadas no PDV e entram no Web via push."),
             Map.of("entityType", "AUDIT_LOG", "reason", "Auditoria e histórico operacional não são reenviados ao PDV.")
     );
@@ -68,7 +68,33 @@ public class WebChangeOutboxService {
     }
 
     public long enqueue(String tenantId, String storeId, String entityType, String entityId, String operation, Map<String, Object> payload) {
-        return enqueue(tenantId, storeId, null, null, entityType, entityId, operation, payload);
+        List<Map<String, Object>> devices = jdbcTemplate.queryForList("""
+                SELECT id, source_id AS sourceId
+                FROM tenant_devices
+                WHERE tenant_id = ? AND store_id = ?
+                  AND UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+                ORDER BY id
+                """, tenantId, storeId);
+        if (devices.isEmpty()) {
+            return enqueue(tenantId, storeId, null, null, entityType, entityId, operation, payload);
+        }
+        long firstId = -1L;
+        for (Map<String, Object> device : devices) {
+            long id = enqueue(
+                    tenantId,
+                    storeId,
+                    optional(String.valueOf(device.getOrDefault("sourceId", "")), null),
+                    String.valueOf(device.get("id")),
+                    entityType,
+                    entityId,
+                    operation,
+                    payload
+            );
+            if (firstId < 0) {
+                firstId = id;
+            }
+        }
+        return firstId;
     }
 
     public long enqueue(String tenantId, String storeId, String targetSourceId, String targetDeviceId, String entityType, String entityId, String operation, Map<String, Object> payload) {
@@ -77,7 +103,10 @@ public class WebChangeOutboxService {
         String safeEntityType = required(entityType, "entityType").toUpperCase();
         String safeEntityId = required(entityId, "entityId");
         String safeOperation = required(operation, "operation").toUpperCase();
-        String safeTargetSource = optional(targetSourceId, knownStoreSourceId(safeTenant, safeStore));
+        String safeTargetSource = optional(targetSourceId, null);
+        if (safeTargetSource == null) {
+            safeTargetSource = knownStoreSourceId(safeTenant, safeStore);
+        }
         String safeTargetDevice = optional(targetDeviceId, null);
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("contractVersion", CONTRACT_VERSION);
@@ -291,7 +320,6 @@ public class WebChangeOutboxService {
                 VALUES (?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE
                     source_id = COALESCE(VALUES(source_id), source_id),
-                    status = 'ACTIVE',
                     last_seen_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 """, tenantId, storeId, safeDevice, safeDevice, sourceId);

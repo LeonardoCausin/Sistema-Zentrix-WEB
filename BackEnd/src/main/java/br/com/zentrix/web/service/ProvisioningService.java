@@ -23,16 +23,22 @@ import org.springframework.web.server.ResponseStatusException;
 public class ProvisioningService {
     private static final int DEFAULT_CODE_TTL_MINUTES = 1440;
     private static final int MAX_CODE_TTL_MINUTES = 10080;
+    private static final char[] ACTIVATION_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
 
     private final SecureRandom secureRandom = new SecureRandom();
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final WebDatabaseInitializer initializer;
+    private final SyncKeyService syncKeyService;
+    private final WebChangeOutboxService webChangeOutboxService;
 
-    public ProvisioningService(JdbcTemplate jdbcTemplate, TransactionTemplate transactionTemplate, WebDatabaseInitializer initializer) {
+    public ProvisioningService(JdbcTemplate jdbcTemplate, TransactionTemplate transactionTemplate, WebDatabaseInitializer initializer,
+            SyncKeyService syncKeyService, WebChangeOutboxService webChangeOutboxService) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
         this.initializer = initializer;
+        this.syncKeyService = syncKeyService;
+        this.webChangeOutboxService = webChangeOutboxService;
     }
 
     public Map<String, Object> bootstrap(ProvisionTenantRequest request) {
@@ -96,14 +102,25 @@ public class ProvisioningService {
                 tenantName = tenantName(tenantId);
             }
 
-            String storeId = uuid();
-            String storeName = optional(request.storeName(), "Nova loja");
-            String sourceId = optional(request.sourceId(), "LOJA-" + storeId.substring(0, 8).toUpperCase());
+            String requestedStoreId = optional(request.storeId(), null);
+            String storeId;
+            String storeName;
+            String sourceId;
+            if (requestedStoreId == null) {
+                storeId = uuid();
+                storeName = optional(request.storeName(), "Nova loja");
+                sourceId = optional(request.sourceId(), "LOJA-" + storeId.substring(0, 8).toUpperCase());
+                upsertStore(tenantId, storeId, storeName, sourceId);
+            } else {
+                Map<String, Object> store = store(tenantId, requestedStoreId);
+                storeId = requestedStoreId;
+                storeName = String.valueOf(store.get("name"));
+                sourceId = optional(request.sourceId(), optional((String) store.get("source_id"), "LOJA-" + storeId.substring(0, 8).toUpperCase()));
+            }
             int ttlMinutes = ttlMinutes(request.expiresMinutes());
             LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(ttlMinutes);
             String code = uniqueCode();
 
-            upsertStore(tenantId, storeId, storeName, sourceId);
             jdbcTemplate.update("""
                     INSERT INTO activation_codes (code, tenant_id, store_id, store_name, source_id, status, expires_at)
                     VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)
@@ -129,11 +146,11 @@ public class ProvisioningService {
         return transactionTemplate.execute(status -> {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                     SELECT ac.code, ac.tenant_id, ac.store_id, ac.store_name, ac.source_id, ac.status, ac.expires_at,
-                           COALESCE(t.name, ac.tenant_id) AS tenant_name
+                           COALESCE((SELECT t.name FROM tenants t WHERE t.id = ac.tenant_id), ac.tenant_id) AS tenant_name
                     FROM activation_codes ac
-                    LEFT JOIN tenants t ON t.id = ac.tenant_id
                     WHERE ac.code = ?
                     LIMIT 1
+                    FOR UPDATE
                     """, code);
             if (rows.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Código de ativação inválido");
@@ -159,11 +176,15 @@ public class ProvisioningService {
 
             upsertStore(tenantId, storeId, storeName, sourceId);
             upsertDevice(tenantId, storeId, deviceId, deviceName, sourceId);
-            jdbcTemplate.update("""
+            int consumed = jdbcTemplate.update("""
                     UPDATE activation_codes
                     SET status = 'USED', used_at = CURRENT_TIMESTAMP, used_device_id = ?
-                    WHERE code = ?
+                    WHERE code = ? AND status = 'ACTIVE'
                     """, deviceId, code);
+            if (consumed != 1) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Codigo de ativacao ja utilizado");
+            }
+            enqueueInitialSnapshot(tenantId, storeId, sourceId, deviceId);
 
             return response(tenantId, tenantName, storeId, storeName, deviceId, deviceName, sourceId, false);
         });
@@ -228,6 +249,73 @@ public class ProvisioningService {
         return count != null && count > 0;
     }
 
+    private Map<String, Object> store(String tenantId, String storeId) {
+        return jdbcTemplate.queryForList("""
+                SELECT id, name, source_id
+                FROM tenant_stores
+                WHERE tenant_id = ? AND id = ?
+                LIMIT 1
+                """, tenantId, storeId).stream().findFirst().orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Loja não encontrada"));
+    }
+
+    private void enqueueInitialSnapshot(String tenantId, String storeId, String sourceId, String deviceId) {
+        List<Map<String, Object>> users = jdbcTemplate.queryForList("""
+                SELECT username, password, display_name, role, active, created_at, updated_at, last_login_at, permissions_json
+                FROM users
+                WHERE tenant_id = ? AND store_id = ?
+                ORDER BY username
+                """, tenantId, storeId);
+        if (users.isEmpty()) {
+            users = jdbcTemplate.queryForList("""
+                    SELECT username, password, display_name, role, active, created_at, updated_at, last_login_at, permissions_json
+                    FROM users
+                    WHERE tenant_id = ? AND active = TRUE
+                    ORDER BY CASE WHEN UPPER(role) IN ('ADMIN', 'ADMINISTRADOR', 'OWNER', 'DONO') THEN 0 ELSE 1 END, username
+                    LIMIT 1
+                    """, tenantId);
+        }
+        enqueueSnapshotRows(tenantId, storeId, sourceId, deviceId, "users", "USER", "username", users);
+        enqueueSnapshotRows(tenantId, storeId, sourceId, deviceId, "suppliers", "SUPPLIER", "id", jdbcTemplate.queryForList("""
+                SELECT id, name, cnpj, phone, email, address, created_at, birth_date, active, notes, loyalty_points, updated_at, deleted_at
+                FROM suppliers WHERE tenant_id = ? AND store_id = ? ORDER BY id
+                """, tenantId, storeId));
+        enqueueSnapshotRows(tenantId, storeId, sourceId, deviceId, "clients", "CLIENT", "id", jdbcTemplate.queryForList("""
+                SELECT id, name, cpf_cnpj, phone, email, address, created_at, birth_date, active, notes, loyalty_points, updated_at, deleted_at
+                FROM clients WHERE tenant_id = ? AND store_id = ? ORDER BY id
+                """, tenantId, storeId));
+        enqueueSnapshotRows(tenantId, storeId, sourceId, deviceId, "products", "PRODUCT", "code", jdbcTemplate.queryForList("""
+                SELECT code, description, unit, price, cost_price, stock, supplier_id, category, barcode, created_at,
+                       min_stock, ideal_stock, active, updated_at, deleted_at
+                FROM products WHERE tenant_id = ? AND store_id = ? ORDER BY code
+                """, tenantId, storeId));
+    }
+
+    private void enqueueSnapshotRows(String tenantId, String storeId, String sourceId, String deviceId,
+            String table, String entityType, String idColumn, List<Map<String, Object>> rows) {
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("table", table);
+            payload.put("record", snapshotRecord(row));
+            webChangeOutboxService.enqueue(tenantId, storeId, sourceId, deviceId, entityType,
+                    String.valueOf(row.get(idColumn)), "INITIAL_SNAPSHOT", payload);
+        }
+    }
+
+    private Map<String, Object> snapshotRecord(Map<String, Object> row) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        row.forEach((key, value) -> {
+            if (value instanceof Timestamp timestamp) {
+                record.put(key, timestamp.toLocalDateTime().toString());
+            } else if (value instanceof java.sql.Date date) {
+                record.put(key, date.toLocalDate().toString());
+            } else {
+                record.put(key, value);
+            }
+        });
+        return record;
+    }
+
     private String tenantName(String tenantId) {
         return jdbcTemplate.query("SELECT name FROM tenants WHERE id = ? LIMIT 1", (rs, rowNum) -> rs.getString(1), tenantId)
                 .stream()
@@ -253,6 +341,7 @@ public class ProvisioningService {
         response.put("deviceId", deviceId);
         response.put("deviceName", deviceName);
         response.put("sourceId", sourceId);
+        response.put("syncKey", syncKeyService.issueDeviceKey(tenantId, storeId, deviceId));
         response.put("firstAdminCreated", firstAdminCreated);
         response.put("status", "ACTIVE");
         response.put("createdAt", OffsetDateTime.now().toString());
@@ -316,7 +405,11 @@ public class ProvisioningService {
 
     private String uniqueCode() {
         for (int attempt = 0; attempt < 20; attempt++) {
-            String code = String.format("%06d", secureRandom.nextInt(1_000_000));
+            StringBuilder candidate = new StringBuilder(8);
+            for (int index = 0; index < 8; index++) {
+                candidate.append(ACTIVATION_ALPHABET[secureRandom.nextInt(ACTIVATION_ALPHABET.length)]);
+            }
+            String code = candidate.toString();
             Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM activation_codes WHERE code = ?", Long.class, code);
             if (count == null || count == 0) {
                 return code;

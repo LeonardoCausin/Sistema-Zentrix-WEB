@@ -116,11 +116,12 @@ public class WebDataService {
                            COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
                     FROM sales s
                     LEFT JOIN sale_items si
-                      ON si.tenant_id = s.tenant_id
+                     ON si.tenant_id = s.tenant_id
                      AND si.store_id = s.store_id
+                     AND si.device_id = s.device_id
                      AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.id, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.id, s.discount, s.surcharge
                 ) totals
                 """.formatted(filter.sql()), filter.args());
     }
@@ -140,15 +141,16 @@ public class WebDataService {
         int safeLimit = safeLimit(limit, 50, 500);
         int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
-                SELECT s.tenant_id, s.store_id, s.source_id, s.id, s.operator, s.payment_method, s.status, s.date_time,
+                SELECT s.tenant_id, s.store_id, s.source_id, s.device_id, s.id, s.operator, s.payment_method, s.status, s.date_time,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
                 FROM sales s
                 LEFT JOIN sale_items si
                   ON si.tenant_id = s.tenant_id
                  AND si.store_id = s.store_id
+                 AND si.device_id = s.device_id
                  AND si.sale_id = s.id
                 WHERE %s
-                GROUP BY s.tenant_id, s.store_id, s.source_id, s.id, s.operator, s.payment_method, s.status, s.date_time, s.discount, s.surcharge
+                GROUP BY s.tenant_id, s.store_id, s.source_id, s.device_id, s.id, s.operator, s.payment_method, s.status, s.date_time, s.discount, s.surcharge
                 ORDER BY s.date_time DESC, s.id DESC
                 LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
@@ -157,6 +159,7 @@ public class WebDataService {
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
             row.put("tenantId", rs.getString("tenant_id"));
             row.put("storeId", rs.getString("store_id"));
+            row.put("deviceId", rs.getString("device_id"));
             row.put("time", rs.getTimestamp("date_time") == null ? "-" : rs.getTimestamp("date_time").toLocalDateTime().toString().replace('T', ' '));
             row.put("operator", rs.getString("operator"));
             row.put("payment", paymentName(rs.getString("payment_method")));
@@ -216,7 +219,7 @@ public class WebDataService {
         int safeLimit = safeLimit(limit, 50, 300);
         int safeOffset = safeOffset(offset);
         return jdbcTemplate.query("""
-                SELECT cs.tenant_id, cs.store_id, cs.source_id, cs.id, cs.cash_id, cs.operator,
+                SELECT cs.tenant_id, cs.store_id, cs.source_id, cs.device_id, cs.id, cs.cash_id, cs.operator,
                        cs.opening_balance, cs.closing_balance, cs.expected_balance, cs.difference,
                        cs.opened_at, cs.closed_at, cs.is_open, cs.status,
                        COALESCE(cash_sales.cash_sales_total, 0) AS cash_sales_total,
@@ -224,25 +227,27 @@ public class WebDataService {
                        COALESCE(cash_movements.withdrawals_total, 0) AS withdrawals_total
                 FROM cash_sessions cs
                 LEFT JOIN (
-                    SELECT s.tenant_id, s.store_id, s.session_id,
+                    SELECT s.tenant_id, s.store_id, s.device_id, s.session_id,
                            COALESCE(SUM(COALESCE(s.amount_paid, 0)), 0) AS cash_sales_total
                     FROM sales s
                     WHERE s.status = 'PAID'
                       AND UPPER(COALESCE(s.payment_method, '')) IN ('CASH', 'DINHEIRO')
-                    GROUP BY s.tenant_id, s.store_id, s.session_id
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.session_id
                 ) cash_sales
-                  ON cash_sales.tenant_id = cs.tenant_id
+                 ON cash_sales.tenant_id = cs.tenant_id
                  AND cash_sales.store_id = cs.store_id
+                 AND cash_sales.device_id = cs.device_id
                  AND cash_sales.session_id = cs.id
                 LEFT JOIN (
-                    SELECT cm.tenant_id, cm.store_id, cm.session_id,
+                    SELECT cm.tenant_id, cm.store_id, cm.device_id, cm.session_id,
                            COALESCE(SUM(CASE WHEN UPPER(cm.type) IN ('SUPRIMENTO', 'SUPPLY') THEN cm.value ELSE 0 END), 0) AS supplies_total,
                            COALESCE(SUM(CASE WHEN UPPER(cm.type) IN ('SANGRIA', 'WITHDRAWAL') THEN cm.value ELSE 0 END), 0) AS withdrawals_total
                     FROM cash_movements cm
-                    GROUP BY cm.tenant_id, cm.store_id, cm.session_id
+                    GROUP BY cm.tenant_id, cm.store_id, cm.device_id, cm.session_id
                 ) cash_movements
-                  ON cash_movements.tenant_id = cs.tenant_id
+                 ON cash_movements.tenant_id = cs.tenant_id
                  AND cash_movements.store_id = cs.store_id
+                 AND cash_movements.device_id = cs.device_id
                  AND cash_movements.session_id = cs.id
                 WHERE %s
                 ORDER BY COALESCE(cs.opened_at, cs.closed_at) DESC, cs.id DESC
@@ -268,6 +273,7 @@ public class WebDataService {
             row.put("store", storeDisplayName(rs.getString("source_id"), rs.getString("store_id")));
             row.put("tenantId", rs.getString("tenant_id"));
             row.put("storeId", rs.getString("store_id"));
+            row.put("deviceId", rs.getString("device_id"));
             row.put("code", rs.getString("cash_id") == null ? "CX-" + rs.getInt("id") : rs.getString("cash_id"));
             row.put("operator", rs.getString("operator"));
             row.put("openedAt", rs.getTimestamp("opened_at") == null ? "-" : rs.getTimestamp("opened_at").toLocalDateTime().toString().replace('T', ' '));
@@ -434,20 +440,11 @@ public class WebDataService {
         return jdbcTemplate.query("""
                 SELECT c.tenant_id, c.store_id, c.source_id, c.id, c.name, c.cpf_cnpj, c.phone, c.email, c.address,
                        c.created_at, c.birth_date, c.active, c.notes, c.loyalty_points,
-                       COALESCE(SUM(CASE WHEN s.status = 'PAID' THEN st.total ELSE 0 END), 0) AS total_spent,
-                       MAX(CASE WHEN s.status = 'PAID' THEN s.date_time ELSE NULL END) AS last_purchase,
-                       COUNT(CASE WHEN s.status = 'PAID' THEN 1 ELSE NULL END) AS purchase_count
+                       0 AS total_spent,
+                       NULL AS last_purchase,
+                       0 AS purchase_count
                 FROM clients c
-                LEFT JOIN sales s ON s.tenant_id = c.tenant_id AND s.store_id = c.store_id AND CAST(c.id AS CHAR) = CAST(s.id AS CHAR)
-                LEFT JOIN (
-                    SELECT si.tenant_id, si.store_id, si.sale_id,
-                           COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) AS total
-                    FROM sale_items si
-                    GROUP BY si.tenant_id, si.store_id, si.sale_id
-                ) st ON st.tenant_id = s.tenant_id AND st.store_id = s.store_id AND st.sale_id = s.id
                 WHERE %s
-                GROUP BY c.tenant_id, c.store_id, c.source_id, c.id, c.name, c.cpf_cnpj, c.phone, c.email, c.address,
-                         c.created_at, c.birth_date, c.active, c.notes, c.loyalty_points
                 ORDER BY c.name
                 LIMIT ? OFFSET ?
                 """.formatted(filter.sql()), (rs, rowNum) -> {
@@ -659,9 +656,10 @@ public class WebDataService {
                     LEFT JOIN sale_items si
                       ON si.tenant_id = s.tenant_id
                      AND si.store_id = s.store_id
+                     AND si.device_id = s.device_id
                      AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.id, s.payment_method, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.id, s.payment_method, s.discount, s.surcharge
                 ) s
                 GROUP BY s.payment_method
                 ORDER BY total DESC
@@ -691,9 +689,10 @@ public class WebDataService {
                     LEFT JOIN sale_items si
                       ON si.tenant_id = s.tenant_id
                      AND si.store_id = s.store_id
+                     AND si.device_id = s.device_id
                      AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.id, s.date_time, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.id, s.date_time, s.discount, s.surcharge
                 ) totals
                 GROUP BY label
                 ORDER BY MIN(sort_key)
@@ -714,9 +713,10 @@ public class WebDataService {
                     LEFT JOIN sale_items si
                       ON si.tenant_id = s.tenant_id
                      AND si.store_id = s.store_id
+                     AND si.device_id = s.device_id
                      AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.source_id, s.id, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.source_id, s.device_id, s.id, s.discount, s.surcharge
                 ) totals
                 GROUP BY store_id, source_id
                 ORDER BY total DESC
@@ -736,12 +736,13 @@ public class WebDataService {
                 SELECT si.product_code,
                        COALESCE(p.description, si.product_code) AS description,
                        COALESCE(SUM(si.quantity), 0) AS quantity,
-                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.id)) AS sales_count,
+                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.device_id, ':', s.id)) AS sales_count,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) AS total
                 FROM sale_items si
                 INNER JOIN sales s
-                   ON s.tenant_id = si.tenant_id
+                  ON s.tenant_id = si.tenant_id
                   AND s.store_id = si.store_id
+                  AND s.device_id = si.device_id
                   AND s.id = si.sale_id
                 LEFT JOIN products p
                   ON p.tenant_id = si.tenant_id
@@ -888,8 +889,8 @@ public class WebDataService {
     private Map<String, Object> financeSummary(String tenantId, String period, String store) {
         Filter filter = salesFilter(tenantId, period, store);
         Filter entryFilter = financialEntryFilter(tenantId, period, store);
-        BigDecimal gross = money("SELECT COALESCE(SUM(si.quantity * si.unit_price), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
-        BigDecimal discounts = money("SELECT COALESCE(SUM(si.discount), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
+        BigDecimal gross = money("SELECT COALESCE(SUM(si.quantity * si.unit_price), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.device_id = si.device_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
+        BigDecimal discounts = money("SELECT COALESCE(SUM(si.discount), 0) FROM sale_items si INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.device_id = si.device_id AND s.id = si.sale_id WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
         BigDecimal surcharges = money("SELECT COALESCE(SUM(s.surcharge), 0) FROM sales s WHERE s.status = 'PAID' AND " + filter.sql(), filter.args());
         BigDecimal net = salesTotal(filter);
         BigDecimal cost = estimatedCost(filter);
@@ -927,7 +928,7 @@ public class WebDataService {
         return money("""
                 SELECT COALESCE(SUM(si.quantity * COALESCE(p.cost_price, 0)), 0)
                 FROM sale_items si
-                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id
+                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.device_id = si.device_id AND s.id = si.sale_id
                 LEFT JOIN products p ON p.tenant_id = si.tenant_id AND p.store_id = si.store_id AND p.code = si.product_code
                 WHERE s.status = 'PAID' AND %s
                 """.formatted(salesFilter.sql()), salesFilter.args());

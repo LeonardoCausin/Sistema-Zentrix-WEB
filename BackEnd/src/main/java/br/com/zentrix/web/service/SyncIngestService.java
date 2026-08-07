@@ -35,21 +35,25 @@ public class SyncIngestService {
             table("suppliers", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cnpj", "phone", "email", "address", "created_at", "birth_date", "active", "notes", "loyalty_points", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at", "updated_at", "deleted_at")),
             table("clients", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "name", "cpf_cnpj", "phone", "email", "address", "created_at", "birth_date", "active", "notes", "loyalty_points", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at", "updated_at", "deleted_at")),
             table("products", List.of("tenant_id", "store_id", "device_id", "source_id", "code", "description", "unit", "price", "cost_price", "stock", "supplier_id", "category", "barcode", "created_at", "min_stock", "ideal_stock", "active", "updated_at", "deleted_at"), List.of("tenant_id", "store_id", "code"), List.of("created_at", "updated_at", "deleted_at")),
-            table("stock_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "product_code", "type", "quantity", "previous_stock", "new_stock", "origin", "reference_type", "reference_id", "reason", "user", "created_at"), List.of("tenant_id", "store_id", "id"), List.of("created_at")),
-            table("cash_sessions", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "cash_id", "operator", "opening_balance", "closing_balance", "expected_balance", "difference", "observation", "opened_at", "closed_at", "closed_by", "close_reason", "is_open", "status"), List.of("tenant_id", "store_id", "id"), List.of("opened_at", "closed_at")),
-            table("cash_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "type", "value", "observation", "date_time"), List.of("tenant_id", "store_id", "id"), List.of("date_time")),
-            table("sales", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "operator", "discount", "surcharge", "payment_method", "amount_paid", "status", "date_time"), List.of("tenant_id", "store_id", "id"), List.of("date_time")),
-            table("sale_items", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "product_code", "quantity", "unit_price", "discount"), List.of("tenant_id", "store_id", "id")),
-            table("sale_cancellations", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "reason", "cancelled_by", "cancelled_at"), List.of("tenant_id", "store_id", "id"), List.of("cancelled_at")),
-            table("comandas", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "nome_cliente", "client_id", "mesa", "aberta", "data_abertura", "data_fechamento"), List.of("tenant_id", "store_id", "id"), List.of("data_abertura", "data_fechamento")),
-            table("comanda_itens", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "comanda_id", "descricao", "valor", "is_produto", "product_code", "quantidade"), List.of("tenant_id", "store_id", "id")),
-            table("audit_log", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "usuario", "acao", "entity_type", "entity_id", "details", "created_at", "risk_level", "previous_value", "new_value", "reason", "origin", "ip_address", "user_role"), List.of("tenant_id", "store_id", "id"), List.of("created_at"))
+            table("stock_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "product_code", "type", "quantity", "previous_stock", "new_stock", "origin", "reference_type", "reference_id", "reason", "user", "created_at"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("created_at")),
+            table("cash_sessions", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "cash_id", "operator", "opening_balance", "closing_balance", "expected_balance", "difference", "observation", "opened_at", "closed_at", "closed_by", "close_reason", "is_open", "status"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("opened_at", "closed_at")),
+            table("cash_movements", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "type", "value", "observation", "date_time"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("date_time")),
+            table("sales", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "session_id", "operator", "discount", "surcharge", "payment_method", "amount_paid", "status", "date_time"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("date_time")),
+            table("sale_items", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "product_code", "quantity", "unit_price", "discount"), List.of("tenant_id", "store_id", "device_id", "id")),
+            table("sale_cancellations", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "sale_id", "reason", "cancelled_by", "cancelled_at"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("cancelled_at")),
+            table("comandas", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "nome_cliente", "client_id", "mesa", "aberta", "data_abertura", "data_fechamento"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("data_abertura", "data_fechamento")),
+            table("comanda_itens", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "comanda_id", "descricao", "valor", "is_produto", "product_code", "quantidade"), List.of("tenant_id", "store_id", "device_id", "id")),
+            table("audit_log", List.of("tenant_id", "store_id", "device_id", "source_id", "id", "usuario", "acao", "entity_type", "entity_id", "details", "created_at", "risk_level", "previous_value", "new_value", "reason", "origin", "ip_address", "user_role"), List.of("tenant_id", "store_id", "device_id", "id"), List.of("created_at"))
     );
     private static final Map<String, TableSpec> TABLES_BY_NAME = TABLES.stream()
             .collect(Collectors.toUnmodifiableMap(TableSpec::name, spec -> spec));
     private static final Set<String> FULL_REQUIRED_TABLES = Set.of(
             "users", "clients", "products", "stock_movements", "cash_sessions", "cash_movements",
             "sales", "sale_items", "sale_cancellations"
+    );
+    private static final Set<String> DEVICE_OWNED_TABLES = Set.of(
+            "stock_movements", "cash_sessions", "cash_movements", "sales", "sale_items",
+            "sale_cancellations", "comandas", "comanda_itens", "audit_log"
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -58,6 +62,7 @@ public class SyncIngestService {
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
     private final PanelCacheService panelCacheService;
+    private final WebChangeOutboxService webChangeOutboxService;
 
     public SyncIngestService(
             JdbcTemplate jdbcTemplate,
@@ -65,7 +70,8 @@ public class SyncIngestService {
             WebDatabaseInitializer initializer,
             ObjectMapper objectMapper,
             AuditService auditService,
-            PanelCacheService panelCacheService
+            PanelCacheService panelCacheService,
+            WebChangeOutboxService webChangeOutboxService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
@@ -73,6 +79,7 @@ public class SyncIngestService {
         this.objectMapper = objectMapper;
         this.auditService = auditService;
         this.panelCacheService = panelCacheService;
+        this.webChangeOutboxService = webChangeOutboxService;
     }
 
     public Map<String, Object> ingest(SyncPushRequest request) {
@@ -90,7 +97,8 @@ public class SyncIngestService {
 
             Map<String, Object> response = transactionTemplate.execute(status -> {
                 upsertScopeMetadata(syncScope, receivedAt);
-                Map<String, List<Map<String, Object>>> tablesToApply = preserveWebOnlyProductCost(syncScope, normalizedTables);
+                Map<String, ProductState> productStates = currentProductStates(syncScope, normalizedTables);
+                Map<String, List<Map<String, Object>>> tablesToApply = preserveWebOwnedProductFields(normalizedTables, productStates);
                 Map<String, Integer> counts = new LinkedHashMap<>();
                 if ("FULL".equals(mode)) {
                     clearTables(syncScope, tablesToApply.keySet());
@@ -104,6 +112,12 @@ public class SyncIngestService {
                     TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
                     counts.put(spec.name(), upsertRows(spec, rowsToApply.getOrDefault(entry.getKey(), List.of())));
                 }
+                Set<String> changedStockProducts = applyStockMovementEffects(
+                        syncScope,
+                        rowsToApply.getOrDefault("stock_movements", List.of()),
+                        productStates
+                );
+                propagateSharedChanges(syncScope, rowsToApply, changedStockProducts);
 
                 int totalRows = counts.values().stream().mapToInt(Integer::intValue).sum();
                 Long runId = recordSyncRun(request, syncScope, mode, receivedAt, OffsetDateTime.now(), "SUCCESS", totalRows, counts, "Recebido via API");
@@ -179,7 +193,6 @@ public class SyncIngestService {
                 VALUES (?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE
                     source_id = COALESCE(VALUES(source_id), source_id),
-                    status = 'ACTIVE',
                     last_seen_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 """, safeTenant, safeStore, safeDevice, safeDevice, safeSource);
@@ -231,7 +244,6 @@ public class SyncIngestService {
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     source_id = VALUES(source_id),
-                    status = 'ACTIVE',
                     last_seen_at = VALUES(last_seen_at),
                     updated_at = CURRENT_TIMESTAMP
                 """, scope.tenantId(), scope.storeId(), scope.deviceId(), scope.deviceName(), scope.sourceId(), Timestamp.from(receivedAt.toInstant()));
@@ -298,9 +310,9 @@ public class SyncIngestService {
         return scoped;
     }
 
-    private Map<String, List<Map<String, Object>>> preserveWebOnlyProductCost(
-            SyncScope scope,
-            Map<String, List<Map<String, Object>>> tables
+    private Map<String, List<Map<String, Object>>> preserveWebOwnedProductFields(
+            Map<String, List<Map<String, Object>>> tables,
+            Map<String, ProductState> productStates
     ) {
         List<Map<String, Object>> products = tables.get("products");
         if (products == null || products.isEmpty()) {
@@ -310,27 +322,257 @@ public class SyncIngestService {
         List<Map<String, Object>> safeProducts = new ArrayList<>();
         for (Map<String, Object> row : products) {
             Map<String, Object> safeRow = new LinkedHashMap<>(row);
-            safeRow.put("cost_price", currentWebCostPrice(scope, Objects.toString(row.get("code"), "")));
+            ProductState current = productStates.get(Objects.toString(row.get("code"), ""));
+            if (current != null && current.exists()) {
+                safeRow.put("stock", current.stock());
+                if (current.costPrice() != null) {
+                    safeRow.put("cost_price", current.costPrice());
+                }
+            }
             safeProducts.add(safeRow);
         }
         copy.put("products", safeProducts);
         return copy;
     }
 
-    private Object currentWebCostPrice(SyncScope scope, String code) {
-        if (code == null || code.isBlank()) {
+    private Map<String, ProductState> currentProductStates(
+            SyncScope scope,
+            Map<String, List<Map<String, Object>>> tables
+    ) {
+        Set<String> codes = new LinkedHashSet<>();
+        tables.getOrDefault("products", List.of()).forEach(row -> addProductCode(codes, row.get("code")));
+        tables.getOrDefault("stock_movements", List.of()).forEach(row -> addProductCode(codes, row.get("product_code")));
+        Map<String, ProductState> states = new LinkedHashMap<>();
+        for (String code : codes) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT cost_price, stock
+                    FROM products
+                    WHERE tenant_id = ? AND store_id = ? AND code = ?
+                    LIMIT 1
+                    """, scope.tenantId(), scope.storeId(), code);
+            if (rows.isEmpty()) {
+                states.put(code, new ProductState(false, null, BigDecimal.ZERO));
+            } else {
+                Map<String, Object> row = rows.get(0);
+                states.put(code, new ProductState(true, row.get("cost_price"), decimal(row.get("stock"))));
+            }
+        }
+        return states;
+    }
+
+    private void addProductCode(Set<String> codes, Object value) {
+        String code = Objects.toString(value, "").trim();
+        if (!code.isEmpty()) {
+            codes.add(code);
+        }
+    }
+
+    private Set<String> applyStockMovementEffects(
+            SyncScope scope,
+            List<Map<String, Object>> movements,
+            Map<String, ProductState> productStates
+    ) {
+        Set<String> changedProducts = new LinkedHashSet<>();
+        for (Map<String, Object> movement : movements) {
+            String productCode = requiredText(Objects.toString(movement.get("product_code"), ""), "stock_movements.product_code");
+            int movementId = integer(movement.get("id"), "stock_movements.id");
+            ProductState initialState = productStates.getOrDefault(productCode, new ProductState(false, null, BigDecimal.ZERO));
+            String origin = normalizeText(movement.get("origin"));
+            boolean webReplica = "WEB".equals(origin) || "APPGESTAO".equals(origin);
+            BigDecimal delta = initialState.exists() && !webReplica ? movementDelta(movement) : BigDecimal.ZERO;
+            String policy = webReplica ? "WEB_REPLICA" : initialState.exists() ? "DELTA_APPLIED" : "INITIAL_SNAPSHOT";
+            int inserted = jdbcTemplate.update("""
+                    INSERT IGNORE INTO sync_stock_effects
+                        (tenant_id, store_id, device_id, movement_id, product_code, delta, policy)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, scope.tenantId(), scope.storeId(), scope.deviceId(), movementId, productCode, delta, policy);
+            if (inserted == 0 || !initialState.exists() || webReplica) {
+                continue;
+            }
+            int updated = jdbcTemplate.update("""
+                    UPDATE products
+                    SET stock = stock + ?, source_id = 'WEB', device_id = 'WEB', updated_at = CURRENT_TIMESTAMP
+                    WHERE tenant_id = ? AND store_id = ? AND code = ?
+                    """, delta, scope.tenantId(), scope.storeId(), productCode);
+            if (updated == 0) {
+                throw new IllegalStateException("Produto do movimento de estoque nao encontrado: " + productCode);
+            }
+            changedProducts.add(productCode);
+        }
+        return changedProducts;
+    }
+
+    private BigDecimal movementDelta(Map<String, Object> movement) {
+        String type = normalizeText(movement.get("type"));
+        BigDecimal quantity = decimal(movement.get("quantity")).abs();
+        return switch (type) {
+            case "ENTRY", "ENTRADA", "SUPPLY", "SUPRIMENTO", "CANCELAMENTO" -> quantity;
+            case "EXIT", "SAIDA", "SAIDA_MANUAL", "WITHDRAWAL", "RETIRADA" -> quantity.negate();
+            case "ADJUSTMENT", "ADJUST", "AJUSTE" -> decimal(movement.get("new_stock"))
+                    .subtract(decimal(movement.get("previous_stock")));
+            case "TRANSFER", "TRANSFERENCIA" -> throw new IllegalArgumentException(
+                    "Transferencia de estoque ainda nao e suportada pela sincronizacao");
+            default -> throw new IllegalArgumentException("Tipo de movimento de estoque invalido: " + type);
+        };
+    }
+
+    private void propagateSharedChanges(
+            SyncScope scope,
+            Map<String, List<Map<String, Object>>> rowsToApply,
+            Set<String> changedStockProducts
+    ) {
+        List<Map<String, Object>> targets = jdbcTemplate.queryForList("""
+                SELECT id, source_id
+                FROM tenant_devices
+                WHERE tenant_id = ? AND store_id = ? AND id <> ?
+                  AND UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+                ORDER BY id
+                """, scope.tenantId(), scope.storeId(), scope.deviceId());
+        if (targets.isEmpty()) {
+            return;
+        }
+
+        Map<String, Set<String>> changes = new LinkedHashMap<>();
+        collectEntityIds(changes, "users", rowsToApply.getOrDefault("users", List.of()), "username");
+        collectEntityIds(changes, "suppliers", rowsToApply.getOrDefault("suppliers", List.of()), "id");
+        collectEntityIds(changes, "clients", rowsToApply.getOrDefault("clients", List.of()), "id");
+        collectEntityIds(changes, "products", rowsToApply.getOrDefault("products", List.of()), "code");
+        Set<String> regularProductChanges = changes.get("products");
+        if (regularProductChanges != null) {
+            regularProductChanges.removeAll(changedStockProducts);
+        }
+
+        for (Map.Entry<String, Set<String>> tableChanges : changes.entrySet()) {
+            for (String entityId : tableChanges.getValue()) {
+                Map<String, Object> record = currentSharedRecord(scope, tableChanges.getKey(), entityId);
+                if (record.isEmpty()) {
+                    continue;
+                }
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("table", tableChanges.getKey());
+                payload.put("record", wireRecord(record));
+                for (Map<String, Object> target : targets) {
+                    webChangeOutboxService.enqueue(
+                            scope.tenantId(),
+                            scope.storeId(),
+                            optionalText(Objects.toString(target.get("source_id"), null), null),
+                            Objects.toString(target.get("id"), null),
+                            entityType(tableChanges.getKey()),
+                            entityId,
+                            "PDV_SYNC_PROPAGATED",
+                            payload
+                    );
+                }
+            }
+        }
+        for (String productCode : changedStockProducts) {
+            Map<String, Object> record = currentSharedRecord(scope, "products", productCode);
+            if (record.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("table", "products");
+            payload.put("record", wireRecord(record));
+            for (Map<String, Object> target : targets) {
+                webChangeOutboxService.enqueue(
+                        scope.tenantId(),
+                        scope.storeId(),
+                        optionalText(Objects.toString(target.get("source_id"), null), null),
+                        Objects.toString(target.get("id"), null),
+                        "PRODUCT",
+                        productCode,
+                        "STOCK_CONSOLIDATED",
+                        payload
+                );
+            }
+        }
+    }
+
+    private void collectEntityIds(
+            Map<String, Set<String>> changes,
+            String table,
+            List<Map<String, Object>> rows,
+            String idColumn
+    ) {
+        Set<String> ids = changes.computeIfAbsent(table, ignored -> new LinkedHashSet<>());
+        rows.forEach(row -> {
+            String id = Objects.toString(row.get(idColumn), "").trim();
+            if (!id.isEmpty()) {
+                ids.add(id);
+            }
+        });
+    }
+
+    private Map<String, Object> currentSharedRecord(SyncScope scope, String table, String entityId) {
+        String sql = switch (table) {
+            case "users" -> """
+                    SELECT username, password, display_name, role, active, created_at, updated_at, last_login_at, permissions_json
+                    FROM users WHERE tenant_id = ? AND store_id = ? AND username = ? LIMIT 1
+                    """;
+            case "suppliers" -> """
+                    SELECT id, name, cnpj, phone, email, address, created_at, birth_date, active, notes,
+                           loyalty_points, updated_at, deleted_at
+                    FROM suppliers WHERE tenant_id = ? AND store_id = ? AND id = ? LIMIT 1
+                    """;
+            case "clients" -> """
+                    SELECT id, name, cpf_cnpj, phone, email, address, created_at, birth_date, active, notes,
+                           loyalty_points, updated_at, deleted_at
+                    FROM clients WHERE tenant_id = ? AND store_id = ? AND id = ? LIMIT 1
+                    """;
+            case "products" -> """
+                    SELECT code, description, unit, price, cost_price, stock, supplier_id, category, barcode,
+                           created_at, min_stock, ideal_stock, active, updated_at, deleted_at
+                    FROM products WHERE tenant_id = ? AND store_id = ? AND code = ? LIMIT 1
+                    """;
+            default -> throw new IllegalArgumentException("Tabela compartilhada invalida: " + table);
+        };
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, scope.tenantId(), scope.storeId(), entityId);
+        return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    private Map<String, Object> wireRecord(Map<String, Object> row) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        row.forEach((key, value) -> {
+            if (value instanceof Timestamp timestamp) {
+                record.put(key, timestamp.toLocalDateTime().toString());
+            } else if (value instanceof java.sql.Date date) {
+                record.put(key, date.toLocalDate().toString());
+            } else {
+                record.put(key, value);
+            }
+        });
+        return record;
+    }
+
+    private String entityType(String table) {
+        return switch (table) {
+            case "users" -> "USER";
+            case "suppliers" -> "SUPPLIER";
+            case "clients" -> "CLIENT";
+            case "products" -> "PRODUCT";
+            default -> throw new IllegalArgumentException("Tabela compartilhada invalida: " + table);
+        };
+    }
+
+    private int integer(Object value, String field) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(Objects.toString(value, ""));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(field + " deve ser numerico");
+        }
+    }
+
+    private BigDecimal decimal(Object value) {
+        if (value == null || Objects.toString(value, "").isBlank()) {
             return BigDecimal.ZERO;
         }
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT cost_price
-                FROM products
-                WHERE tenant_id = ? AND store_id = ? AND code = ?
-                LIMIT 1
-                """, scope.tenantId(), scope.storeId(), code);
-        if (rows.isEmpty() || rows.get(0).get("cost_price") == null) {
-            return BigDecimal.ZERO;
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
         }
-        return rows.get(0).get("cost_price");
+        return new BigDecimal(Objects.toString(value));
     }
 
     private void validateRow(TableSpec spec, Map<String, Object> row) {
@@ -367,21 +609,19 @@ public class SyncIngestService {
         List<Map<String, Object>> conflicts = new ArrayList<>();
         for (Map.Entry<String, List<Map<String, Object>>> entry : normalizedTables.entrySet()) {
             TableSpec spec = TABLES_BY_NAME.get(entry.getKey());
-            String revisionColumn = revisionColumn(spec);
-            if (revisionColumn == null) {
+            if (spec.dateColumns().isEmpty()) {
                 continue;
             }
             for (Map<String, Object> row : entry.getValue()) {
-                Object incomingRevisionValue = row.get(revisionColumn);
-                Timestamp incomingRevision = timestampOrNull(spec, revisionColumn, incomingRevisionValue);
+                Timestamp incomingRevision = latestRevision(spec, row);
                 if (incomingRevision == null) {
                     continue;
                 }
-                Map<String, Object> existing = existingRevision(spec, row, revisionColumn);
+                Map<String, Object> existing = existingRevision(spec, row);
                 if (existing.isEmpty()) {
                     continue;
                 }
-                Timestamp existingRevision = timestampOrNull(spec, revisionColumn, existing.get(revisionColumn));
+                Timestamp existingRevision = latestRevision(spec, existing);
                 String existingSource = Objects.toString(existing.get("source_id"), "");
                 String incomingSource = Objects.toString(row.get("source_id"), "");
                 if (!existingSource.equalsIgnoreCase(incomingSource)
@@ -390,7 +630,7 @@ public class SyncIngestService {
                     Map<String, Object> conflict = new LinkedHashMap<>();
                     conflict.put("table", spec.name());
                     conflict.put("key", primaryKeyValues(spec, row));
-                    conflict.put("revisionColumn", revisionColumn);
+                    conflict.put("revisionColumn", "latest_available_timestamp");
                     conflict.put("existingSourceId", existingSource);
                     conflict.put("incomingSourceId", incomingSource);
                     conflict.put("existingRevision", existingRevision.toLocalDateTime().toString());
@@ -428,7 +668,7 @@ public class SyncIngestService {
         return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
     }
 
-    private Map<String, Object> existingRevision(TableSpec spec, Map<String, Object> row, String revisionColumn) {
+    private Map<String, Object> existingRevision(TableSpec spec, Map<String, Object> row) {
         List<Object> args = new ArrayList<>();
         String where = spec.primaryKeys().stream()
                 .map(key -> {
@@ -436,13 +676,25 @@ public class SyncIngestService {
                     return quote(key) + " = ?";
                 })
                 .collect(Collectors.joining(" AND "));
+        String revisionColumns = spec.dateColumns().stream().sorted().map(this::quote).collect(Collectors.joining(", "));
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT source_id, %s
                 FROM %s
                 WHERE %s
                 LIMIT 1
-                """.formatted(quote(revisionColumn), quote(spec.name()), where), args.toArray());
+                """.formatted(revisionColumns, quote(spec.name()), where), args.toArray());
         return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    private Timestamp latestRevision(TableSpec spec, Map<String, Object> row) {
+        Timestamp latest = null;
+        for (String column : spec.dateColumns()) {
+            Timestamp candidate = timestampOrNull(spec, column, row.get(column));
+            if (candidate != null && (latest == null || candidate.after(latest))) {
+                latest = candidate;
+            }
+        }
+        return latest;
     }
 
     private Map<String, Object> primaryKeyValues(TableSpec spec, Map<String, Object> row) {
@@ -455,15 +707,6 @@ public class SyncIngestService {
         return tableName + ":" + key.entrySet().stream()
                 .map(entry -> entry.getKey() + "=" + Objects.toString(entry.getValue(), ""))
                 .collect(Collectors.joining("|"));
-    }
-
-    private String revisionColumn(TableSpec spec) {
-        for (String column : List.of("updated_at", "date_time", "closed_at", "opened_at", "cancelled_at", "created_at", "last_login_at")) {
-            if (spec.columns().contains(column)) {
-                return column;
-            }
-        }
-        return null;
     }
 
     private Timestamp timestampOrNull(TableSpec spec, String column, Object value) {
@@ -488,8 +731,10 @@ public class SyncIngestService {
         List<String> ordered = new ArrayList<>(tableNames);
         ordered.sort((left, right) -> Integer.compare(tableOrder(right), tableOrder(left)));
         for (String tableName : ordered) {
-            jdbcTemplate.update("DELETE FROM " + quote(tableName) + " WHERE tenant_id = ? AND store_id = ?",
-                    scope.tenantId(), scope.storeId());
+            if (DEVICE_OWNED_TABLES.contains(tableName)) {
+                jdbcTemplate.update("DELETE FROM " + quote(tableName) + " WHERE tenant_id = ? AND store_id = ? AND device_id = ?",
+                        scope.tenantId(), scope.storeId(), scope.deviceId());
+            }
         }
     }
 
@@ -844,6 +1089,9 @@ public class SyncIngestService {
             String deviceName,
             String sourceId
     ) {
+    }
+
+    private record ProductState(boolean exists, Object costPrice, BigDecimal stock) {
     }
 
     private record TableSpec(String name, Set<String> columns, Set<String> primaryKeys, Set<String> dateColumns) {

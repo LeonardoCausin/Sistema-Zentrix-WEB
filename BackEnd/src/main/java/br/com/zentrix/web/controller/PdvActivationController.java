@@ -51,10 +51,8 @@ public class PdvActivationController {
 
     @PostMapping("/activate-device")
     public Map<String, Object> activateDevice(
-            @RequestHeader(value = "X-Zentrix-Setup-Key", required = false) String setupKey,
             @RequestBody ActivateDeviceRequest request
     ) {
-        setupKeyService.require(setupKey);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe os dados de ativacao");
         }

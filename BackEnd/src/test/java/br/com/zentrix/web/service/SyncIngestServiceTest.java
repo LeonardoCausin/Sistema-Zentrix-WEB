@@ -8,8 +8,10 @@ import br.com.zentrix.web.dto.SyncPushRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
@@ -22,17 +24,20 @@ import org.springframework.transaction.support.TransactionTemplate;
 class SyncIngestServiceTest {
     private FakeJdbcTemplate jdbcTemplate;
     private SyncIngestService service;
+    private NoopOutboxService outboxService;
 
     @BeforeEach
     void setUp() {
         jdbcTemplate = new FakeJdbcTemplate();
+        outboxService = new NoopOutboxService();
         service = new SyncIngestService(
                 jdbcTemplate,
                 new ImmediateTransactionTemplate(),
                 new NoopInitializer(),
                 new ObjectMapper(),
                 new NoopAuditService(),
-                new PanelCacheService()
+                new PanelCacheService(),
+                outboxService
         );
     }
 
@@ -195,7 +200,76 @@ class SyncIngestServiceTest {
         service.ingest(request);
 
         assertEquals(3, jdbcTemplate.batchCalls);
-        assertEquals(13, jdbcTemplate.deleteCalls);
+        assertEquals(9, jdbcTemplate.deleteCalls);
+        assertEquals(true, jdbcTemplate.updateSqls.stream()
+                .filter(sql -> sql.startsWith("DELETE FROM"))
+                .allMatch(sql -> sql.contains("device_id = ?")));
+    }
+
+    @Test
+    void appliesSameMovementOnlyOnce() {
+        jdbcTemplate.serverStock = new BigDecimal("10.000");
+        SyncPushRequest request = stockExitRequest("device-1", 1, "10.000", "9.000");
+
+        service.ingest(request);
+        service.ingest(request);
+
+        assertEquals(new BigDecimal("9.000"), jdbcTemplate.serverStock);
+        assertEquals(1, jdbcTemplate.stockUpdateCalls);
+    }
+
+    @Test
+    void consolidatesEqualLocalMovementIdsFromDifferentDevices() {
+        jdbcTemplate.serverStock = new BigDecimal("10.000");
+
+        service.ingest(stockExitRequest("device-1", 1, "10.000", "9.000"));
+        service.ingest(stockExitRequest("device-2", 1, "10.000", "9.000"));
+
+        assertEquals(new BigDecimal("8.000"), jdbcTemplate.serverStock);
+        assertEquals(2, jdbcTemplate.stockUpdateCalls);
+    }
+
+    @Test
+    void propagatesConsolidatedStockOnlyToOtherActiveDevices() {
+        jdbcTemplate.serverStock = new BigDecimal("10.000");
+        jdbcTemplate.targetDevices = List.of(Map.of("id", "device-2", "source_id", "pdv-2"));
+
+        service.ingest(stockExitRequest("device-1", 1, "10.000", "9.000"));
+
+        assertEquals(List.of("device-2"), outboxService.targetDeviceIds);
+        assertEquals(List.of("STOCK_CONSOLIDATED"), outboxService.operations);
+        assertEquals(new BigDecimal("9.000"), outboxService.productStocks.get(0));
+    }
+
+    @Test
+    void doesNotApplyWebMovementReplicaReturnedByPdv() {
+        jdbcTemplate.serverStock = new BigDecimal("9.000");
+
+        service.ingest(stockExitRequest("device-1", 77, "10.000", "9.000", "APPGESTAO"));
+
+        assertEquals(new BigDecimal("9.000"), jdbcTemplate.serverStock);
+        assertEquals(0, jdbcTemplate.stockUpdateCalls);
+    }
+
+    private SyncPushRequest stockExitRequest(String deviceId, int movementId, String previous, String next) {
+        return stockExitRequest(deviceId, movementId, previous, next, "PDV");
+    }
+
+    private SyncPushRequest stockExitRequest(String deviceId, int movementId, String previous, String next, String origin) {
+        return new SyncPushRequest(
+                "tenant-1", "Tenant", "store-1", "Loja", deviceId, deviceId, deviceId,
+                "PARTIAL", OffsetDateTime.now(),
+                Map.of("stock_movements", List.of(Map.of(
+                        "id", movementId,
+                        "product_code", "P1",
+                        "type", "EXIT",
+                        "quantity", "1.000",
+                        "previous_stock", previous,
+                        "new_stock", next,
+                        "origin", origin,
+                        "created_at", "2026-08-06T10:00:00"
+                )))
+        );
     }
 
     private static class FakeJdbcTemplate extends JdbcTemplate {
@@ -206,6 +280,10 @@ class SyncIngestServiceTest {
         String lastBatchSql = "";
         List<String> batchSqls = new java.util.ArrayList<>();
         List<String> updateSqls = new java.util.ArrayList<>();
+        Set<String> stockEffects = new HashSet<>();
+        BigDecimal serverStock;
+        int stockUpdateCalls;
+        List<Map<String, Object>> targetDevices = List.of();
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
@@ -213,7 +291,22 @@ class SyncIngestServiceTest {
                 return existingRevision;
             }
             if (sql.contains("SELECT cost_price")) {
+                if (serverStock != null) {
+                    return List.of(Map.of("cost_price", BigDecimal.ZERO, "stock", serverStock));
+                }
                 return existingCostPrice;
+            }
+            if (sql.contains("FROM tenant_devices") && sql.contains("id <> ?")) {
+                return targetDevices;
+            }
+            if (sql.contains("SELECT code, description") && serverStock != null) {
+                return List.of(Map.of(
+                        "code", "P1",
+                        "description", "Produto",
+                        "price", new BigDecimal("10.00"),
+                        "cost_price", BigDecimal.ZERO,
+                        "stock", serverStock
+                ));
             }
             return List.of();
         }
@@ -221,6 +314,15 @@ class SyncIngestServiceTest {
         @Override
         public int update(String sql, Object... args) {
             updateSqls.add(sql);
+            if (sql.contains("INSERT IGNORE INTO sync_stock_effects")) {
+                String key = args[2] + ":" + args[3];
+                return stockEffects.add(key) ? 1 : 0;
+            }
+            if (sql.contains("UPDATE products") && sql.contains("stock = stock +")) {
+                serverStock = serverStock.add((BigDecimal) args[0]);
+                stockUpdateCalls++;
+                return 1;
+            }
             if (sql.contains("DELETE FROM")) {
                 deleteCalls++;
             }
@@ -276,6 +378,29 @@ class SyncIngestServiceTest {
                 String action, String entityType, String entityId, String details, String riskLevel,
                 String previousValue, String newValue, String reason, String origin, String ipAddress, String userRole
         ) {
+        }
+    }
+
+    private static class NoopOutboxService extends WebChangeOutboxService {
+        List<String> targetDeviceIds = new java.util.ArrayList<>();
+        List<String> operations = new java.util.ArrayList<>();
+        List<BigDecimal> productStocks = new java.util.ArrayList<>();
+
+        NoopOutboxService() {
+            super(null, null, new ObjectMapper());
+        }
+
+        @Override
+        public long enqueue(
+                String tenantId, String storeId, String targetSourceId, String targetDeviceId,
+                String entityType, String entityId, String operation, Map<String, Object> payload
+        ) {
+            targetDeviceIds.add(targetDeviceId);
+            operations.add(operation);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> record = (Map<String, Object>) payload.get("record");
+            productStocks.add((BigDecimal) record.get("stock"));
+            return 1L;
         }
     }
 }

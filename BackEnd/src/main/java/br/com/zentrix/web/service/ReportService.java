@@ -318,9 +318,9 @@ public class ReportService {
                     SELECT COALESCE(NULLIF(s.payment_method, ''), 'N\u00e3o informado') AS payment_method,
                            COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - COALESCE(s.discount, 0) + COALESCE(s.surcharge, 0) AS total
                     FROM sales s
-                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.sale_id = s.id
+                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.device_id = s.device_id AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.id, s.payment_method, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.id, s.payment_method, s.discount, s.surcharge
                 ) totals
                 GROUP BY payment_method
                 ORDER BY value DESC
@@ -337,9 +337,9 @@ public class ReportService {
                            MIN(s.date_time) AS sort_date,
                            COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - COALESCE(s.discount, 0) + COALESCE(s.surcharge, 0) AS total
                     FROM sales s
-                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.sale_id = s.id
+                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.device_id = s.device_id AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY %s, s.tenant_id, s.store_id, s.id, s.discount, s.surcharge
+                    GROUP BY %s, s.tenant_id, s.store_id, s.device_id, s.id, s.discount, s.surcharge
                 ) totals
                 GROUP BY label
                 ORDER BY MIN(sort_date)
@@ -351,10 +351,10 @@ public class ReportService {
         return jdbcTemplate.query("""
                 SELECT COALESCE(NULLIF(p.description, ''), si.product_code) AS label,
                        COALESCE(SUM(si.quantity), 0) AS quantity,
-                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.id)) AS sales_count,
+                       COUNT(DISTINCT CONCAT(s.tenant_id, ':', s.store_id, ':', s.device_id, ':', s.id)) AS sales_count,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) AS value
                 FROM sale_items si
-                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id
+                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.device_id = si.device_id AND s.id = si.sale_id
                 LEFT JOIN products p ON p.tenant_id = si.tenant_id AND p.store_id = si.store_id AND p.code = si.product_code
                 WHERE s.status = 'PAID' AND %s
                 GROUP BY COALESCE(NULLIF(p.description, ''), si.product_code)
@@ -431,9 +431,9 @@ public class ReportService {
                     SELECT s.id,
                            COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - COALESCE(s.discount, 0) + COALESCE(s.surcharge, 0) AS total
                     FROM sales s
-                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.sale_id = s.id
+                    LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.device_id = s.device_id AND si.sale_id = s.id
                     WHERE s.status = 'PAID' AND %s
-                    GROUP BY s.tenant_id, s.store_id, s.id, s.discount, s.surcharge
+                    GROUP BY s.tenant_id, s.store_id, s.device_id, s.id, s.discount, s.surcharge
                 ) totals
                 """.formatted(filter.sql()), filter.args());
     }
@@ -442,7 +442,7 @@ public class ReportService {
         return salesTotal(filter).subtract(money("""
                 SELECT COALESCE(SUM(si.quantity * COALESCE(p.cost_price, 0)), 0)
                 FROM sale_items si
-                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.id = si.sale_id
+                INNER JOIN sales s ON s.tenant_id = si.tenant_id AND s.store_id = si.store_id AND s.device_id = si.device_id AND s.id = si.sale_id
                 LEFT JOIN products p ON p.tenant_id = si.tenant_id AND p.store_id = si.store_id AND p.code = si.product_code
                 WHERE s.status = 'PAID' AND %s
                 """.formatted(filter.sql()), filter.args()));

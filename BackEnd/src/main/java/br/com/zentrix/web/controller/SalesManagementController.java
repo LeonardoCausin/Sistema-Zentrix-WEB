@@ -27,17 +27,22 @@ public class SalesManagementController {
     }
 
     @GetMapping("/{id}")
-    public Map<String, Object> detail(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store) {
+    public Map<String, Object> detail(
+            @PathVariable int id,
+            @RequestParam(defaultValue = "WEB") String store,
+            @RequestParam(required = false) String device
+    ) {
         permissionService.require(Permission.VIEW_PANEL);
-        return operationsService.saleDetail(AuthContext.tenantId(), store, id);
+        return operationsService.saleDetail(AuthContext.tenantId(), store, id, device);
     }
 
     @PostMapping("/{id}/cancel")
     public Map<String, Object> cancel(
             @PathVariable int id,
             @RequestParam(defaultValue = "WEB") String store,
+            @RequestParam(required = false) String device,
             @Valid @RequestBody CancelSaleRequest request
     ) {
-        return operationsService.cancelSale(AuthContext.tenantId(), store, id, request);
+        return operationsService.cancelSale(AuthContext.tenantId(), store, id, device, request);
     }
 }

@@ -83,7 +83,7 @@ public class LocalAdminService {
         initializer.ensureReady();
         String store = normalizeStore(storeId);
         return jdbcTemplate.queryForList("""
-                SELECT id, store_id AS storeId, source_id AS sourceId, cash_id AS cashId, operator,
+                SELECT id, store_id AS storeId, source_id AS sourceId, device_id AS deviceId, cash_id AS cashId, operator,
                        opening_balance AS openingBalance, closing_balance AS closingBalance,
                        expected_balance AS expectedBalance, difference, opened_at AS openedAt,
                        closed_at AS closedAt, is_open AS open, status
@@ -157,10 +157,16 @@ public class LocalAdminService {
 
     @Transactional
     public Map<String, Object> closeCash(String tenantId, String storeId, long id, Map<String, Object> request) {
+        return closeCash(tenantId, storeId, null, id, request);
+    }
+
+    @Transactional
+    public Map<String, Object> closeCash(String tenantId, String storeId, String deviceId, long id, Map<String, Object> request) {
         initializer.ensureReady();
         String reason = requiredReason(request);
         String store = normalizeWritableStore(storeId);
-        Map<String, Object> session = singleCash(tenantId, store, id);
+        Map<String, Object> session = singleCash(tenantId, store, deviceId, id);
+        String device = String.valueOf(session.get("deviceId"));
         BigDecimal opening = decimal(session.get("openingBalance"));
         BigDecimal closing = decimalOrDefault(request.get("closingBalance"), opening);
         BigDecimal expected = decimalOrDefault(request.get("expectedBalance"), closing);
@@ -170,8 +176,8 @@ public class LocalAdminService {
                 UPDATE cash_sessions
                 SET is_open = FALSE, status = 'CLOSED', closing_balance = ?, expected_balance = ?, difference = ?,
                     closed_by = ?, close_reason = ?, closed_at = ?
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, closing, expected, difference, currentUser(), reason, closedAt, tenantId, store, id);
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, closing, expected, difference, currentUser(), reason, closedAt, tenantId, store, device, id);
         auditService.recordCurrent("LOCAL_ADMIN_CASH_CLOSED", "cash_sessions", String.valueOf(id),
                 "Caixa fechado pelo painel local.", "ALERTA", reason);
         panelCacheService.clear();
@@ -180,16 +186,22 @@ public class LocalAdminService {
 
     @Transactional
     public Map<String, Object> deleteCash(String tenantId, String storeId, long id, Map<String, Object> request) {
+        return deleteCash(tenantId, storeId, null, id, request);
+    }
+
+    @Transactional
+    public Map<String, Object> deleteCash(String tenantId, String storeId, String deviceId, long id, Map<String, Object> request) {
         initializer.ensureReady();
         String reason = requiredReason(request);
         String store = normalizeWritableStore(storeId);
-        singleCash(tenantId, store, id);
-        long sales = number("SELECT COUNT(*) FROM sales WHERE tenant_id = ? AND store_id = ? AND session_id = ?", tenantId, store, id);
-        long movements = number("SELECT COUNT(*) FROM cash_movements WHERE tenant_id = ? AND store_id = ? AND session_id = ?", tenantId, store, id);
+        Map<String, Object> session = singleCash(tenantId, store, deviceId, id);
+        String device = String.valueOf(session.get("deviceId"));
+        long sales = number("SELECT COUNT(*) FROM sales WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ?", tenantId, store, device, id);
+        long movements = number("SELECT COUNT(*) FROM cash_movements WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ?", tenantId, store, device, id);
         if (sales > 0 || movements > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Este caixa possui vendas ou movimentos vinculados. Feche/corrija em vez de apagar.");
         }
-        int deleted = jdbcTemplate.update("DELETE FROM cash_sessions WHERE tenant_id = ? AND store_id = ? AND id = ?", tenantId, store, id);
+        int deleted = jdbcTemplate.update("DELETE FROM cash_sessions WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?", tenantId, store, device, id);
         auditService.recordCurrent("LOCAL_ADMIN_CASH_DELETED", "cash_sessions", String.valueOf(id),
                 "Caixa sem vinculos removido pelo painel local.", "CRITICO", reason);
         panelCacheService.clear();
@@ -238,15 +250,20 @@ public class LocalAdminService {
         return Map.of("cleared", true);
     }
 
-    private Map<String, Object> singleCash(String tenantId, String store, long id) {
+    private Map<String, Object> singleCash(String tenantId, String store, String deviceId, long id) {
+        String device = text(deviceId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, store_id AS storeId, cash_id AS cashId, operator, opening_balance AS openingBalance
+                SELECT id, store_id AS storeId, device_id AS deviceId, cash_id AS cashId, operator, opening_balance AS openingBalance
                 FROM cash_sessions
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                LIMIT 1
-                """, tenantId, store, id);
+                WHERE tenant_id = ? AND store_id = ? AND id = ? AND (? = '' OR device_id = ?)
+                ORDER BY device_id
+                LIMIT 2
+                """, tenantId, store, id, device, device);
         if (rows.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Caixa nao encontrado.");
+        }
+        if (device.isBlank() && rows.size() > 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Há caixas com este código em mais de um PDV. Informe o dispositivo.");
         }
         return rows.get(0);
     }

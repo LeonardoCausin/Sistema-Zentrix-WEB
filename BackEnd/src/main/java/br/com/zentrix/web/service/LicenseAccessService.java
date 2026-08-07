@@ -74,7 +74,7 @@ public class LicenseAccessService {
             return;
         }
         List<Map<String, Object>> stores = jdbcTemplate.queryForList("""
-                SELECT status
+                SELECT status, block_reason AS blockReason
                 FROM tenant_stores
                 WHERE tenant_id = ? AND id = ?
                 LIMIT 1
@@ -87,7 +87,11 @@ public class LicenseAccessService {
             throw expiredPayment();
         }
         if (blocked(status)) {
-            throw new LicenseAccessException("STORE_BLOCKED", "Esta loja esta inativa ou bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso.");
+            String reason = String.valueOf(stores.get(0).getOrDefault("blockReason", "")).trim();
+            String message = reason.isBlank()
+                    ? "Esta loja esta inativa ou bloqueada. Entre em contato com o suporte Zentrix para regularizar o acesso."
+                    : "Esta loja esta bloqueada: " + reason + ". Entre em contato com o suporte Zentrix para regularizar o acesso.";
+            throw new LicenseAccessException("STORE_BLOCKED", message);
         }
     }
 

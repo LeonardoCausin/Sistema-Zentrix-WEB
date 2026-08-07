@@ -53,22 +53,24 @@ public class LocalAdminController {
     public Map<String, Object> closeCash(
             @PathVariable long id,
             @RequestParam String store,
+            @RequestParam(required = false) String device,
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request
     ) {
         requireAccess(request);
-        return localAdminService.closeCash(AuthContext.tenantId(), store, id, body);
+        return localAdminService.closeCash(AuthContext.tenantId(), store, device, id, body);
     }
 
     @DeleteMapping("/cash/{id}")
     public Map<String, Object> deleteCash(
             @PathVariable long id,
             @RequestParam String store,
+            @RequestParam(required = false) String device,
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request
     ) {
         requireAccess(request);
-        return localAdminService.deleteCash(AuthContext.tenantId(), store, id, body);
+        return localAdminService.deleteCash(AuthContext.tenantId(), store, device, id, body);
     }
 
     @PostMapping("/sync/clear-failures")

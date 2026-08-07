@@ -83,7 +83,7 @@ public class AuditService {
                 """,
                 safe(tenantId, "legacy"),
                 safe(storeId, "WEB"),
-                deviceId,
+                safe(deviceId, "WEB"),
                 safe(sourceId, "WEB"),
                 nextAuditId(safe(tenantId, "legacy"), safe(storeId, "WEB")),
                 user,

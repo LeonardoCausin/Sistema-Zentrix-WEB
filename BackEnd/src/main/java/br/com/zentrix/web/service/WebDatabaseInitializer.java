@@ -24,16 +24,16 @@ public class WebDatabaseInitializer {
             Map.entry("suppliers", List.of("tenant_id", "store_id", "id")),
             Map.entry("clients", List.of("tenant_id", "store_id", "id")),
             Map.entry("products", List.of("tenant_id", "store_id", "code")),
-            Map.entry("stock_movements", List.of("tenant_id", "store_id", "id")),
-            Map.entry("cash_sessions", List.of("tenant_id", "store_id", "id")),
-            Map.entry("cash_movements", List.of("tenant_id", "store_id", "id")),
+            Map.entry("stock_movements", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("cash_sessions", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("cash_movements", List.of("tenant_id", "store_id", "device_id", "id")),
             Map.entry("financial_entries", List.of("tenant_id", "store_id", "id")),
-            Map.entry("sales", List.of("tenant_id", "store_id", "id")),
-            Map.entry("sale_items", List.of("tenant_id", "store_id", "id")),
-            Map.entry("sale_cancellations", List.of("tenant_id", "store_id", "id")),
-            Map.entry("comandas", List.of("tenant_id", "store_id", "id")),
-            Map.entry("comanda_itens", List.of("tenant_id", "store_id", "id")),
-            Map.entry("audit_log", List.of("tenant_id", "store_id", "id"))
+            Map.entry("sales", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("sale_items", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("sale_cancellations", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("comandas", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("comanda_itens", List.of("tenant_id", "store_id", "device_id", "id")),
+            Map.entry("audit_log", List.of("tenant_id", "store_id", "device_id", "id"))
     );
 
     private final DatabaseSettings settings;
@@ -138,6 +138,9 @@ public class WebDatabaseInitializer {
                     name VARCHAR(180) NOT NULL,
                     source_id VARCHAR(120),
                     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+                    block_reason VARCHAR(255) NULL,
+                    blocked_at DATETIME NULL,
+                    blocked_by VARCHAR(80) NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (tenant_id, id),
@@ -203,6 +206,20 @@ public class WebDatabaseInitializer {
                     INDEX idx_sync_runs_received_at (received_at),
                     INDEX idx_sync_runs_scope (tenant_id, store_id, received_at),
                     INDEX idx_sync_runs_source (tenant_id, store_id, source_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS sync_stock_effects (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    device_id VARCHAR(120) NOT NULL,
+                    movement_id INT NOT NULL,
+                    product_code VARCHAR(80) NOT NULL,
+                    delta DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+                    policy VARCHAR(30) NOT NULL,
+                    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, store_id, device_id, movement_id),
+                    INDEX idx_sync_stock_effects_product (tenant_id, store_id, product_code, applied_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """,
                 """
@@ -308,7 +325,7 @@ public class WebDatabaseInitializer {
                     reason VARCHAR(255),
                     user VARCHAR(80),
                     created_at DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_stock_movements_product (tenant_id, store_id, product_code),
                     INDEX idx_stock_movements_created_at (tenant_id, store_id, created_at)
                 """),
@@ -321,7 +338,7 @@ public class WebDatabaseInitializer {
                     opened_at DATETIME NULL,
                     closed_at DATETIME NULL,
                     is_open BOOLEAN NOT NULL DEFAULT TRUE,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_cash_sessions_cash_open (tenant_id, store_id, cash_id, is_open),
                     INDEX idx_cash_sessions_opened_at (tenant_id, store_id, opened_at)
                 """),
@@ -332,7 +349,7 @@ public class WebDatabaseInitializer {
                     value DECIMAL(15,2) NOT NULL,
                     observation VARCHAR(255),
                     date_time DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_cash_movements_session (tenant_id, store_id, session_id)
                 """),
                 scopedTable("financial_entries", """
@@ -365,7 +382,7 @@ public class WebDatabaseInitializer {
                     amount_paid DECIMAL(15,2),
                     status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
                     date_time DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_sales_session (tenant_id, store_id, session_id),
                     INDEX idx_sales_date_time (tenant_id, store_id, date_time),
                     INDEX idx_sales_status (tenant_id, store_id, status)
@@ -377,7 +394,7 @@ public class WebDatabaseInitializer {
                     quantity DECIMAL(15,3) NOT NULL,
                     unit_price DECIMAL(15,2) NOT NULL,
                     discount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_sale_items_sale (tenant_id, store_id, sale_id),
                     INDEX idx_sale_items_product (tenant_id, store_id, product_code)
                 """),
@@ -387,7 +404,7 @@ public class WebDatabaseInitializer {
                     reason VARCHAR(255) NOT NULL,
                     cancelled_by VARCHAR(80) NOT NULL,
                     cancelled_at DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_sale_cancellations_sale (tenant_id, store_id, sale_id)
                 """),
                 scopedTable("comandas", """
@@ -398,7 +415,7 @@ public class WebDatabaseInitializer {
                     aberta BOOLEAN NOT NULL DEFAULT TRUE,
                     data_abertura DATETIME NULL,
                     data_fechamento DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_comandas_aberta (tenant_id, store_id, aberta)
                 """),
                 scopedTable("comanda_itens", """
@@ -409,7 +426,7 @@ public class WebDatabaseInitializer {
                     is_produto BOOLEAN NOT NULL DEFAULT FALSE,
                     product_code VARCHAR(80) NULL,
                     quantidade DECIMAL(15,3) NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_comanda_itens_comanda (tenant_id, store_id, comanda_id)
                 """),
                 scopedTable("audit_log", """
@@ -420,7 +437,7 @@ public class WebDatabaseInitializer {
                     entity_id VARCHAR(80),
                     details TEXT,
                     created_at DATETIME NULL,
-                    PRIMARY KEY (tenant_id, store_id, id),
+                    PRIMARY KEY (tenant_id, store_id, device_id, id),
                     INDEX idx_audit_log_created_at (tenant_id, store_id, created_at)
                 """)
                 ,
@@ -741,6 +758,9 @@ public class WebDatabaseInitializer {
         ensureColumn("tenants", "billing_email", "VARCHAR(180) NULL", "AFTER document");
         ensureColumn("tenants", "billing_phone", "VARCHAR(40) NULL", "AFTER billing_email");
         ensureColumn("tenants", "billing_address", "VARCHAR(500) NULL", "AFTER billing_phone");
+        ensureColumn("tenant_stores", "block_reason", "VARCHAR(255) NULL", "AFTER status");
+        ensureColumn("tenant_stores", "blocked_at", "DATETIME NULL", "AFTER block_reason");
+        ensureColumn("tenant_stores", "blocked_by", "VARCHAR(80) NULL", "AFTER blocked_at");
 
         ensureColumn("audit_log", "risk_level", "VARCHAR(30) NULL", "AFTER created_at");
         ensureColumn("audit_log", "previous_value", "TEXT NULL", "AFTER risk_level");
@@ -781,6 +801,7 @@ public class WebDatabaseInitializer {
         ensureColumn("tenant_devices", "billable", "BOOLEAN NOT NULL DEFAULT TRUE", "AFTER app_type");
         ensureColumn("tenant_devices", "activated_at", "DATETIME NULL", "AFTER billable");
         ensureColumn("tenant_devices", "deactivated_at", "DATETIME NULL", "AFTER activated_at");
+        ensureColumn("tenant_devices", "sync_key_hash", "CHAR(64) NULL", "AFTER deactivated_at");
         jdbcTemplate.update("UPDATE tenant_devices SET app_type = 'PDV' WHERE app_type IS NULL OR app_type = ''");
         jdbcTemplate.update("UPDATE tenant_devices SET activated_at = COALESCE(activated_at, created_at) WHERE activated_at IS NULL");
 
@@ -857,7 +878,8 @@ public class WebDatabaseInitializer {
                 new Migration("2026063002", "sync reconciliation ledger", ignored -> migrationSyncReconciliation()),
                 new Migration("2026070201", "web change outbox retry policy", ignored -> migrationWebChangeOutboxRetryPolicy()),
                 new Migration("2026070202", "tenant period indexes for panel filters", ignored -> migrationTenantPeriodIndexes()),
-                new Migration("2026080601", "billing automation and device lifecycle indexes", ignored -> migrationBillingFoundation())
+                new Migration("2026080601", "billing automation and device lifecycle indexes", ignored -> migrationBillingFoundation()),
+                new Migration("2026080602", "idempotent stock reconciliation for multiple devices", ignored -> migrationStockReconciliation())
         );
         for (Migration migration : migrations) {
             if (migrationApplied(migration.version())) {
@@ -943,6 +965,29 @@ public class WebDatabaseInitializer {
         ensureIndex("billing_invoices", "idx_billing_invoice_due", List.of("tenant_id", "status", "due_date"));
         ensureIndex("billing_webhook_queue", "idx_billing_webhook_worker", List.of("status", "next_attempt_at", "id"));
         ensureIndex("auth_sessions", "idx_auth_sessions_scope", List.of("tenant_id", "username", "expires_at"));
+    }
+
+    private void migrationStockReconciliation() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS sync_stock_effects (
+                    tenant_id VARCHAR(80) NOT NULL,
+                    store_id VARCHAR(80) NOT NULL,
+                    device_id VARCHAR(120) NOT NULL,
+                    movement_id INT NOT NULL,
+                    product_code VARCHAR(80) NOT NULL,
+                    delta DECIMAL(15,3) NOT NULL DEFAULT 0.000,
+                    policy VARCHAR(30) NOT NULL,
+                    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (tenant_id, store_id, device_id, movement_id),
+                    INDEX idx_sync_stock_effects_product (tenant_id, store_id, product_code, applied_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+        jdbcTemplate.update("""
+                INSERT IGNORE INTO sync_stock_effects
+                    (tenant_id, store_id, device_id, movement_id, product_code, delta, policy)
+                SELECT tenant_id, store_id, device_id, id, product_code, 0.000, 'DEPLOYMENT_BASELINE'
+                FROM stock_movements
+                """);
     }
 
     private void ensureScopeColumns(String tableName) {

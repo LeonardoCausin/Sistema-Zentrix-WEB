@@ -116,7 +116,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         if (trustProxyHeaders) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
-                return forwarded.split(",")[0].trim();
+                String[] addresses = forwarded.split(",");
+                for (int index = addresses.length - 1; index >= 0; index--) {
+                    if (!addresses[index].isBlank()) {
+                        return addresses[index].trim();
+                    }
+                }
             }
             String realIp = request.getHeader("X-Real-IP");
             if (realIp != null && !realIp.isBlank()) {

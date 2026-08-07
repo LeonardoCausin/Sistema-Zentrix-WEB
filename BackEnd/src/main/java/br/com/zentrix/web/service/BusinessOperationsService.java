@@ -85,46 +85,59 @@ public class BusinessOperationsService {
     }
 
     public Map<String, Object> saleDetail(String tenantId, String storeId, int id) {
+        return saleDetail(tenantId, storeId, id, null);
+    }
+
+    public Map<String, Object> saleDetail(String tenantId, String storeId, int id, String deviceId) {
         initializer.ensureReady();
+        String store = normalizeStore(storeId);
+        String device = resolveEntityDevice("sales", tenantId, store, id, deviceId);
         Map<String, Object> sale = single("""
                 SELECT s.tenant_id, s.store_id, s.source_id, s.device_id, s.id, s.session_id, s.operator, s.discount,
                        s.surcharge, s.payment_method, s.amount_paid, s.status, s.date_time,
                        COALESCE(SUM((si.quantity * si.unit_price) - si.discount), 0) - s.discount + s.surcharge AS total
                 FROM sales s
-                LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id AND si.sale_id = s.id
-                WHERE s.tenant_id = ? AND s.store_id = ? AND s.id = ?
+                LEFT JOIN sale_items si ON si.tenant_id = s.tenant_id AND si.store_id = s.store_id
+                    AND si.device_id = s.device_id AND si.sale_id = s.id
+                WHERE s.tenant_id = ? AND s.store_id = ? AND s.device_id = ? AND s.id = ?
                 GROUP BY s.tenant_id, s.store_id, s.source_id, s.device_id, s.id, s.session_id, s.operator,
                          s.discount, s.surcharge, s.payment_method, s.amount_paid, s.status, s.date_time
-                """, tenantId, normalizeStore(storeId), id);
+                """, tenantId, store, device, id);
         sale.put("items", rows("""
                 SELECT id, product_code AS productCode, quantity, unit_price AS unitPrice, discount,
                        (quantity * unit_price) - discount AS total
                 FROM sale_items
-                WHERE tenant_id = ? AND store_id = ? AND sale_id = ?
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND sale_id = ?
                 ORDER BY id
-                """, tenantId, normalizeStore(storeId), id));
+                """, tenantId, store, device, id));
         sale.put("cancellation", rows("""
                 SELECT id, reason, cancelled_by AS cancelledBy, cancelled_at AS cancelledAt
                 FROM sale_cancellations
-                WHERE tenant_id = ? AND store_id = ? AND sale_id = ?
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND sale_id = ?
                 ORDER BY cancelled_at DESC, id DESC
                 LIMIT 1
-                """, tenantId, normalizeStore(storeId), id).stream().findFirst().orElse(null));
+                """, tenantId, store, device, id).stream().findFirst().orElse(null));
         return sale;
     }
 
     @Transactional
     public Map<String, Object> cancelSale(String tenantId, String storeId, int id, CancelSaleRequest request) {
+        return cancelSale(tenantId, storeId, id, null, request);
+    }
+
+    @Transactional
+    public Map<String, Object> cancelSale(String tenantId, String storeId, int id, String deviceId, CancelSaleRequest request) {
         permissionService.require(Permission.CANCEL_SALE);
         String store = normalizeWritableStore(tenantId, storeId);
         if (request == null || request.reason() == null || request.reason().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo do cancelamento.");
         }
-        Map<String, Object> sale = saleDetail(tenantId, store, id);
+        Map<String, Object> sale = saleDetail(tenantId, store, id, deviceId);
+        String device = String.valueOf(sale.get("device_id"));
         if ("CANCELLED".equalsIgnoreCase(String.valueOf(sale.get("status")))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Venda já cancelada.");
         }
-        jdbcTemplate.update("UPDATE sales SET status = 'CANCELLED' WHERE tenant_id = ? AND store_id = ? AND id = ?", tenantId, store, id);
+        jdbcTemplate.update("UPDATE sales SET status = 'CANCELLED' WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?", tenantId, store, device, id);
         int cancellationId = nextScopedId("sale_cancellations", tenantId, store);
         jdbcTemplate.update("""
                 INSERT INTO sale_cancellations (tenant_id, store_id, device_id, source_id, id, sale_id, reason, cancelled_by, cancelled_at)
@@ -137,14 +150,14 @@ public class BusinessOperationsService {
             adjustStockInternal(tenantId, store, String.valueOf(item.get("productCode")), decimal(item.get("quantity")), "CANCELAMENTO", request.reason(), "SALE", String.valueOf(id), true);
         }
         auditService.recordCurrent("SALE_CANCELLED", "sales", String.valueOf(id), "Venda cancelada pelo AppGestão.", "ALERTA", request.reason());
-        enqueueSaleChange(tenantId, store, id, "SALE_CANCELLED");
-        enqueueSaleCancellationChange(tenantId, store, cancellationId, "SALE_CANCELLATION_CREATED");
-        return saleDetail(tenantId, store, id);
+        enqueueSaleChange(tenantId, store, device, id, "SALE_CANCELLED");
+        enqueueSaleCancellationChange(tenantId, store, device, cancellationId, "SALE_CANCELLATION_CREATED");
+        return saleDetail(tenantId, store, id, device);
     }
 
     public Map<String, Object> currentCash(String tenantId, String storeId) {
         List<Map<String, Object>> rows = rows("""
-                SELECT id, cash_id AS cashId, operator, opening_balance AS openingBalance, opened_at AS openedAt, status
+                SELECT id, device_id AS deviceId, cash_id AS cashId, operator, opening_balance AS openingBalance, opened_at AS openedAt, status
                 FROM cash_sessions
                 WHERE tenant_id = ? AND (? = 'all' OR store_id = ?)
                   AND closed_at IS NULL
@@ -156,31 +169,43 @@ public class BusinessOperationsService {
     }
 
     public Map<String, Object> cashSession(String tenantId, String storeId, int id) {
+        return cashSession(tenantId, storeId, id, null);
+    }
+
+    public Map<String, Object> cashSession(String tenantId, String storeId, int id, String deviceId) {
+        String store = normalizeStore(storeId);
+        String device = resolveEntityDevice("cash_sessions", tenantId, store, id, deviceId);
         Map<String, Object> session = single("""
-                SELECT id, cash_id AS cashId, operator, opening_balance AS openingBalance, closing_balance AS closingBalance,
+                SELECT id, device_id AS deviceId, source_id AS sourceId, cash_id AS cashId, operator, opening_balance AS openingBalance, closing_balance AS closingBalance,
                        expected_balance AS expectedBalance, difference, observation, opened_at AS openedAt, closed_at AS closedAt,
                        closed_by AS closedBy, close_reason AS closeReason, is_open AS open, status
                 FROM cash_sessions
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, normalizeStore(storeId), id);
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, tenantId, store, device, id);
         session.put("movements", rows("""
                 SELECT id, type, value, observation, date_time AS dateTime
                 FROM cash_movements
-                WHERE tenant_id = ? AND store_id = ? AND session_id = ?
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ?
                 ORDER BY date_time DESC, id DESC
-                """, tenantId, normalizeStore(storeId), id));
+                """, tenantId, store, device, id));
         return session;
     }
 
     @Transactional
     public Map<String, Object> closeCash(String tenantId, String storeId, int id, CloseCashSessionRequest request) {
+        return closeCash(tenantId, storeId, id, null, request);
+    }
+
+    @Transactional
+    public Map<String, Object> closeCash(String tenantId, String storeId, int id, String deviceId, CloseCashSessionRequest request) {
         permissionService.require(Permission.CLOSE_CASH);
         String store = normalizeWritableStore(tenantId, storeId);
-        Map<String, Object> session = cashSession(tenantId, store, id);
+        Map<String, Object> session = cashSession(tenantId, store, id, deviceId);
+        String device = String.valueOf(session.get("deviceId"));
         if (!Boolean.TRUE.equals(session.get("open"))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Caixa já fechado.");
         }
-        BigDecimal expected = expectedCash(tenantId, store, id, decimal(session.get("openingBalance")));
+        BigDecimal expected = expectedCash(tenantId, store, device, id, decimal(session.get("openingBalance")));
         BigDecimal difference = request.closingBalance().subtract(expected);
         if (difference.compareTo(BigDecimal.ZERO) != 0 && (request.reason() == null || request.reason().isBlank())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fechamento com diferença exige justificativa.");
@@ -189,21 +214,31 @@ public class BusinessOperationsService {
                 UPDATE cash_sessions
                 SET is_open = FALSE, status = 'CLOSED', closing_balance = ?, expected_balance = ?, difference = ?,
                     closed_by = ?, close_reason = ?, closed_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, request.closingBalance(), expected, difference, currentUser(), request.reason(), tenantId, store, id);
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, request.closingBalance(), expected, difference, currentUser(), request.reason(), tenantId, store, device, id);
         auditService.recordCurrent(difference.compareTo(BigDecimal.ZERO) == 0 ? "CASH_CLOSED" : "CASH_DIVERGENCE", "cash_sessions", String.valueOf(id), "Caixa fechado pelo AppGestão.", difference.compareTo(BigDecimal.ZERO) == 0 ? "INFO" : "ALERTA", request.reason());
-        enqueueCashSessionChange(tenantId, store, id, "CASH_SESSION_CLOSED");
-        return cashSession(tenantId, store, id);
+        enqueueCashSessionChange(tenantId, store, device, id, "CASH_SESSION_CLOSED");
+        return cashSession(tenantId, store, id, device);
     }
 
     @Transactional
     public Map<String, Object> withdrawal(String tenantId, String storeId, int id, CashMovementRequest request) {
-        return cashMovement(tenantId, storeId, id, request, "SANGRIA", "CASH_WITHDRAWAL");
+        return cashMovement(tenantId, storeId, id, null, request, "SANGRIA", "CASH_WITHDRAWAL");
+    }
+
+    @Transactional
+    public Map<String, Object> withdrawal(String tenantId, String storeId, int id, String deviceId, CashMovementRequest request) {
+        return cashMovement(tenantId, storeId, id, deviceId, request, "SANGRIA", "CASH_WITHDRAWAL");
     }
 
     @Transactional
     public Map<String, Object> supply(String tenantId, String storeId, int id, CashMovementRequest request) {
-        return cashMovement(tenantId, storeId, id, request, "SUPRIMENTO", "CASH_SUPPLY");
+        return cashMovement(tenantId, storeId, id, null, request, "SUPRIMENTO", "CASH_SUPPLY");
+    }
+
+    @Transactional
+    public Map<String, Object> supply(String tenantId, String storeId, int id, String deviceId, CashMovementRequest request) {
+        return cashMovement(tenantId, storeId, id, deviceId, request, "SUPRIMENTO", "CASH_SUPPLY");
     }
 
     @Transactional
@@ -1296,22 +1331,24 @@ public class BusinessOperationsService {
         return total;
     }
 
-    private Map<String, Object> cashMovement(String tenantId, String storeId, int id, CashMovementRequest request, String type, String auditAction) {
+    private Map<String, Object> cashMovement(String tenantId, String storeId, int id, String deviceId, CashMovementRequest request, String type, String auditAction) {
         permissionService.require(Permission.CASH_MOVEMENT);
         if (request == null || request.reason() == null || request.reason().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo da movimentação.");
         }
         String store = normalizeWritableStore(tenantId, storeId);
-        cashSession(tenantId, store, id);
+        Map<String, Object> session = cashSession(tenantId, store, id, deviceId);
+        String device = String.valueOf(session.get("deviceId"));
+        String source = String.valueOf(session.get("sourceId"));
         int movementId = nextScopedId("cash_movements", tenantId, store);
         jdbcTemplate.update("""
                 INSERT INTO cash_movements (tenant_id, store_id, device_id, source_id, id, session_id, type, value, observation, date_time)
-                VALUES (?, ?, NULL, 'WEB', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, tenantId, store, movementId, id, type, request.value(), request.observation() == null ? request.reason() : request.observation());
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, tenantId, store, device, source, movementId, id, type, request.value(), request.observation() == null ? request.reason() : request.observation());
         auditService.recordCurrent(auditAction, "cash_sessions", String.valueOf(id), type + " registrada.", "ALERTA", request.reason());
-        enqueueCashMovementChange(tenantId, store, movementId, auditAction);
-        enqueueCashSessionChange(tenantId, store, id, "CASH_SESSION_UPDATED");
-        return cashSession(tenantId, store, id);
+        enqueueCashMovementChange(tenantId, store, device, movementId, auditAction);
+        enqueueCashSessionChange(tenantId, store, device, id, "CASH_SESSION_UPDATED");
+        return cashSession(tenantId, store, id, device);
     }
 
     private Map<String, Object> adjustStockInternal(String tenantId, String store, String productCode, BigDecimal quantity, String type, String reason, String referenceType, String referenceId, boolean increase) {
@@ -1327,16 +1364,21 @@ public class BusinessOperationsService {
         jdbcTemplate.update("""
                 INSERT INTO stock_movements
                     (tenant_id, store_id, device_id, source_id, id, product_code, type, quantity, previous_stock, new_stock, origin, reference_type, reference_id, reason, user, created_at)
-                VALUES (?, ?, NULL, 'WEB', ?, ?, ?, ?, ?, ?, 'APPGESTAO', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, 'WEB', 'WEB', ?, ?, ?, ?, ?, ?, 'APPGESTAO', ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, tenantId, store, movementId, productCode, type, quantity.abs(), previous, next, referenceType, referenceId, reason, currentUser());
-        enqueueProductChange(tenantId, store, productCode, "PRODUCT_STOCK_CHANGED");
-        enqueueStockMovementChange(tenantId, store, movementId, "STOCK_MOVEMENT_CREATED");
+        enqueueConsolidatedStockChange(tenantId, store, productCode);
         return Map.of("productCode", productCode, "previousStock", previous, "newStock", next, "type", type);
     }
 
     private void enqueueProductChange(String tenantId, String store, String code, String operation) {
         invalidatePanelCache();
         webChangeOutboxService.enqueue(tenantId, store, "PRODUCT", code, operation,
+                syncPayload("products", syncProductRecord(tenantId, store, code)));
+    }
+
+    private void enqueueConsolidatedStockChange(String tenantId, String store, String code) {
+        invalidatePanelCache();
+        webChangeOutboxService.enqueue(tenantId, store, "PRODUCT", code, "STOCK_CONSOLIDATED",
                 syncPayload("products", syncProductRecord(tenantId, store, code)));
     }
 
@@ -1352,34 +1394,28 @@ public class BusinessOperationsService {
                 syncPayload("users", syncUserRecord(tenantId, store, username)));
     }
 
-    private void enqueueCashSessionChange(String tenantId, String store, int id, String operation) {
+    private void enqueueCashSessionChange(String tenantId, String store, String deviceId, int id, String operation) {
         invalidatePanelCache();
-        webChangeOutboxService.enqueue(tenantId, store, "CASH_SESSION", String.valueOf(id), operation,
-                syncPayload("cash_sessions", syncCashSessionRecord(tenantId, store, id)));
+        webChangeOutboxService.enqueue(tenantId, store, null, deviceId, "CASH_SESSION", String.valueOf(id), operation,
+                syncPayload("cash_sessions", syncCashSessionRecord(tenantId, store, deviceId, id)));
     }
 
-    private void enqueueCashMovementChange(String tenantId, String store, int id, String operation) {
+    private void enqueueCashMovementChange(String tenantId, String store, String deviceId, int id, String operation) {
         invalidatePanelCache();
-        webChangeOutboxService.enqueue(tenantId, store, "CASH_MOVEMENT", String.valueOf(id), operation,
-                syncPayload("cash_movements", syncCashMovementRecord(tenantId, store, id)));
+        webChangeOutboxService.enqueue(tenantId, store, null, deviceId, "CASH_MOVEMENT", String.valueOf(id), operation,
+                syncPayload("cash_movements", syncCashMovementRecord(tenantId, store, deviceId, id)));
     }
 
-    private void enqueueSaleChange(String tenantId, String store, int id, String operation) {
+    private void enqueueSaleChange(String tenantId, String store, String deviceId, int id, String operation) {
         invalidatePanelCache();
-        webChangeOutboxService.enqueue(tenantId, store, "SALE", String.valueOf(id), operation,
-                syncPayload("sales", syncSaleRecord(tenantId, store, id)));
+        webChangeOutboxService.enqueue(tenantId, store, null, deviceId, "SALE", String.valueOf(id), operation,
+                syncPayload("sales", syncSaleRecord(tenantId, store, deviceId, id)));
     }
 
-    private void enqueueSaleCancellationChange(String tenantId, String store, int id, String operation) {
+    private void enqueueSaleCancellationChange(String tenantId, String store, String deviceId, int id, String operation) {
         invalidatePanelCache();
-        webChangeOutboxService.enqueue(tenantId, store, "SALE_CANCELLATION", String.valueOf(id), operation,
-                syncPayload("sale_cancellations", syncSaleCancellationRecord(tenantId, store, id)));
-    }
-
-    private void enqueueStockMovementChange(String tenantId, String store, int id, String operation) {
-        invalidatePanelCache();
-        webChangeOutboxService.enqueue(tenantId, store, "STOCK_MOVEMENT", String.valueOf(id), operation,
-                syncPayload("stock_movements", syncStockMovementRecord(tenantId, store, id)));
+        webChangeOutboxService.enqueue(tenantId, store, null, deviceId, "SALE_CANCELLATION", String.valueOf(id), operation,
+                syncPayload("sale_cancellations", syncSaleCancellationRecord(tenantId, store, deviceId, id)));
     }
 
     private void enqueueFinancialEntryChange(String tenantId, String store, int id, String operation) {
@@ -1402,7 +1438,7 @@ public class BusinessOperationsService {
     private Map<String, Object> syncProductRecord(String tenantId, String store, String code) {
         return dbRecord(single("""
                 SELECT tenant_id, store_id, device_id, source_id, code, description, unit, price,
-                       stock, supplier_id, category, barcode, min_stock, ideal_stock, active, created_at, updated_at, deleted_at
+                       cost_price, stock, supplier_id, category, barcode, min_stock, ideal_stock, active, created_at, updated_at, deleted_at
                 FROM products
                 WHERE tenant_id = ? AND store_id = ? AND code = ?
                 """, tenantId, store, code));
@@ -1426,48 +1462,39 @@ public class BusinessOperationsService {
                 """, tenantId, store, username));
     }
 
-    private Map<String, Object> syncCashSessionRecord(String tenantId, String store, int id) {
+    private Map<String, Object> syncCashSessionRecord(String tenantId, String store, String deviceId, int id) {
         return dbRecord(single("""
                 SELECT tenant_id, store_id, device_id, source_id, id, cash_id, operator, opening_balance,
                        closing_balance, expected_balance, difference, observation, opened_at, closed_at,
                        closed_by, close_reason, is_open, status
                 FROM cash_sessions
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, store, id));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, tenantId, store, deviceId, id));
     }
 
-    private Map<String, Object> syncCashMovementRecord(String tenantId, String store, int id) {
+    private Map<String, Object> syncCashMovementRecord(String tenantId, String store, String deviceId, int id) {
         return dbRecord(single("""
                 SELECT tenant_id, store_id, device_id, source_id, id, session_id, type, value, observation, date_time
                 FROM cash_movements
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, store, id));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, tenantId, store, deviceId, id));
     }
 
-    private Map<String, Object> syncSaleRecord(String tenantId, String store, int id) {
+    private Map<String, Object> syncSaleRecord(String tenantId, String store, String deviceId, int id) {
         return dbRecord(single("""
                 SELECT tenant_id, store_id, device_id, source_id, id, session_id, operator, discount,
                        surcharge, payment_method, amount_paid, status, date_time
                 FROM sales
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, store, id));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, tenantId, store, deviceId, id));
     }
 
-    private Map<String, Object> syncSaleCancellationRecord(String tenantId, String store, int id) {
+    private Map<String, Object> syncSaleCancellationRecord(String tenantId, String store, String deviceId, int id) {
         return dbRecord(single("""
                 SELECT tenant_id, store_id, device_id, source_id, id, sale_id, reason, cancelled_by, cancelled_at
                 FROM sale_cancellations
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, store, id));
-    }
-
-    private Map<String, Object> syncStockMovementRecord(String tenantId, String store, int id) {
-        return dbRecord(single("""
-                SELECT tenant_id, store_id, device_id, source_id, id, product_code, type, quantity,
-                       previous_stock, new_stock, origin, reference_type, reference_id, reason, user, created_at
-                FROM stock_movements
-                WHERE tenant_id = ? AND store_id = ? AND id = ?
-                """, tenantId, store, id));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND id = ?
+                """, tenantId, store, deviceId, id));
     }
 
     private Map<String, Object> syncFinancialEntryRecord(String tenantId, String store, int id) {
@@ -1498,21 +1525,40 @@ public class BusinessOperationsService {
         return value;
     }
 
-    private BigDecimal expectedCash(String tenantId, String store, int sessionId, BigDecimal openingBalance) {
+    private BigDecimal expectedCash(String tenantId, String store, String deviceId, int sessionId, BigDecimal openingBalance) {
         BigDecimal cashSales = decimal(jdbcTemplate.queryForObject("""
                 SELECT COALESCE(SUM(amount_paid), 0)
                 FROM sales
-                WHERE tenant_id = ? AND store_id = ? AND session_id = ? AND status = 'PAID' AND payment_method = 'CASH'
-                """, BigDecimal.class, tenantId, store, sessionId));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ? AND status = 'PAID' AND payment_method = 'CASH'
+                """, BigDecimal.class, tenantId, store, deviceId, sessionId));
         BigDecimal supplies = decimal(jdbcTemplate.queryForObject("""
                 SELECT COALESCE(SUM(value), 0) FROM cash_movements
-                WHERE tenant_id = ? AND store_id = ? AND session_id = ? AND type IN ('SUPRIMENTO', 'SUPPLY')
-                """, BigDecimal.class, tenantId, store, sessionId));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ? AND type IN ('SUPRIMENTO', 'SUPPLY')
+                """, BigDecimal.class, tenantId, store, deviceId, sessionId));
         BigDecimal withdrawals = decimal(jdbcTemplate.queryForObject("""
                 SELECT COALESCE(SUM(value), 0) FROM cash_movements
-                WHERE tenant_id = ? AND store_id = ? AND session_id = ? AND type IN ('SANGRIA', 'WITHDRAWAL')
-                """, BigDecimal.class, tenantId, store, sessionId));
+                WHERE tenant_id = ? AND store_id = ? AND device_id = ? AND session_id = ? AND type IN ('SANGRIA', 'WITHDRAWAL')
+                """, BigDecimal.class, tenantId, store, deviceId, sessionId));
         return openingBalance.add(cashSales).add(supplies).subtract(withdrawals);
+    }
+
+    private String resolveEntityDevice(String table, String tenantId, String storeId, int id, String requestedDevice) {
+        String requested = requestedDevice == null ? "" : requestedDevice.trim();
+        List<String> devices = jdbcTemplate.query("""
+                SELECT device_id
+                FROM %s
+                WHERE tenant_id = ? AND store_id = ? AND id = ?
+                  AND (? = '' OR device_id = ?)
+                ORDER BY device_id
+                LIMIT 2
+                """.formatted(table), (rs, rowNum) -> rs.getString(1), tenantId, storeId, id, requested, requested);
+        if (devices.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Registro não encontrado.");
+        }
+        if (requested.isBlank() && devices.size() > 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Há registros com este código em mais de um PDV. Informe o dispositivo.");
+        }
+        return devices.get(0);
     }
 
     private Map<String, Object> single(String sql, Object... args) {

@@ -78,7 +78,8 @@
       const error = new Error(details.message || "Não conseguimos carregar as informações agora. Tente novamente.");
       error.status = response.status;
       error.reasonCode = details.reasonCode;
-      if (response.status === 402) {
+      const restrictionCodes = ["PAYMENT_EXPIRED", "ACCOUNT_BLOCKED", "STORE_BLOCKED", "PLAN_UPGRADE_REQUIRED"];
+      if (response.status === 402 || restrictionCodes.includes(error.reasonCode)) {
         showAccountBlocked(error.message, error.reasonCode);
       }
       throw error;

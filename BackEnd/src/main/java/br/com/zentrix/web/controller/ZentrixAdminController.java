@@ -151,11 +151,12 @@ public class ZentrixAdminController {
     public Map<String, Object> updateDeviceBilling(
             @PathVariable String tenantId,
             @PathVariable String deviceId,
+            @RequestParam String store,
             @RequestBody Map<String, Object> body,
             HttpServletRequest request
     ) {
         requireFinanceAccess(request);
-        return zentrixAdminService.updateDeviceBilling(tenantId, deviceId, body);
+        return zentrixAdminService.updateDeviceBilling(tenantId, store, deviceId, body);
     }
 
     @GetMapping("/clients/{tenantId}/support-notes")

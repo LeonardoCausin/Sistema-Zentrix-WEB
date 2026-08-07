@@ -56,12 +56,16 @@ cd /var/www/Sistema-Zentrix-WEB
 git pull
 cd BackEnd
 ./mvnw clean package
+# Antes do primeiro restart desta versao, gere e confira um backup completo do MySQL.
+# Exemplo: mysqldump --single-transaction -u USUARIO -p BANCO > zentrix-pre-deploy.sql
 sudo systemctl restart zentrix-backend
 sudo systemctl status zentrix-backend --no-pager
 journalctl -u zentrix-backend -n 100 --no-pager
 ```
 
 As tabelas e indices sao criados por migracoes idempotentes na inicializacao. O painel administrativo atualizado fica empacotado no JAR. O frontend do cliente permanece em `FrontEnd`, conforme a configuracao atual do Nginx.
+
+Neste deploy, a primeira inicializacao tambem separa os IDs operacionais por PDV e cria o controle idempotente de estoque. Em bases grandes, execute o restart em uma janela de manutencao e aguarde o log `Migracao Zentrix aplicada` antes de liberar vendas e sincronizacoes.
 
 ## Validacao
 

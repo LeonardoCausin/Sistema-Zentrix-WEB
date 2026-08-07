@@ -94,14 +94,32 @@ class WebChangeOutboxServiceTest {
         assertEquals(1, jdbcTemplate.deadUpdates);
     }
 
+    @Test
+    void broadcastCreatesOneTargetedDeliveryPerActiveDevice() {
+        jdbcTemplate.broadcastDevices = List.of(
+                Map.of("id", "device-1", "sourceId", "pdv-1"),
+                Map.of("id", "device-2", "sourceId", "pdv-2")
+        );
+
+        service.enqueue("tenant-1", "store-1", "PRODUCT", "P1", "PRODUCT_UPDATED",
+                Map.of("table", "products", "record", Map.of("code", "P1")));
+
+        assertEquals(2, jdbcTemplate.outboxInserts);
+        assertEquals(List.of("device-1", "device-2"), jdbcTemplate.outboxTargetDevices);
+    }
+
     private static class FakeJdbcTemplate extends JdbcTemplate {
         List<Map<String, Object>> pullRows = List.of();
         List<Map<String, Object>> ackRows = List.of();
+        List<Map<String, Object>> broadcastDevices = List.of();
         int deliveredUpdates;
         int deadUpdates;
         int retryUpdates;
         int knownStoreCount;
         int knownDeviceCount;
+        int outboxInserts;
+        long lastInsertId;
+        final java.util.ArrayList<String> outboxTargetDevices = new java.util.ArrayList<>();
 
         @Override
         public List<Map<String, Object>> queryForList(String sql, Object... args) {
@@ -110,6 +128,9 @@ class WebChangeOutboxServiceTest {
             }
             if (sql.contains("FROM web_change_outbox")) {
                 return pullRows;
+            }
+            if (sql.contains("SELECT id, source_id AS sourceId")) {
+                return broadcastDevices;
             }
             return List.of();
         }
@@ -123,11 +144,28 @@ class WebChangeOutboxServiceTest {
             if (sql.contains("FROM tenant_devices")) {
                 return (T) Integer.valueOf(knownDeviceCount);
             }
+            if (sql.contains("LAST_INSERT_ID")) {
+                return (T) Long.valueOf(lastInsertId);
+            }
+            return null;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> T queryForObject(String sql, Class<T> requiredType) {
+            if (sql.contains("LAST_INSERT_ID")) {
+                return (T) Long.valueOf(lastInsertId);
+            }
             return null;
         }
 
         @Override
         public int update(String sql, Object... args) {
+            if (sql.contains("INSERT INTO web_change_outbox")) {
+                outboxInserts++;
+                lastInsertId++;
+                outboxTargetDevices.add(String.valueOf(args[3]));
+            }
             if (sql.contains("SET status = 'DELIVERED'")) {
                 deliveredUpdates++;
             }

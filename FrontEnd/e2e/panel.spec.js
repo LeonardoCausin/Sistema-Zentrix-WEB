@@ -43,6 +43,65 @@ test("admin dashboard opens the financial control center", async ({ page }) => {
   await expect(page.getByText("R$ 399,60")).toBeVisible();
 });
 
+test("admin blocks a client with an audited reason", async ({ page }) => {
+  let statusRequest = null;
+  await mockAdminShell(page);
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e/status", async (route) => {
+    statusRequest = route.request().postDataJSON();
+    await route.fulfill({ json: { tenantId: "tenant-e2e", status: "BLOCKED", updated: 1 } });
+  });
+
+  await page.goto("/ZentrixAdmin/");
+  await page.locator('[data-view="subscriptions"]').click();
+  await page.getByRole("button", { name: "Bloquear" }).click();
+  await expect(page.getByRole("heading", { name: "Bloquear cliente" })).toBeVisible();
+  await page.locator('#statusForm textarea[name="reason"]').fill("Mensalidade em atraso");
+  await page.locator('#statusForm button[type="submit"]').click();
+
+  await expect.poll(() => statusRequest).not.toBeNull();
+  expect(statusRequest).toMatchObject({ status: "BLOCKED", reason: "Mensalidade em atraso", updateLicense: true });
+});
+
+test("admin changes billing for only the selected store device", async ({ page }) => {
+  let billingUrl = "";
+  await mockAdminShell(page);
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e", async (route) => route.fulfill({ json: adminClientDetail() }));
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e/history", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e/health", async (route) => route.fulfill({ json: { stores: [] } }));
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e/devices/PDV-01/billing?store=LOJA-02", async (route) => {
+    billingUrl = route.request().url();
+    await route.fulfill({ json: { status: "ACTIVE", billable: true } });
+  });
+
+  await page.goto("/ZentrixAdmin/");
+  await page.locator('[data-view="clients"]').click();
+  await page.getByRole("button", { name: "Abrir" }).click();
+  await page.locator('[data-action="device-billing"]').click();
+  await page.locator('#deviceBillingForm button[type="submit"]').click();
+
+  await expect.poll(() => billingUrl).toContain("store=LOJA-02");
+});
+
+test("admin creates an additional PDV for an existing store", async ({ page }) => {
+  let activationRequest = null;
+  await mockAdminShell(page);
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e", async (route) => route.fulfill({ json: adminClientDetail() }));
+  await page.route("**/api/zentrix-admin/clients/tenant-e2e/activation-codes", async (route) => {
+    activationRequest = route.request().postDataJSON();
+    await route.fulfill({ json: { code: "ABCD2345", expiresAt: "2026-08-07 12:00:00" } });
+  });
+
+  await page.goto("/ZentrixAdmin/");
+  await page.locator('[data-view="clients"]').click();
+  await page.getByRole("button", { name: "Codigo PDV" }).click();
+  await page.locator('#activationForm select[name="storeId"]').selectOption("LOJA-02");
+  await page.locator('#activationForm button[type="submit"]').click();
+
+  await expect.poll(() => activationRequest).not.toBeNull();
+  expect(activationRequest.storeId).toBe("LOJA-02");
+  await expect(page.getByText("ABCD2345")).toBeVisible();
+});
+
 test("api base is compatible with same-origin nginx and local dev", async ({ page }) => {
   await page.goto("/");
   const result = await page.evaluate(() => ({
@@ -201,6 +260,60 @@ test("customer opens subscription portal with billing and device details", async
   await expect(page.locator("#zentrixBillingPortal")).toContainText("PENDING");
 });
 
+test("expired customer stays signed in and can proceed to payment", async ({ page }) => {
+  await mockPanelApi(page);
+  let checkoutRequested = false;
+  await page.route("**/api/dashboard**", async (route) => {
+    await route.fulfill({
+      status: 402,
+      contentType: "application/json",
+      body: JSON.stringify({
+        reasonCode: "PAYMENT_EXPIRED",
+        message: "O pagamento da assinatura expirou. Prossiga para o pagamento."
+      })
+    });
+  });
+  await page.route("**/api/billing/checkout", async (route) => {
+    checkoutRequested = true;
+    await route.fulfill({ json: { checkoutUrl: "https://sandbox.asaas.com/i/teste-e2e" } });
+  });
+
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await expect(page.getByRole("heading", { name: "Pagamento expirado" })).toBeVisible();
+  await expect(page.locator("#zentrixAccountBlocked")).toContainText("O pagamento da assinatura expirou");
+  await page.getByRole("button", { name: "Prosseguir para pagamento" }).click();
+  await expect.poll(() => checkoutRequested).toBeTruthy();
+  expect(await page.evaluate(() => sessionStorage.getItem("zentrix-session"))).not.toBeNull();
+});
+
+test("blocked customer sees the store reason and can start payment", async ({ page }) => {
+  await mockPanelApi(page);
+  let checkoutRequested = false;
+  await page.route("**/api/dashboard**", async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({
+        reasonCode: "STORE_BLOCKED",
+        message: "Esta loja esta bloqueada: Mensalidade pendente. Entre em contato com o suporte Zentrix para regularizar o acesso."
+      })
+    });
+  });
+  await page.route("**/api/billing/checkout", async (route) => {
+    checkoutRequested = true;
+    await route.fulfill({ json: { checkoutUrl: "https://sandbox.asaas.com/i/bloqueio-e2e" } });
+  });
+
+  await page.goto("/FrontEnd/pages/dashboard.html");
+
+  await expect(page.getByRole("heading", { name: "Loja bloqueada" })).toBeVisible();
+  await expect(page.locator("#zentrixAccountBlocked")).toContainText("Mensalidade pendente");
+  await page.getByRole("button", { name: "Pagar assinatura" }).click();
+  await expect.poll(() => checkoutRequested).toBeTruthy();
+  expect(await page.evaluate(() => sessionStorage.getItem("zentrix-session"))).not.toBeNull();
+});
+
 test("theme preference lives in settings", async ({ page }) => {
   await mockPanelApi(page);
   await page.goto("/FrontEnd/pages/configuracoes.html");
@@ -355,6 +468,34 @@ test("backup restore requires staging before transactional application", async (
   await expect.poll(() => calls.filter((call) => call.method === "POST").length).toBe(2);
   expect(calls.some((call) => call.url.includes("/restore-staging/31/apply"))).toBeTruthy();
 });
+
+async function mockAdminShell(page) {
+  await page.addInitScript((value) => sessionStorage.setItem("zentrix-admin-session", JSON.stringify(value)), session);
+  await page.route("**/api/stores", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/zentrix-admin/overview", async (route) => route.fulfill({ json: {
+    clients: 1, activeClients: 1, activeSubscriptions: 1, expiringSoon: 0,
+    pendingInvoices: 0, deadWebhooks: 0, failedNotifications: 0,
+    expirationAlerts: [], recentClients: [], plans: []
+  } }));
+  await page.route("**/api/zentrix-admin/plans", async (route) => route.fulfill({ json: [
+    { code: "BASICO", name: "Basico", monthlyStorePrice: 99.9, includedPdvPerStore: 1, extraPdvPrice: 49.9 }
+  ] }));
+  await page.route("**/api/zentrix-admin/clients?**", async (route) => route.fulfill({ json: [{
+    tenantId: "tenant-e2e", name: "Empresa E2E", document: "52998224725", status: "ACTIVE",
+    planName: "BASICO", licenseStatus: "ACTIVE", expiresAt: "2026-08-31 23:59:59", monthlyTotal: 149.8,
+    billing: { activeStores: 1, pdvApps: 2, appGestaoApps: 0, appGestaoIncluded: false }
+  }] }));
+}
+
+function adminClientDetail() {
+  return {
+    tenantId: "tenant-e2e", name: "Empresa E2E", document: "52998224725", status: "ACTIVE",
+    billing: { monthlyTotal: 149.8, activeStores: 2, pdvApps: 2, includedPdvApps: 2, extraPdvApps: 0, extraPdvPrice: 49.9 },
+    licenses: [], invoices: [], supportNotes: [], activationCodes: [],
+    stores: [{ id: "LOJA-02", name: "Filial", sourceId: "002", status: "ACTIVE" }],
+    devices: [{ id: "PDV-01", name: "Caixa filial", storeId: "LOJA-02", appType: "PDV", status: "ACTIVE", billable: true }]
+  };
+}
 
 async function mockPanelApi(page, options = {}) {
   const calls = options.calls || [];

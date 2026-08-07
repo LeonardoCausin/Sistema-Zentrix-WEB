@@ -189,7 +189,9 @@ public class ZentrixAdminService {
             latestPlan = String.valueOf(licenses.get(0).getOrDefault("planName", "BASICO"));
         }
         response.put("stores", jdbcTemplate.queryForList("""
-                SELECT id, name, source_id AS sourceId, status, created_at AS createdAt, updated_at AS updatedAt
+                SELECT id, name, source_id AS sourceId, status, block_reason AS blockReason,
+                       blocked_at AS blockedAt, blocked_by AS blockedBy,
+                       created_at AS createdAt, updated_at AS updatedAt
                 FROM tenant_stores
                 WHERE tenant_id = ?
                 ORDER BY created_at DESC, name
@@ -399,7 +401,7 @@ public class ZentrixAdminService {
                   AND UPPER(COALESCE(app_type, 'PDV')) = 'PDV'
                 """, tenant);
         long appGestaoApps = number("""
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT username)
                 FROM users
                 WHERE tenant_id = ?
                   AND active = TRUE
@@ -471,6 +473,7 @@ public class ZentrixAdminService {
         ensureTenantExists(tenant);
         List<Map<String, Object>> stores = jdbcTemplate.queryForList("""
                 SELECT ts.id AS storeId, ts.name, ts.source_id AS sourceId, ts.status,
+                       ts.block_reason AS blockReason, ts.blocked_at AS blockedAt, ts.blocked_by AS blockedBy,
                        (SELECT sr.received_at FROM sync_runs sr WHERE sr.tenant_id = ts.tenant_id AND sr.store_id = ts.id ORDER BY sr.received_at DESC, sr.id DESC LIMIT 1) AS lastSyncAt,
                        (SELECT sr.status FROM sync_runs sr WHERE sr.tenant_id = ts.tenant_id AND sr.store_id = ts.id ORDER BY sr.received_at DESC, sr.id DESC LIMIT 1) AS lastSyncStatus,
                        (SELECT br.created_at FROM backup_runs br WHERE br.tenant_id = ts.tenant_id AND br.store_id = ts.id ORDER BY br.created_at DESC, br.id DESC LIMIT 1) AS lastBackupAt,
@@ -524,14 +527,15 @@ public class ZentrixAdminService {
     }
 
     @Transactional
-    public Map<String, Object> updateDeviceBilling(String tenantId, String deviceId, Map<String, Object> request) {
+    public Map<String, Object> updateDeviceBilling(String tenantId, String storeId, String deviceId, Map<String, Object> request) {
         initializer.ensureReady();
         String tenant = required(tenantId, "tenantId");
+        String store = required(storeId, "storeId");
         String device = required(deviceId, "deviceId");
         Map<String, Object> current = jdbcTemplate.queryForList("""
                 SELECT store_id AS storeId, status, billable FROM tenant_devices
-                WHERE tenant_id = ? AND id = ? LIMIT 1
-                """, tenant, device).stream().findFirst().orElseThrow(() ->
+                WHERE tenant_id = ? AND store_id = ? AND id = ? LIMIT 1
+                """, tenant, store, device).stream().findFirst().orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Dispositivo nao encontrado."));
         boolean billable = request == null || !request.containsKey("billable") || boolValue(request.get("billable"));
         String status = defaultValue(value(request, "status"), billable ? "ACTIVE" : "INACTIVE").toUpperCase();
@@ -543,8 +547,8 @@ public class ZentrixAdminService {
                 UPDATE tenant_devices
                 SET status = ?, billable = ?, activated_at = CASE WHEN ? THEN COALESCE(activated_at, CURRENT_TIMESTAMP) ELSE activated_at END,
                     deactivated_at = CASE WHEN ? THEN NULL ELSE CURRENT_TIMESTAMP END
-                WHERE tenant_id = ? AND id = ?
-                """, status, billable, billable, billable, tenant, device);
+                WHERE tenant_id = ? AND store_id = ? AND id = ?
+                """, status, billable, billable, billable, tenant, store, device);
         String actor = AuthContext.current().map(AuthTokenService.SessionToken::username).orElse("zentrix-admin");
         jdbcTemplate.update("""
                 INSERT INTO device_billing_events
@@ -557,6 +561,7 @@ public class ZentrixAdminService {
         panelCacheService.clear();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("tenantId", tenant);
+        result.put("storeId", store);
         result.put("deviceId", device);
         result.put("status", status);
         result.put("billable", billable);
@@ -699,12 +704,15 @@ public class ZentrixAdminService {
                 .findFirst()
                 .map(row -> String.valueOf(row.getOrDefault("status", "ACTIVE")))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Loja nao encontrada."));
+        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
+        String operator = session == null ? "zentrix-admin" : session.username();
         int updated = jdbcTemplate.update("""
                 UPDATE tenant_stores
-                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                SET status = ?, block_reason = ?, blocked_at = ?, blocked_by = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = ? AND id = ?
-                """, status, tenant, store);
-        AuthTokenService.SessionToken session = AuthContext.current().orElse(null);
+                """, status, restricted ? reason : null,
+                restricted ? Timestamp.valueOf(LocalDateTime.now()) : null,
+                restricted ? operator : null, tenant, store);
         auditService.record(
                 tenant,
                 store,
@@ -741,6 +749,7 @@ public class ZentrixAdminService {
         ensureTenantExists(tenant);
         Map<String, Object> code = provisioningService.createActivationCode(new ActivationCodeRequest(
                 tenant,
+                value(request, "storeId"),
                 null,
                 null,
                 defaultValue(value(request, "storeName"), "Nova loja"),

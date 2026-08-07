@@ -29,7 +29,7 @@ public class LocalAdminAccessService {
     private String remoteAddress(HttpServletRequest request) {
         String remote = request == null ? "" : request.getRemoteAddr();
         if (isLoopback(remote)) {
-            String forwarded = firstForwardedFor(request);
+            String forwarded = lastForwardedFor(request);
             if (!forwarded.isBlank()) {
                 return forwarded;
             }
@@ -37,7 +37,7 @@ public class LocalAdminAccessService {
         return remote == null ? "" : remote.trim();
     }
 
-    private String firstForwardedFor(HttpServletRequest request) {
+    private String lastForwardedFor(HttpServletRequest request) {
         if (request == null) {
             return "";
         }
@@ -45,7 +45,14 @@ public class LocalAdminAccessService {
         if (forwarded == null || forwarded.isBlank()) {
             return "";
         }
-        return forwarded.split(",", 2)[0].trim();
+        String[] addresses = forwarded.split(",");
+        for (int index = addresses.length - 1; index >= 0; index--) {
+            String address = addresses[index].trim();
+            if (!address.isBlank()) {
+                return address;
+            }
+        }
+        return "";
     }
 
     private boolean isAllowedAddress(String value) {

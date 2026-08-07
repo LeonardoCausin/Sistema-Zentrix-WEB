@@ -44,7 +44,7 @@ public class SyncController {
             @RequestHeader(value = "X-Zentrix-Sync-Key", required = false) String syncKey,
             @Valid @RequestBody SyncPushRequest request
     ) {
-        syncKeyService.require(syncKey);
+        syncKeyService.requireForDevice(syncKey, request.tenantId(), request.storeId(), request.deviceId());
         try {
             return syncIngestService.ingest(request);
         } catch (IllegalArgumentException e) {
@@ -59,9 +59,10 @@ public class SyncController {
             @RequestHeader(value = "X-Zentrix-Sync-Key", required = false) String syncKey,
             @RequestParam(required = false) String tenantId,
             @RequestParam(required = false) String storeId,
-            @RequestParam(required = false) String sourceId
+            @RequestParam(required = false) String sourceId,
+            @RequestParam(required = false) String deviceId
     ) {
-        syncKeyService.require(syncKey);
+        syncKeyService.requireForDevice(syncKey, tenantId, storeId, deviceId);
         try {
             return syncIngestService.lastStatus(tenantId, storeId, sourceId);
         } catch (DataAccessException | IllegalStateException e) {
@@ -79,7 +80,7 @@ public class SyncController {
             @RequestParam(defaultValue = "0") long afterId,
             @RequestParam(defaultValue = "100") int limit
     ) {
-        syncKeyService.require(syncKey);
+        syncKeyService.requireForDevice(syncKey, tenantId, storeId, deviceId);
         try {
             return webChangeOutboxService.pull(tenantId, storeId, sourceId, deviceId, afterId, limit);
         } catch (IllegalArgumentException e) {
@@ -102,7 +103,7 @@ public class SyncController {
             @RequestParam(required = false) String deviceId,
             @Valid @RequestBody SyncAckRequest request
     ) {
-        syncKeyService.require(syncKey);
+        syncKeyService.requireForDevice(syncKey, tenantId, storeId, deviceId);
         try {
             return webChangeOutboxService.ack(tenantId, storeId, sourceId, deviceId, request);
         } catch (IllegalArgumentException e) {

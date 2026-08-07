@@ -56,8 +56,9 @@ public class BillingAutomationService {
         List<Map<String, Object>> jobs = jdbcTemplate.queryForList("""
                 SELECT id, payload_json AS payloadJson, attempts
                 FROM billing_webhook_queue
-                WHERE status IN ('PENDING', 'RETRY')
-                  AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+                WHERE (status IN ('PENDING', 'RETRY')
+                       AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP))
+                   OR (status = 'PROCESSING' AND next_attempt_at <= CURRENT_TIMESTAMP)
                 ORDER BY id
                 LIMIT 20
                 """);
@@ -65,8 +66,10 @@ public class BillingAutomationService {
             long id = ((Number) job.get("id")).longValue();
             int claimed = jdbcTemplate.update("""
                     UPDATE billing_webhook_queue
-                    SET status = 'PROCESSING'
-                    WHERE id = ? AND status IN ('PENDING', 'RETRY')
+                    SET status = 'PROCESSING', next_attempt_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 5 MINUTE)
+                    WHERE id = ?
+                      AND ((status IN ('PENDING', 'RETRY') AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP))
+                           OR (status = 'PROCESSING' AND next_attempt_at <= CURRENT_TIMESTAMP))
                     """, id);
             if (claimed == 0) {
                 continue;
@@ -79,7 +82,7 @@ public class BillingAutomationService {
                 billingService.processQueuedWebhook(payload);
                 jdbcTemplate.update("""
                         UPDATE billing_webhook_queue
-                        SET status = 'DONE', processed_at = CURRENT_TIMESTAMP, last_error = NULL
+                        SET status = 'DONE', processed_at = CURRENT_TIMESTAMP, next_attempt_at = NULL, last_error = NULL
                         WHERE id = ?
                         """, id);
             } catch (Exception exception) {

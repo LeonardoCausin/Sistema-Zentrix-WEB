@@ -34,23 +34,23 @@ public class CashManagementController {
     }
 
     @GetMapping("/cash-sessions/{id}")
-    public Map<String, Object> detail(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store) {
+    public Map<String, Object> detail(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @RequestParam(required = false) String device) {
         permissionService.require(Permission.VIEW_PANEL);
-        return operationsService.cashSession(AuthContext.tenantId(), store, id);
+        return operationsService.cashSession(AuthContext.tenantId(), store, id, device);
     }
 
     @PostMapping("/cash-sessions/{id}/close")
-    public Map<String, Object> close(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @Valid @RequestBody CloseCashSessionRequest request) {
-        return operationsService.closeCash(AuthContext.tenantId(), store, id, request);
+    public Map<String, Object> close(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @RequestParam(required = false) String device, @Valid @RequestBody CloseCashSessionRequest request) {
+        return operationsService.closeCash(AuthContext.tenantId(), store, id, device, request);
     }
 
     @PostMapping("/cash-sessions/{id}/withdrawal")
-    public Map<String, Object> withdrawal(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @Valid @RequestBody CashMovementRequest request) {
-        return operationsService.withdrawal(AuthContext.tenantId(), store, id, request);
+    public Map<String, Object> withdrawal(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @RequestParam(required = false) String device, @Valid @RequestBody CashMovementRequest request) {
+        return operationsService.withdrawal(AuthContext.tenantId(), store, id, device, request);
     }
 
     @PostMapping("/cash-sessions/{id}/supply")
-    public Map<String, Object> supply(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @Valid @RequestBody CashMovementRequest request) {
-        return operationsService.supply(AuthContext.tenantId(), store, id, request);
+    public Map<String, Object> supply(@PathVariable int id, @RequestParam(defaultValue = "WEB") String store, @RequestParam(required = false) String device, @Valid @RequestBody CashMovementRequest request) {
+        return operationsService.supply(AuthContext.tenantId(), store, id, device, request);
     }
 }

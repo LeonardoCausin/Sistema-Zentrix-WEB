@@ -409,8 +409,8 @@
       date(row.openedAt),
       date(row.closedAt),
       tag(row.status || (row.open ? "OPEN" : "-")),
-      `<button type="button" data-action="close-cash" data-id="${escAttr(row.id)}" data-store="${escAttr(row.storeId)}">Fechar</button>
-       <button class="danger" type="button" data-action="delete-cash" data-id="${escAttr(row.id)}" data-store="${escAttr(row.storeId)}">Apagar</button>`
+      `<button type="button" data-action="close-cash" data-id="${escAttr(row.id)}" data-store="${escAttr(row.storeId)}" data-device="${escAttr(row.deviceId)}">Fechar</button>
+       <button class="danger" type="button" data-action="delete-cash" data-id="${escAttr(row.id)}" data-store="${escAttr(row.storeId)}" data-device="${escAttr(row.deviceId)}">Apagar</button>`
     ]);
   }
 
@@ -456,7 +456,7 @@
     if (action === "block-client") return showStatusForm(button.dataset.tenant, "BLOCKED");
     if (action === "activate-client") return showStatusForm(button.dataset.tenant, "ACTIVE");
     if (action === "store-status") return showStoreStatusForm(button.dataset.tenant, button.dataset.store, button.dataset.status);
-    if (action === "device-billing") return showDeviceBillingForm(button.dataset.tenant, button.dataset.device, button.dataset.billable, button.dataset.status);
+    if (action === "device-billing") return showDeviceBillingForm(button.dataset.tenant, button.dataset.store, button.dataset.device, button.dataset.billable, button.dataset.status);
     if (action === "support-note") return showSupportNoteForm(button.dataset.tenant);
     if (action === "resolve-note") return resolveSupportNote(button.dataset.tenant, button.dataset.note);
     if (action === "mfa-setup") return setupMfa();
@@ -466,8 +466,8 @@
     if (action === "clear-sync") return reasonAction("Limpar falhas de sincronizacao", "/local-admin/sync/clear-failures?store=" + encodeURIComponent(els.storeSelect.value), "POST", { days: 7 });
     if (action === "clear-backups") return reasonAction("Limpar backups com erro", "/local-admin/backups/clear-errors?store=" + encodeURIComponent(els.storeSelect.value), "POST");
     if (action === "clear-cache") return reasonAction("Limpar cache", "/local-admin/cache/clear", "POST");
-    if (action === "close-cash") return showCloseCashForm(button.dataset.id, button.dataset.store);
-    if (action === "delete-cash") return deleteCash(button.dataset.id, button.dataset.store);
+    if (action === "close-cash") return showCloseCashForm(button.dataset.id, button.dataset.store, button.dataset.device);
+    if (action === "delete-cash") return deleteCash(button.dataset.id, button.dataset.store, button.dataset.device);
   }
 
   async function loadPermissions() {
@@ -576,7 +576,7 @@
         <div class="panel-title"><div><h3>Aplicativos instalados</h3><span class="muted">Cada PDV adicional faturavel custa R$ 49,90 por mes</span></div></div>
         ${simpleTable(["Aplicativo", "Loja", "Tipo", "Status", "Faturavel", "Acao"], detail.devices || [], (row) => [
           row.name || row.id, row.storeId, row.appType || "PDV", tag(row.status), row.billable === false ? "Nao" : "Sim",
-          `<button type="button" data-action="device-billing" data-tenant="${escAttr(tenantId)}" data-device="${escAttr(row.id)}" data-status="${escAttr(row.status || "ACTIVE")}" data-billable="${row.billable === false ? "false" : "true"}">Alterar</button>`
+          `<button type="button" data-action="device-billing" data-tenant="${escAttr(tenantId)}" data-store="${escAttr(row.storeId)}" data-device="${escAttr(row.id)}" data-status="${escAttr(row.status || "ACTIVE")}" data-billable="${row.billable === false ? "false" : "true"}">Alterar</button>`
         ])}
       </section>
       <section class="panel">
@@ -595,11 +595,12 @@
         <div class="panel-title">
           <div><h3>Lojas</h3><span class="muted">Altere o status individual de cada loja</span></div>
         </div>
-        ${simpleTable(["ID", "Nome", "Origem", "Status", "Acao"], detail.stores || [], (row) => [
+        ${simpleTable(["ID", "Nome", "Origem", "Status", "Motivo", "Acao"], detail.stores || [], (row) => [
           row.id,
           row.name,
           row.sourceId,
           tag(row.status),
+          row.blockReason || "-",
           `<button type="button" data-action="store-status" data-tenant="${escAttr(tenantId)}" data-store="${escAttr(row.id)}" data-status="${escAttr(row.status || "ACTIVE")}">Alterar status</button>`
         ])}
       </section>
@@ -695,9 +696,17 @@
     updatePreview();
   }
 
-  function showActivationForm(tenantId) {
+  async function showActivationForm(tenantId) {
+    const detail = await api("/zentrix-admin/clients/" + encodeURIComponent(tenantId));
+    const stores = detail.stores || [];
     openModal("Codigo de ativacao PDV", `
       <form id="activationForm" class="form-grid">
+        <label class="full">Destino
+          <select name="storeId">
+            <option value="">Criar uma nova loja</option>
+            ${stores.map((store) => `<option value="${escAttr(store.id)}">PDV adicional em ${esc(store.name || store.id)}</option>`).join("")}
+          </select>
+        </label>
         ${field("storeName", "Nome da loja", "text", true, "Nova loja")}
         ${field("sourceId", "Origem/PDV")}
         ${field("expiresMinutes", "Validade em minutos", "number", false, "1440")}
@@ -796,7 +805,7 @@
     };
   }
 
-  function showDeviceBillingForm(tenantId, deviceId, currentBillable, currentStatus) {
+  function showDeviceBillingForm(tenantId, storeId, deviceId, currentBillable, currentStatus) {
     const isBillable = String(currentBillable) !== "false";
     openModal("Faturamento do aplicativo", `
       <form id="deviceBillingForm" class="form-grid">
@@ -810,7 +819,7 @@
       event.preventDefault();
       const data = formData(event.currentTarget);
       data.billable = data.billable === "true";
-      await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/billing`, { method: "PUT", body: JSON.stringify(data) });
+      await api(`/zentrix-admin/clients/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/billing?store=${encodeURIComponent(storeId)}`, { method: "PUT", body: JSON.stringify(data) });
       closeModal();
       state.clients = [];
       await showClientDetail(tenantId);
@@ -884,7 +893,7 @@
     };
   }
 
-  function showCloseCashForm(id, store) {
+  function showCloseCashForm(id, store, device) {
     openModal("Fechar caixa", `
       <form id="closeCashForm" class="form-grid">
         ${field("closingBalance", "Valor informado", "number", true)}
@@ -897,7 +906,7 @@
     document.getElementById("closeCashForm").onsubmit = async (event) => {
       event.preventDefault();
       try {
-        await api(`/local-admin/cash/${encodeURIComponent(id)}/close?store=${encodeURIComponent(store)}`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+        await api(`/local-admin/cash/${encodeURIComponent(id)}/close?store=${encodeURIComponent(store)}&device=${encodeURIComponent(device || "")}`, { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
         closeModal();
         await loadSupport();
         toast("Caixa fechado.");
@@ -907,10 +916,10 @@
     };
   }
 
-  async function deleteCash(id, store) {
+  async function deleteCash(id, store, device) {
     const reason = prompt("Motivo para apagar este caixa sem vinculos:");
     if (!reason) return;
-    await api(`/local-admin/cash/${encodeURIComponent(id)}?store=${encodeURIComponent(store)}`, { method: "DELETE", body: JSON.stringify({ reason }) });
+    await api(`/local-admin/cash/${encodeURIComponent(id)}?store=${encodeURIComponent(store)}&device=${encodeURIComponent(device || "")}`, { method: "DELETE", body: JSON.stringify({ reason }) });
     await loadSupport();
     toast("Caixa apagado.");
   }
